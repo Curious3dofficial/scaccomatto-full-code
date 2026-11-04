@@ -1,0 +1,74 @@
+# Builds the Windows installer (Scaccomatto-<version>.exe) on GitHub's own Windows computers.
+#
+# Runs when you:
+#   - press "Run workflow" on the Actions tab (to test), or
+#   - push a version tag like v1.0.0 (a release: the installer is also attached to a GitHub Release).
+#
+# The finished installer appears at the bottom of the run's page under "Artifacts".
+
+name: Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # needed only to attach the installer to a Release
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Install Java 21 (includes jpackage)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Make sure the WiX Toolset is there (jpackage uses it to build the setup wizard)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --version 3.14.1 -y --no-progress
+            echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
+
+      - name: Build the game
+        shell: pwsh
+        run: mvn -B -q clean package -DskipTests
+
+      - name: Pack the installer
+        shell: pwsh
+        run: |
+          $version = (mvn -q help:evaluate "-Dexpression=project.version" -DforceStdout).Trim()
+          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target/scaccomatto-$version.jar" dist/
+          jpackage --type exe `
+            --name Scaccomatto --app-version $version `
+            --vendor "Alekhine Studios Private Limited" `
+            --description "Chess, with personality" `
+            --input dist --main-jar "scaccomatto-$version.jar" --main-class Main `
+            --icon packaging/windows/scaccomatto.ico `
+            --add-modules java.se,jdk.crypto.ec,jdk.unsupported,jdk.localedata,jdk.zipfs `
+            --win-dir-chooser --win-shortcut --win-shortcut-prompt --win-menu --win-menu-group "Scaccomatto" `
+            --win-upgrade-uuid 7c27d338-d9df-49a7-a747-aafaa13ef36c `
+            --dest installers
+          Rename-Item "installers/Scaccomatto-$version.exe" "Scaccomatto-Setup-$version.exe"
+
+      - name: Keep the installer (download it from this run's page)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scaccomatto-Setup-${{ env.VERSION }}
+          path: installers/*.exe
+
+      - name: Attach it to a GitHub Release (only for version tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*.exe

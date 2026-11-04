@@ -1,0 +1,64 @@
+# Compiled files
+*.class
+*.jar
+*.war
+*.ear
+
+# Build directories
+target/
+out/
+build/
+/tmp/
+*.tmp
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.project
+.classpath
+
+# Database files
+*.db
+*.mv.db
+*.trace.db
+server/data/*.db
+server/data/*.log
+server/data/otp-outbox.log
+
+# Sensitive credentials
+server/credentials/*.json
+*.secret
+*.key
+*.pem
+
+# Engine executables
+engines/*.exe
+engines/stockfish*
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Never upload: secrets, the server's live data, build output and old files
+server/credentials/
+server/data/
+dist/
+installers/
+_to_delete/
+_to_delete_java/
+.claude-scratch/
