@@ -1983,8 +1983,8 @@ public class OnlinePanel extends JPanel {
         // beside it (no border). Clicking the picture opens the Select
         // Variant popup; it updates to whatever gets picked.
         JLabel hostCodeLabel = sectionLabel("HOST CODE");
-        hostCodeLabel.setFont(MainMenu.variantDisplayFont(30.6f));
-        VariantThumb variantThumb = new VariantThumb(44);
+        hostCodeLabel.setFont(MainMenu.variantDisplayFont(36f));
+        VariantThumb variantThumb = new VariantThumb(54);
         variantThumb.setImage(loadVariantImage(iconFileFor(selectedVariant)));
         variantThumb.setToolTipText("Change variant");
         variantThumb.addMouseListener(new MouseAdapter() {
@@ -1999,10 +1999,12 @@ public class OnlinePanel extends JPanel {
         warmVariantPickerIcons();
         JPanel hostCodeLabelRow = transparent(new FlowLayout(FlowLayout.LEFT, 0, 0));
         hostCodeLabelRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // left-aligned on purpose: the pop-up centring leaves this row as it is
+        hostCodeLabelRow.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
         hostCodeLabelRow.add(hostCodeLabel);
         hostCodeLabelRow.add(Box.createHorizontalStrut(14));
         hostCodeLabelRow.add(variantThumb);
-        hostCodeLabelRow.setMaximumSize(new Dimension(1083, 48));
+        hostCodeLabelRow.setMaximumSize(new Dimension(1083, 58));
         body.add(hostCodeLabelRow);
         body.add(Box.createVerticalStrut(10));
         ConnectionField hostCode = new ConnectionField(
@@ -2113,8 +2115,14 @@ public class OnlinePanel extends JPanel {
         // empty space between the tabs and the buttons.
         joinPage.add(Box.createVerticalGlue());
         JLabel joinCodeLabel = sectionLabel("JOIN CODE");
-        joinCodeLabel.setFont(MainMenu.variantDisplayFont(30.6f));
-        joinPage.add(joinCodeLabel);
+        joinCodeLabel.setFont(MainMenu.variantDisplayFont(36f));
+        // left-aligned like HOST CODE (the pop-up centring leaves this row as it is)
+        JPanel joinCodeLabelRow = transparent(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        joinCodeLabelRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        joinCodeLabelRow.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
+        joinCodeLabelRow.add(joinCodeLabel);
+        joinCodeLabelRow.setMaximumSize(new Dimension(1083, 58));
+        joinPage.add(joinCodeLabelRow);
         joinPage.add(Box.createVerticalStrut(10));
         ConnectionField joinCode = new ConnectionField("", ConnectionField.ICON_CODE, 1.84f);
         constrainToLobbyCode(joinCode);

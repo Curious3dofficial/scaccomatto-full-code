@@ -1568,6 +1568,28 @@ public class MainMenu extends JFrame implements ActionListener {
         return null;
     }
 
+    /** The Esc action a showing screen set up for itself (innermost first), or null. */
+    private static Action findOwnEscapeAction(Component c) {
+        if (c == null || !c.isShowing()) return null;
+        if (c instanceof Container) {
+            for (Component child : ((Container) c).getComponents()) {
+                Action a = findOwnEscapeAction(child);
+                if (a != null) return a;
+            }
+        }
+        if (c instanceof JComponent) {
+            JComponent jc = (JComponent) c;
+            KeyStroke esc = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
+            for (int scope : new int[]{JComponent.WHEN_IN_FOCUSED_WINDOW, JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT}) {
+                InputMap map = jc.getInputMap(scope);
+                Object key = map == null ? null : map.get(esc);
+                Action a = key == null ? null : jc.getActionMap().get(key);
+                if (a != null && a.isEnabled()) return a;
+            }
+        }
+        return null;
+    }
+
     private void installGlobalEscapeBackKey() {
         JRootPane root = getRootPane();
         if (root == null) return;
@@ -1584,6 +1606,14 @@ public class MainMenu extends JFrame implements ActionListener {
                 Runnable screenBack = findEscapeBack(mainPanel);
                 if (screenBack != null) {
                     screenBack.run();       // the screen's own back button, animation and all
+                    return;
+                }
+                // A screen with its own Esc key (Settings, Achievements, Spectate, Chess
+                // Variants...) gets it: this window-wide key is checked before theirs, so
+                // without handing over, Esc skipped their back animation everywhere.
+                Action own = findOwnEscapeAction(mainPanel);
+                if (own != null) {
+                    own.actionPerformed(new ActionEvent(mainPanel, ActionEvent.ACTION_PERFORMED, "escape"));
                     return;
                 }
                 MainMenu.this.actionPerformed(new ActionEvent(MainMenu.this, ActionEvent.ACTION_PERFORMED, "BACK_TO_MENU"));
@@ -3395,6 +3425,14 @@ public class MainMenu extends JFrame implements ActionListener {
      */
     void showEmbeddedScreenDropping(JComponent screen) {
         if (screenSlideRunning || screen == null) return;
+        // Esc lifts it back off, like its back button does -- unless it has its own Esc
+        if (screen.getClientProperty(ESCAPE_BACK) == null
+                && screen.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).get(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0)) == null) {
+            screen.putClientProperty(ESCAPE_BACK, (Runnable) () -> {
+                SoundManager.playExtraSound("tap.wav");
+                returnToMenuRising();
+            });
+        }
         java.awt.image.BufferedImage under = snapshot(mainPanel);
         showEmbeddedScreen(screen, null);
         mainPanel.validate();

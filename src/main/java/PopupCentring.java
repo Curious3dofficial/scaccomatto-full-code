@@ -67,8 +67,15 @@ final class PopupCentring {
         }
     }
 
+    /** Put this client property (Boolean.TRUE) on a row that should keep its own alignment. */
+    static final String KEEP_ALIGNMENT = "popupCentring.keepAlignment";
+
     private static boolean centreTree(Container parent) {
         boolean changed = false;
+        if (parent instanceof JComponent
+                && Boolean.TRUE.equals(((JComponent) parent).getClientProperty(KEEP_ALIGNMENT))) {
+            return false;      // laid out on purpose (e.g. left-aligned): leave it and what's in it
+        }
         LayoutManager layout = parent.getLayout();
         if (layout instanceof FlowLayout) {
             FlowLayout flow = (FlowLayout) layout;
@@ -82,6 +89,7 @@ final class PopupCentring {
                 || layout instanceof BoxLayout && ((BoxLayout) layout).getAxis() == BoxLayout.PAGE_AXIS;
         boolean border = layout instanceof BorderLayout;
         for (Component c : parent.getComponents()) {
+            // (a KEEP_ALIGNMENT row still lines up with its column; only what's inside it is left alone)
             if (column && c instanceof JComponent
                     && ((JComponent) c).getAlignmentX() != Component.CENTER_ALIGNMENT) {
                 ((JComponent) c).setAlignmentX(Component.CENTER_ALIGNMENT);
