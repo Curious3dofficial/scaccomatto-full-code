@@ -134,7 +134,7 @@ public class SettingsPanel extends JPanel {
         });
         pieceStyleDropdown = new Choice(Piece.SETS, 0, null);
         pieceStyleDropdown.setSelectedItem(AppSettings.pieceSet());
-        pieceStyleDropdown.addActionListener(e -> AppSettings.setPieceSet(pieceStyleDropdown.getSelectedItem()));
+        pieceStyleDropdown.addActionListener(e -> PieceSetFade.switchTo(pieceStyleDropdown.getSelectedItem(), null));   // crossfades the pieces
         showCoordinatesToggle = new Toggle(true);
         showCoordinatesToggle.addActionListener(e -> {
             if (board != null) board.setShowCoordinates(showCoordinatesToggle.isSelected());

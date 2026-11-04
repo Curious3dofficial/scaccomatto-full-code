@@ -1511,6 +1511,63 @@ public class MainMenu extends JFrame implements ActionListener {
         });
     }
 
+    /**
+     * Client property a screen sets to the Runnable its own back button runs, so that Esc
+     * goes back exactly the way the button does (with the screen's exit animation)
+     * instead of jumping straight to the menu.
+     */
+    static final String ESCAPE_BACK = "scaccomatto.escapeBack";
+
+    /**
+     * A screen's ivory background, drawn from a ready-made picture (made again only when
+     * the size or theme changes). Filling a full-window gradient every frame is a big
+     * part of what made the screen animations choppy; copying a picture is cheap.
+     */
+    static void paintCachedGradient(JComponent c, Graphics g, Color top, Color bottom) {
+        int w = c.getWidth(), h = c.getHeight();
+        if (w <= 0 || h <= 0) return;
+        String key = w + "x" + h + "|" + top.getRGB() + "|" + bottom.getRGB();
+        Object cached = c.getClientProperty("bgGradientImage");
+        if (!(cached instanceof BufferedImage) || !key.equals(c.getClientProperty("bgGradientKey"))) {
+            cached = SmoothFade.gradient(w, h, top, bottom, c.getGraphicsConfiguration());
+            c.putClientProperty("bgGradientImage", cached);
+            c.putClientProperty("bgGradientKey", key);
+        }
+        g.drawImage((BufferedImage) cached, 0, 0, null);
+    }
+
+    /** A picture of how {@code c} looks right now, in the screen's own fast pixel format. */
+    static BufferedImage snapshotOf(JComponent c) {
+        int w = Math.max(1, c.getWidth()), h = Math.max(1, c.getHeight());
+        GraphicsConfiguration gc = c.getGraphicsConfiguration();
+        BufferedImage img = gc != null ? gc.createCompatibleImage(w, h, Transparency.TRANSLUCENT)
+                : new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
+        Graphics2D g = img.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            c.paint(g);
+        } finally {
+            g.dispose();
+        }
+        return img;
+    }
+
+    /** The showing screen's own back action (see ESCAPE_BACK), or null if it has none. */
+    private static Runnable findEscapeBack(Component c) {
+        if (c == null || !c.isShowing()) return null;
+        if (c instanceof JComponent) {
+            Object r = ((JComponent) c).getClientProperty(ESCAPE_BACK);
+            if (r instanceof Runnable) return (Runnable) r;
+        }
+        if (c instanceof Container) {
+            for (Component child : ((Container) c).getComponents()) {
+                Runnable r = findEscapeBack(child);
+                if (r != null) return r;
+            }
+        }
+        return null;
+    }
+
     private void installGlobalEscapeBackKey() {
         JRootPane root = getRootPane();
         if (root == null) return;
@@ -1522,6 +1579,11 @@ public class MainMenu extends JFrame implements ActionListener {
             public void actionPerformed(ActionEvent e) {
                 if (accountOverlay != null && accountOverlay.isVisible()) {
                     closeAccountOverlay();
+                    return;
+                }
+                Runnable screenBack = findEscapeBack(mainPanel);
+                if (screenBack != null) {
+                    screenBack.run();       // the screen's own back button, animation and all
                     return;
                 }
                 MainMenu.this.actionPerformed(new ActionEvent(MainMenu.this, ActionEvent.ACTION_PERFORMED, "BACK_TO_MENU"));
@@ -3553,10 +3615,7 @@ public class MainMenu extends JFrame implements ActionListener {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setPaint(new GradientPaint(0, 0, bgTop, 0, getHeight(), bgBottom));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-                g2.dispose();
+                paintCachedGradient(this, g, bgTop, bgBottom);
             }
         };
         panel.setLayout(new BorderLayout());
@@ -4033,10 +4092,7 @@ public class MainMenu extends JFrame implements ActionListener {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setPaint(new GradientPaint(0, 0, bgTop, 0, getHeight(), bgBottom));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-                g2.dispose();
+                paintCachedGradient(this, g, bgTop, bgBottom);
             }
         };
         mainContainer.setBorder(BorderFactory.createEmptyBorder(24, 42, 20, 42));
@@ -4046,7 +4102,10 @@ public class MainMenu extends JFrame implements ActionListener {
         bam.put("closeBotSelection", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                MainMenu.this.returnToMenuFromEmbeddedScreen();
+                // Esc = the back button, exit animation included (set up once the button exists below)
+                Object back = mainContainer.getClientProperty(ESCAPE_BACK);
+                if (back instanceof Runnable) ((Runnable) back).run();
+                else MainMenu.this.returnToMenuFromEmbeddedScreen();
             }
         });
 
@@ -4298,6 +4357,7 @@ public class MainMenu extends JFrame implements ActionListener {
         final AnimatedWordmarkLabel heroWordmarkForExit = heroWordmark;
         headerBack.addActionListener(ev -> playBotSelectExit(mainContainer, heading, stageHolder,
                 leftSlot, rightCard, botPanel, heroWordmarkForExit, headerBack, headerSpectate, headerStart));
+        mainContainer.putClientProperty(ESCAPE_BACK, (Runnable) headerBack::doClick);
 
         showEmbeddedScreen(mainContainer, null);
         if (skipBotSelectEntrance) {
@@ -4398,6 +4458,15 @@ public class MainMenu extends JFrame implements ActionListener {
                 viewport.getWidth(), viewport.getHeight());
     }
 
+    /** True once every bot card of the entrance has finished sliding in. */
+    private static boolean cardsAllLanded(int cardCount, long startedAt) {
+        float last = AnimationTiming.elapsedMillis(startedAt) - Math.max(0, cardCount - 1) * BOT_SELECT_CARDS_STAGGER_MS;
+        return last >= BOT_SELECT_CARDS_SLIDE_MS;
+    }
+
+    /** The left panel's picture while it slides in (null once it has landed). */
+    private ImageGhost botSelectLeftGhost;
+
     private void playBotSelectEntrance(JPanel mainContainer, JPanel heading, JPanel stageHolder,
             JPanel leftSlot, JPanel rightCard, BotPanel botPanel, AnimatedWordmarkLabel heroWordmark) {
         if (botSelectPanelsEntranceTimer != null && botSelectPanelsEntranceTimer.isRunning()) {
@@ -4444,12 +4513,7 @@ public class MainMenu extends JFrame implements ActionListener {
             JButton card = allCards.get(i);
             Dimension size = card.getSize();
             Point rest = SwingUtilities.convertPoint(card.getParent(), card.getLocation(), mainContainer);
-            BufferedImage snap = new BufferedImage(
-                    Math.max(1, size.width), Math.max(1, size.height), BufferedImage.TYPE_INT_ARGB);
-            Graphics2D sg = snap.createGraphics();
-            sg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            card.paint(sg);
-            sg.dispose();
+            BufferedImage snap = snapshotOf(card);
             card.putClientProperty("fadeAlpha", 0f);
             card.repaint();
 
@@ -4463,6 +4527,11 @@ public class MainMenu extends JFrame implements ActionListener {
         // remove any of these that are still mid-flight if back gets
         // pressed before this entrance finishes.
         botSelectEntranceGhosts = ghosts;
+
+        // the whole left panel slides in as one picture (redrawing the bot's profile card
+        // every frame is what made this entrance stutter); the real one appears once it lands
+        ImageGhost leftGhost = new ImageGhost(snapshotOf(leftSlot));
+        botSelectLeftGhost = leftGhost;
 
         body.remove(leftSlot);
         // Freeze body itself (see this method's own comment above) so
@@ -4483,7 +4552,10 @@ public class MainMenu extends JFrame implements ActionListener {
                 ? (getWidth() - cardRest[0].x) + BOT_SELECT_PANELS_OFFSCREEN_MARGIN_PX
                 : 0;
         mainContainer.add(leftSlot);
-        leftSlot.setBounds(leftRest.x - startLeftTravel, leftRest.y, leftSize.width, leftSize.height);
+        leftSlot.setBounds(leftRest.x, leftRest.y, leftSize.width, leftSize.height);
+        leftSlot.setVisible(false);
+        mainContainer.add(leftGhost);
+        leftGhost.setBounds(leftRest.x - startLeftTravel, leftRest.y, leftSize.width, leftSize.height);
         for (int i = 0; i < cardCount; i++) {
             mainContainer.add(ghosts[i]);
             ghosts[i].setBounds(cardRest[i].x + startCardsTravel, cardRest[i].y, cardSize[i].width, cardSize[i].height);
@@ -4520,11 +4592,24 @@ public class MainMenu extends JFrame implements ActionListener {
         }
         int scrollbarFadeDelayMs = cardCount * BOT_SELECT_CARDS_STAGGER_MS + BOT_SELECT_CARDS_SLIDE_MS;
 
-        long startedAt = System.nanoTime();
+        // the clock starts on the first frame, not when the screen was being built, so the
+        // opening part of the slide isn't skipped while that first frame is drawn
+        final long[] clock = {0L};
         botSelectPanelsEntranceTimer = AnimationTiming.createUiTimer(e -> {
+            if (clock[0] == 0L) clock[0] = System.nanoTime();
+            final long startedAt = clock[0];
             float panelsT = AnimationTiming.progress(startedAt, BOT_SELECT_PANELS_SLIDE_MS);
             float panelsEased = 1f - (float) Math.pow(1f - panelsT, 3); // ease-out-cubic, same shape as the Variants cards' own entrance
-            leftSlot.setLocation(leftRest.x - Math.round(leftTravel * (1f - panelsEased)), leftRest.y);
+            if (leftGhost.getParent() != null) {
+                leftGhost.setLocation(leftRest.x - Math.round(leftTravel * (1f - panelsEased)), leftRest.y);
+                if (panelsT >= 1f && cardsAllLanded(cardCount, startedAt)) {
+                    // landed: swap the picture for the real, live panel
+                    leftSlot.setVisible(true);
+                    mainContainer.remove(leftGhost);
+                    if (botSelectLeftGhost == leftGhost) botSelectLeftGhost = null;
+                    mainContainer.repaint(leftRest.x, leftRest.y, leftSize.width, leftSize.height);
+                }
+            }
 
             boolean cardsDone = true;
             for (int i = 0; i < cardCount; i++) {
@@ -4534,7 +4619,9 @@ public class MainMenu extends JFrame implements ActionListener {
                 float cardEased = 1f - (float) Math.pow(1f - cardT, 3);
                 int offsetX = Math.round(cardsTravel * (1f - cardEased));
                 ghosts[i].setLocation(cardRest[i].x + offsetX, cardRest[i].y);
-                if (cardT >= 1f && !cardRevealed[i]) {
+                // landed cards stay pictures until every card is in (see below): swapping
+                // each for the live card as it lands made the rest of the slide stutter
+                if (cardsAllLanded(cardCount, startedAt) && !cardRevealed[i]) {
                     cardRevealed[i] = true;
                     cards[i].putClientProperty("fadeAlpha", 1f);
                     cards[i].repaint();
@@ -4560,6 +4647,7 @@ public class MainMenu extends JFrame implements ActionListener {
 
             if (panelsT >= 1f && cardsDone && wordmarkT >= 1f && scrollbarT >= 1f) {
                 leftSlot.setLocation(leftRest);
+                leftSlot.setVisible(true);
                 if (heroWordmark != null) heroWordmark.setShiftT(1f);
                 if (ladderScrollBar != null) {
                     ladderScrollBar.putClientProperty("scrollbarFadeAlpha", 1f);
@@ -4656,8 +4744,21 @@ public class MainMenu extends JFrame implements ActionListener {
         // of mainContainer by this point (playBotSelectEntrance() lifted
         // it) -- just read its current spot and slide further the SAME
         // direction it entered from (off the left edge).
+        // the left panel leaves as one picture too, from wherever it is now (mid-entrance
+        // that's its sliding picture's spot)
         Point leftCurrent = leftSlot.getLocation();
+        if (botSelectLeftGhost != null && botSelectLeftGhost.getParent() != null) {
+            leftCurrent = botSelectLeftGhost.getLocation();
+            botSelectLeftGhost.getParent().remove(botSelectLeftGhost);
+            botSelectLeftGhost = null;
+        }
+        leftSlot.setVisible(true);
+        ImageGhost leftExitGhost = new ImageGhost(snapshotOf(leftSlot));
+        leftSlot.setVisible(false);
+        mainContainer.add(leftExitGhost);
+        leftExitGhost.setBounds(leftCurrent.x, leftCurrent.y, leftSlot.getWidth(), leftSlot.getHeight());
         int leftTravel = leftCurrent.x + leftSlot.getWidth() + BOT_SELECT_PANELS_OFFSCREEN_MARGIN_PX;
+        final Point leftFrom = leftCurrent;
 
         // Fresh snapshot per card (mirrors playBotSelectEntrance()'s own
         // snapshot step, just run in reverse -- see this method's own
@@ -4674,12 +4775,7 @@ public class MainMenu extends JFrame implements ActionListener {
             JButton card = exitCards.get(i);
             Dimension size = card.getSize();
             Point rest = SwingUtilities.convertPoint(card.getParent(), card.getLocation(), mainContainer);
-            BufferedImage snap = new BufferedImage(
-                    Math.max(1, size.width), Math.max(1, size.height), BufferedImage.TYPE_INT_ARGB);
-            Graphics2D sg = snap.createGraphics();
-            sg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            card.paint(sg);
-            sg.dispose();
+            BufferedImage snap = snapshotOf(card);
             card.putClientProperty("fadeAlpha", 0f);
             card.repaint();
 
@@ -4717,7 +4813,7 @@ public class MainMenu extends JFrame implements ActionListener {
         botSelectExitPanelsTimer = AnimationTiming.createUiTimer(e -> {
             float panelsT = AnimationTiming.progress(cardsStartedAt, BOT_SELECT_EXIT_MS);
             float panelsEased = panelsT * panelsT * panelsT; // ease-in-cubic, same shape as the Variants cards' own exit
-            leftSlot.setLocation(leftCurrent.x - Math.round(leftTravel * panelsEased), leftCurrent.y);
+            leftExitGhost.setLocation(leftFrom.x - Math.round(leftTravel * panelsEased), leftFrom.y);
 
             boolean cardsDone = true;
             for (int i = 0; i < cardCount; i++) {
@@ -4829,10 +4925,7 @@ public class MainMenu extends JFrame implements ActionListener {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setPaint(new GradientPaint(0, 0, bgTop, 0, getHeight(), bgBottom));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-                g2.dispose();
+                paintCachedGradient(this, g, bgTop, bgBottom);
             }
         };
         root.setBorder(BorderFactory.createEmptyBorder(24, 42, 20, 42));

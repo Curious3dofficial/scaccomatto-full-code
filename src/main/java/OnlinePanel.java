@@ -200,6 +200,22 @@ public class OnlinePanel extends JPanel {
         return tiles;
     }
 
+    private static final String SLIDE_SPRITES = "onlinePanel.slideSprites";
+
+    /** Takes a picture of each right-hand tile where it is now; the panel then draws those while they slide. */
+    private void freezeRightTiles(List<JComponent> tiles) {
+        if (lobbyBody == null) return;
+        java.util.Map<Component, java.awt.image.BufferedImage> sprites = new java.util.LinkedHashMap<>();
+        for (JComponent t : tiles) sprites.put(t, MainMenu.snapshotOf(t));
+        lobbyBody.putClientProperty(SLIDE_SPRITES, sprites);
+    }
+
+    private void unfreezeRightTiles() {
+        if (lobbyBody == null) return;
+        lobbyBody.putClientProperty(SLIDE_SPRITES, null);
+        lobbyBody.repaint();
+    }
+
     private int rightTravel(JComponent tile) {
         int viewW = lobbyBody != null ? lobbyBody.getWidth() : tile.getWidth();
         return Math.max(viewW, tile.getX() + tile.getWidth()) - tile.getX() + OFFSCREEN_MARGIN_PX;
@@ -221,6 +237,7 @@ public class OnlinePanel extends JPanel {
         if (entranceDelayTimer != null) entranceDelayTimer.stop();
         if (entranceTimer != null) entranceTimer.stop();
         if (exitTimer != null) exitTimer.stop();
+        unfreezeRightTiles();
     }
 
     private void setScrollbarAlpha(JScrollPane scroll, float alpha) {
@@ -290,6 +307,7 @@ public class OnlinePanel extends JPanel {
             card.setLocation(-(card.getWidth() + OFFSCREEN_MARGIN_PX), card.getY());
         }
         rightTiles = collectRightTiles();
+        freezeRightTiles(rightTiles);
         rightRestX = new int[rightTiles.size()];
         for (int i = 0; i < rightTiles.size(); i++) {
             JComponent tile = rightTiles.get(i);
@@ -354,6 +372,7 @@ public class OnlinePanel extends JPanel {
             if (done) {
                 ((Timer) e.getSource()).stop();
                 for (JButton card : listCards) SmoothFade.unfreeze(card);
+                unfreezeRightTiles();
                 if (variantList != null) {
                     variantList.revalidate();
                     variantList.repaint();
@@ -387,6 +406,7 @@ public class OnlinePanel extends JPanel {
         final float backStart = backProp instanceof Float ? (Float) backProp : 1f;
         final float panelStart = lobbyCard != null ? lobbyCard.fade : 1f;
         for (JButton card : listCards) SmoothFade.freeze(card);   // slide as pictures
+        freezeRightTiles(rTiles);
         final long startedAt = System.nanoTime();
         final int tilesTotalMs = TILE_EXIT_MS + TILE_EXIT_STAGGER_MS
                 * Math.max(0, Math.max(n, rTiles.size()) - 1);
@@ -420,6 +440,7 @@ public class OnlinePanel extends JPanel {
             if (elapsed >= totalMs) {
                 ((Timer) e.getSource()).stop();
                 for (JButton card : listCards) SmoothFade.unfreeze(card);
+                unfreezeRightTiles();
                 exiting = false;
                 setTilesHidden(true);
                 parent.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "BACK_TO_MENU"));
@@ -454,10 +475,7 @@ public class OnlinePanel extends JPanel {
     @Override
     protected void paintComponent(Graphics graphics) {
         super.paintComponent(graphics);
-        Graphics2D g2 = (Graphics2D) graphics.create();
-        g2.setPaint(new GradientPaint(0, 0, BG_TOP, 0, getHeight(), BG_BOTTOM));
-        g2.fillRect(0, 0, getWidth(), getHeight());
-        g2.dispose();
+        MainMenu.paintCachedGradient(this, graphics, BG_TOP, BG_BOTTOM);   // a ready-made picture: cheap every frame
     }
 
     @Override
@@ -497,6 +515,8 @@ public class OnlinePanel extends JPanel {
         backButton = back;
         // Plays the exit animation first, then goes back.
         back.addActionListener(event -> playExitThenBack());
+        // Esc goes back the same way, exit animation included (see MainMenu.ESCAPE_BACK)
+        putClientProperty(MainMenu.ESCAPE_BACK, (Runnable) back::doClick);
         JPanel headerButtons = transparent(new FlowLayout(FlowLayout.RIGHT, 14, 0));
         headerButtons.add(back);
         header.add(headerButtons, BorderLayout.EAST);
@@ -816,6 +836,16 @@ public class OnlinePanel extends JPanel {
             @Override
             public void paint(Graphics g) {
                 if (Boolean.TRUE.equals(getClientProperty("hideTiles"))) return;
+                // While the tiles slide in or out, each is drawn from a picture taken at
+                // the start, where it currently is -- far cheaper than redrawing them live.
+                Object sprites = getClientProperty(SLIDE_SPRITES);
+                if (sprites instanceof java.util.Map) {
+                    for (java.util.Map.Entry<?, ?> en : ((java.util.Map<?, ?>) sprites).entrySet()) {
+                        Component tile = (Component) en.getKey();
+                        g.drawImage((java.awt.Image) en.getValue(), tile.getX(), tile.getY(), null);
+                    }
+                    return;
+                }
                 super.paint(g);
             }
         };
@@ -3263,16 +3293,35 @@ public class OnlinePanel extends JPanel {
         }
 
 
+        // The card's look (shadow, white body, border) drawn once into a picture and
+        // copied after that: it's redrawn on every frame while the screen slides in and
+        // out, and drawing those big rounded shapes each time was slow.
+        private java.awt.image.BufferedImage look;
+        private String lookKey;
+
         @Override
         protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            // fade only affects the card itself (the panel behind the
-            // tiles); the tiles animate on their own.
-            if (fade < 0.999f) {
-                if (fade <= 0.001f) { g2.dispose(); super.paintComponent(g); return; }
-                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fade));
+            int w0 = getWidth(), h0 = getHeight();
+            if (fade <= 0.001f || w0 <= 0 || h0 <= 0) { super.paintComponent(g); return; }
+            String key = w0 + "x" + h0 + "|" + UiTheme.VERSION + "|" + UiTheme.DARK;
+            if (look == null || !key.equals(lookKey)) {
+                GraphicsConfiguration gc = getGraphicsConfiguration();
+                look = gc != null ? gc.createCompatibleImage(w0, h0, Transparency.TRANSLUCENT)
+                        : new java.awt.image.BufferedImage(w0, h0, java.awt.image.BufferedImage.TYPE_INT_ARGB_PRE);
+                Graphics2D lg = look.createGraphics();
+                paintLook(lg);
+                lg.dispose();
+                lookKey = key;
             }
+            Graphics2D g2 = (Graphics2D) g.create();
+            if (fade < 0.999f) g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fade));
+            g2.drawImage(look, 0, 0, null);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+
+        private void paintLook(Graphics2D g2) {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             int w = getWidth() - 1;
             int h = getHeight() - 1;
             int arc = 22;
@@ -3286,23 +3335,13 @@ public class OnlinePanel extends JPanel {
             }
             g2.setColor(UiTheme.c(Color.WHITE));
             g2.fillRoundRect(0, 0, w, h, arc, arc);
-            g2.dispose();
-            super.paintComponent(g);
+            g2.setColor(CARD_BORDER);
+            g2.drawRoundRect(0, 0, w, h, 22, 22);
         }
 
         @Override
         protected void paintBorder(Graphics g) {
-            if (fade <= 0.001f) return;
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            if (fade < 0.999f) {
-                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fade));
-            }
-            int w = getWidth() - 1;
-            int h = getHeight() - 1;
-            g2.setColor(CARD_BORDER);
-            g2.drawRoundRect(0, 0, w, h, 22, 22);
-            g2.dispose();
+            // part of the cached look (see paintComponent)
         }
     }
 

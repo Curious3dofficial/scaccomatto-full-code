@@ -1627,9 +1627,11 @@ public class SettingsScreen extends JPanel {
                 rows.add(new Row("Board theme", null, themeDd, false));
                 rows.add(new Row("Piece set", null,
                         new Dropdown(Piece.SETS, Math.max(0, indexOf(Piece.SETS, AppSettings.pieceSet())), null, i -> {
-                            AppSettings.setPieceSet(Piece.SETS[i]);
-                            PieceArt.clear();
-                            preview.repaint();
+                            // once the list has tucked away, the old pieces crossfade into the new ones
+                            PieceSetFade.switchTo(Piece.SETS[i], () -> {
+                                PieceArt.clear();
+                                preview.repaint();
+                            });
                         }), false));
                 rows.add(new Row("Board coordinates", "The a-h and 1-8 labels",
                         new Segmented(new String[]{"Off", "Inside", "Outside"}, AppSettings.showCoordinates() ? 1 : 0,
