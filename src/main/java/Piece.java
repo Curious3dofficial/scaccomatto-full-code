@@ -54,7 +54,7 @@ public abstract class Piece {
                     if (url == null) url = Piece.class.getResource("/assets/pieces/" + file);
                     fresh[c][i] = url == null ? null : ImageIO.read(url);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    CrashLog.record(Thread.currentThread(), e);
                 }
             }
         }

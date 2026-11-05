@@ -500,9 +500,50 @@ final class Achievements {
             AchievementToast t = new AchievementToast(d);
             Integer st = STARS.poll();
             t.stars = st == null ? 1 : st;
-            layers.add(t, JLayeredPane.DRAG_LAYER);
-            t.place(layers);
+            t.anchor = javax.swing.SwingUtilities.getRootPane(layers);
+            if (!t.showInOwnWindow()) {
+                // no see-through windows on this system: the window's top layer instead
+                layers.add(t, Integer.valueOf(JLayeredPane.DRAG_LAYER + 100));
+                t.place(layers);
+            }
             t.timer.start();
+        }
+
+        /** The window the card floats over, and the card's own little window on top of everything. */
+        private JRootPane anchor;
+        private JWindow win;
+
+        /**
+         * Puts the card in its own see-through window above the app, so it sits on top of
+         * everything -- popups, screen transitions and all. False if the system can't do
+         * see-through windows.
+         */
+        private boolean showInOwnWindow() {
+            try {
+                if (anchor == null || !anchor.isShowing()) return false;
+                GraphicsDevice gd = anchor.getGraphicsConfiguration().getDevice();
+                if (!gd.isWindowTranslucencySupported(GraphicsDevice.WindowTranslucency.PERPIXEL_TRANSLUCENT)) return false;
+                win = new JWindow(SwingUtilities.getWindowAncestor(anchor));
+                win.setBackground(new Color(0, 0, 0, 0));
+                win.setFocusableWindowState(false);          // never steals the keyboard
+                win.setAlwaysOnTop(true);
+                win.setContentPane(this);
+                win.setSize(CARD_W, CARD_H + 14);
+                followAnchor();
+                win.setVisible(true);
+                return true;
+            } catch (Throwable e) {
+                if (win != null) win.dispose();
+                win = null;
+                return false;
+            }
+        }
+
+        /** Top-right corner of the app window, wherever it has been moved to. */
+        private void followAnchor() {
+            if (win == null || anchor == null || !anchor.isShowing()) return;
+            Point p = anchor.getLocationOnScreen();
+            win.setLocation(p.x + anchor.getWidth() - CARD_W - MARGIN, p.y + MARGIN);
         }
 
         private static JLayeredPane targetLayers() {
@@ -534,12 +575,19 @@ final class Achievements {
         private void tick() {
             if (elapsed() > IN_MS + HOLD_MS + OUT_MS) {
                 timer.stop();
-                Container p = getParent();
-                if (p != null) { p.remove(this); p.repaint(getX(), getY(), getWidth(), getHeight()); }
+                if (win != null) {
+                    win.dispose();
+                    win = null;
+                } else {
+                    Container p = getParent();
+                    if (p != null) { p.remove(this); p.repaint(getX(), getY(), getWidth(), getHeight()); }
+                }
                 next();
                 return;
             }
-            if (getParent() != null) {
+            if (win != null) {
+                followAnchor();
+            } else if (getParent() != null) {
                 // stay pinned to the corner if the window is resized meanwhile
                 setLocation(getParent().getWidth() - CARD_W - MARGIN, MARGIN);
             }

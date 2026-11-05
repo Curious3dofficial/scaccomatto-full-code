@@ -340,7 +340,6 @@ public class AnalysisPanel extends JPanel {
 
         private void loadFrames() {
             String[] candidates = {
-                "Scaccomatto_final/Scaccomatto/src/assets/preview/framess",
                 "src/assets/preview/framess",
                 "assets/preview/framess"
             };

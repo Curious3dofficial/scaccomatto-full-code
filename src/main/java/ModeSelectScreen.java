@@ -1562,21 +1562,9 @@ public class ModeSelectScreen extends JPanel {
             // Puzzles and Lessons aren't built yet: a "SOON" tag on the circle's
             // top-right says so before anyone clicks (it pops in with the circle)
             if (kind == Kind.PUZZLES || kind == Kind.LESSONS) {
-                Font tagFont = MainMenu.variantDisplayFont(Math.max(11f, d * 0.12f));
-                FontMetrics tm = circleG.getFontMetrics(tagFont);
                 float tagH = Math.max(20f, d * 0.22f);
-                float tagW = tm.stringWidth("SOON") + tagH * 0.9f;
-                float tagCx = cx + d * 0.30f, tagCy = cy0 + tagH * 0.35f;
-                java.awt.geom.RoundRectangle2D.Float tag = new java.awt.geom.RoundRectangle2D.Float(
-                        tagCx - tagW / 2f, tagCy - tagH / 2f, tagW, tagH, tagH, tagH);
-                circleG.setColor(UiTheme.c(214, 160, 52));
-                circleG.fill(tag);
-                circleG.setStroke(new BasicStroke(2f));
-                circleG.setColor(UiTheme.c(Color.WHITE));
-                circleG.draw(tag);
-                circleG.setFont(tagFont);
-                circleG.drawString("SOON", tagCx - tm.stringWidth("SOON") / 2f,
-                        tagCy + (tm.getAscent() - tm.getDescent()) / 2f);
+                // gold in both themes; its ring matches the circle so it looks cut into it
+                SoonBadge.paintCentred(circleG, cx + d * 0.30f, cy0 + tagH * 0.35f, tagH, UiTheme.c(Color.WHITE));
             }
             circleG.dispose();
 

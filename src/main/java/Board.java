@@ -448,9 +448,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private static final int SPELL_CHESS_NUKE_VISUAL_DELAY_MS = 500;
     private static final float SPELL_CHESS_NUKE_APPROACH_START_BELOW_BOARD_SQ = 3.4f;
     private boolean fireballPlaneSoundPrestarted = false;
-    private static final String THREE_CHECK_PRE_EXPLOSION_SOUND = "creeper.mp3";
-    private static final String THREE_CHECK_KING_EXPLOSION_SOUND = "explosion (3).mp3";
-    private static final int THREE_CHECK_EXPLOSION_SOUND_DELAY_MS = 1800;
+    private static final String THREE_CHECK_PRE_EXPLOSION_SOUND = "fuse.wav";
+    private static final String THREE_CHECK_KING_EXPLOSION_SOUND = "king_shatter.wav";
+    private static final int THREE_CHECK_EXPLOSION_SOUND_DELAY_MS = 2250;   // the crash lands as the king shatters (PIECE_PRE_EXPLOSION_MS)
     private static final float THREE_CHECK_RING_MAX_RADIUS_SQ = 1.5f;
     private int spellSimulationDepth = 0;
 
@@ -1914,7 +1914,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         }
         if (duckImage != null) return;
         String[] paths = {
-            "Scaccomatto_final/Scaccomatto/src/assets/multiplayer/duck.png",
             "src/assets/multiplayer/duck.png",
             "assets/multiplayer/duck.png"
         };
@@ -2116,7 +2115,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     }
 
     private void updateFogTransitionTarget(boolean viewerIsWhite) {
-        boolean fogRulesActive = fogOfWarEnabled || isSpellFogActiveForViewer(viewerIsWhite);
+        // Fog of War: once the game is over the fog fades away and both sides see everything
+        boolean fogRulesActive = fogOfWarLive() || isSpellFogActiveForViewer(viewerIsWhite);
         fogTargetAlpha = fogRulesActive ? 1.0f : 0.0f;
         if (fogTargetAlpha > 0.0f || fogVisualAlpha > 0.001f) {
             startFogAnimation();
@@ -2176,6 +2176,11 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
     private boolean isPremoverTurn() {
         return whiteTurn == premoverWhite();
+    }
+
+    /** Fog of War is on and the game is still going (the fog lifts when it ends). */
+    private boolean fogOfWarLive() {
+        return fogOfWarEnabled && !premoveGameEnded();
     }
 
     private boolean premoveGameEnded() {
@@ -2884,7 +2889,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         explosionOverlayMaxAspectRatio = 1.0;
 
         String[] frameDirs = new String[] {
-            "Scaccomatto_final/Scaccomatto/src/assets/extras/frames",
             "src/assets/extras/frames",
             "assets/extras/frames",
             "frames"
@@ -2978,7 +2982,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     public void onShieldApplied(Piece piece, int row, int col) {
         if (deferSpellVisualEffect(() -> onShieldApplied(piece, row, col))) return;
         if (piece == null || !inBounds(row, col)) return;
-        SoundManager.playExtraSound("minecraft-armor-equip.mp3");
+        SoundManager.playExtraSound("shield_on.wav");
         addShieldFx(piece, row, col, true);
     }
 
@@ -4578,7 +4582,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         } catch (Exception ignored) {
         }
         String[] paths = new String[] {
-            "Scaccomatto_final/Scaccomatto/src/assets/extras/shield.png",
             "src/assets/extras/shield.png",
             "assets/extras/shield.png"
         };
@@ -4604,7 +4607,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         } catch (Exception ignored) {
         }
         String[] paths = new String[] {
-            "Scaccomatto_final/Scaccomatto/src/assets/spells/snowflake.png",
             "src/assets/spells/snowflake.png",
             "assets/spells/snowflake.png"
         };
@@ -4628,7 +4630,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
         if (fireballMissileFrames.isEmpty()) {
             String[] frameDirs = new String[] {
-                "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/nuke_series",
                 "src/assets/spellchesssprites/nuke_series",
                 "assets/spellchesssprites/nuke_series"
             };
@@ -4700,9 +4701,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             }
         }
         String[] filePaths = new String[] {
-            "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/nuke.png",
-            "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/nuke_sprite.png",
-            "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/nuke1.png",
             "src/assets/spellchesssprites/nuke.png",
             "src/assets/spellchesssprites/nuke_sprite.png",
             "src/assets/spellchesssprites/nuke1.png",
@@ -4739,7 +4737,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             }
         }
         String[] filePaths = new String[] {
-            "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/flashh.png",
             "src/assets/spellchesssprites/flashh.png",
             "assets/spellchesssprites/flashh.png"
         };
@@ -4778,8 +4775,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             }
         }
         String[] filePaths = new String[] {
-            "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/smoke.png",
-            "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/small smoke.png",
             "src/assets/spellchesssprites/smoke.png",
             "src/assets/spellchesssprites/small smoke.png",
             "assets/spellchesssprites/smoke.png"
@@ -4848,7 +4843,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             }
         }
         String[] filePaths = new String[] {
-            "Scaccomatto_final/Scaccomatto/src/assets/spellchesssprites/bomber_sillhouette.png",
             "src/assets/spellchesssprites/bomber_sillhouette.png",
             "assets/spellchesssprites/bomber_sillhouette.png"
         };
@@ -5358,7 +5352,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             if (!endermanTeleportSoundPlayed
                     && elapsed >= moveAtMs - ENDERMAN_SOUND_EARLY_MS) {
                 endermanTeleportSoundPlayed = true;
-                SoundManager.playExtraSound("ender.mp3");
+                SoundManager.playExtraSound("teleport.wav");
             }
             if (!endermanTeleportFxMoved
                     && elapsed >= moveAtMs) {
@@ -6797,7 +6791,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         } catch (Exception ignored) { }
         if (image == null) {
             String[] candidates = {
-                "Scaccomatto_final/Scaccomatto/src" + path,
                 "src" + path,
                 path.substring(1)
             };
@@ -8563,7 +8556,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
         boolean fogViewerIsWhite = fogRippleActive ? fogRippleViewerIsWhite : getFogViewerIsWhite();
         boolean fogRulesActive = fogRippleActive
-                || fogOfWarEnabled
+                || fogOfWarLive()
                 || isSpellFogActiveForViewer(fogViewerIsWhite);
         updateFogTransitionTarget(fogViewerIsWhite);
         boolean fogOverlayActive = fogVisualAlpha > 0.001f;
@@ -9808,7 +9801,7 @@ g2.dispose();
                         && epTarget.getShieldedTurnsRemaining() > 0;
             }
             if (triedShieldCapture) {
-                SoundManager.playExtraSound("block2-shield.mp3");
+                SoundManager.playExtraSound("shield_block.wav");
             }
             // illegal target: feedback
             IsLegal legalEval = new IsLegal(board);
@@ -10277,6 +10270,7 @@ g2.dispose();
         Window owner = SwingUtilities.getWindowAncestor(this);
         JDialog dialog = new JDialog(owner, "Pawn Promotion", Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setUndecorated(true);
+        dialog.getRootPane().putClientProperty(PopupSound.SILENT, Boolean.TRUE);   // part of the move, not a popup
         dialog.getRootPane().setBorder(BorderFactory.createLineBorder(Color.BLACK, 1, false));
 
         JPanel holder = new JPanel(new GridLayout(4, 1, 0, 0));
@@ -12170,10 +12164,6 @@ private int squareCenterY(int row, int col) {
         repaint();
     }
 
-public boolean applyPGNMove(String cleanMove) {
-    // TODO Auto-generated method stub
-    throw new UnsupportedOperationException("Unimplemented method 'applyPGNMove'");
-}
 
     // â”€â”€â”€ Custom checkmate popup with image â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private void showCheckmatePopup(boolean whiteWins, SoundManager.SoundHandle soundHandle) {

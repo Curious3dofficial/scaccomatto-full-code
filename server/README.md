@@ -110,9 +110,6 @@ The account server now requires `ACCOUNT_DB_USER` and `ACCOUNT_DB_PASS` to be se
 | `GOOGLE_OAUTH_REDIRECT_BASE_URL` | Base URL used for `/oauth/google/callback`; defaults to `http://127.0.0.1:$ACCOUNT_PORT`. |
 | `GOOGLE_CLIENT_ID` | Google OAuth client id. |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret. |
-| `DISCORD_CLIENT_ID` | Discord OAuth client id. |
-| `DISCORD_CLIENT_SECRET` | Discord OAuth client secret. |
-| `STEAM_API_KEY` | Steam Web API key used after OpenID verification. |
 
 ### Google OAuth Login
 

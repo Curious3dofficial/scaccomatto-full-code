@@ -565,6 +565,18 @@ public class SettingsPanel extends JPanel {
         private boolean shownOff;
         void setShownOff(boolean off) { if (shownOff != off) { shownOff = off; repaint(); } }
 
+        // 0.5 s cooldown: clicks right after a flip are ignored (hover still works)
+        private long lastFlip;
+        @Override protected void processMouseEvent(MouseEvent e) {
+            int id = e.getID();
+            boolean press = id == MouseEvent.MOUSE_PRESSED || id == MouseEvent.MOUSE_RELEASED || id == MouseEvent.MOUSE_CLICKED;
+            if (press && System.currentTimeMillis() - lastFlip < 500) {
+                if (id == MouseEvent.MOUSE_RELEASED) { getModel().setArmed(false); getModel().setPressed(false); }
+                return;
+            }
+            super.processMouseEvent(e);
+        }
+
         Toggle(boolean selected) {
             super("", selected);
             setFocusPainted(false);
@@ -577,7 +589,7 @@ public class SettingsPanel extends JPanel {
             setMaximumSize(d);
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             on.snap(selected);
-            addItemListener(e -> on.set(isSelected()));
+            addItemListener(e -> { on.set(isSelected()); lastFlip = System.currentTimeMillis(); });
             addActionListener(e -> SoundManager.playExtraSound("tap.wav"));
             addMouseListener(new MouseAdapter() {
                 @Override public void mouseEntered(MouseEvent e) { hover.set(true); }

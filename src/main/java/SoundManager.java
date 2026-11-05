@@ -55,6 +55,7 @@ public class SoundManager {
         // For instant mute: where the clip was paused, and whether it loops.
         private boolean looping = false;
         private int pausedFrame = 0;
+        private volatile boolean stopped = false;   // stop() was called (vs. the track simply ending)
 
         void setLooping(boolean looping) { this.looping = looping; }
 
@@ -85,6 +86,7 @@ public class SoundManager {
 
         /** Immediately stop and release the sound. Safe to call more than once. */
         public void stop() {
+            stopped = true;
             musicHandles.remove(this);
             if (clip != null) {
                 try { clip.stop(); clip.close(); } catch (Exception ignored) {}
@@ -210,6 +212,17 @@ public class SoundManager {
     /** Play a sound from src/assets/extras (or /assets/extras on classpath). */
     public static SoundHandle playExtraSound(String fileName) {
         if (!soundEnabled || fileName == null || fileName.trim().isEmpty()) return null;
+        if ("tap.wav".equals(fileName.trim()) && javax.swing.SwingUtilities.isEventDispatchThread()) {
+            // The button click waits a moment: if that same click opens a popup, the popup
+            // plays its own sound instead and the click is dropped (see PopupSound).
+            java.util.Set<java.awt.Window> before = PopupSound.showingDialogs();
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                if (PopupSound.newDialogSince(before)) return;
+                File f = resolveFileFromExtra("tap.wav");
+                if (f != null && soundEnabled) playResolvedFile("tap.wav", f);
+            });
+            return null;
+        }
         File soundFile = resolveFileFromExtra(fileName.trim());
         if (soundFile == null) return null;
 
@@ -290,6 +303,19 @@ public class SoundManager {
      * assets/music). Returns a SoundHandle whose stop() ends the loop.
      */
     public static SoundHandle playMusic(String fileName, float volume, int fadeInMs) {
+        return playMusic(fileName, volume, fadeInMs, null);
+    }
+
+    /**
+     * Plays a music track once (no loop) and runs {@code onEnd} on the Swing thread when it
+     * reaches its end by itself -- not when it's stopped or paused by the M mute. Used to
+     * play the themes one after another.
+     */
+    public static SoundHandle playMusicOnce(String fileName, float volume, int fadeInMs, Runnable onEnd) {
+        return playMusic(fileName, volume, fadeInMs, onEnd == null ? () -> { } : onEnd);
+    }
+
+    private static SoundHandle playMusic(String fileName, float volume, int fadeInMs, Runnable onEndOrLoop) {
         if (!soundEnabled || fileName == null || fileName.trim().isEmpty()) return null;
         File musicFile = resolveFileFromMusic(fileName.trim());
         if (musicFile == null) return null;
@@ -306,9 +332,23 @@ public class SoundManager {
                 setClipVolume(clip, volume);
             }
             clip.setFramePosition(0);
-            clip.loop(Clip.LOOP_CONTINUOUSLY);
+            boolean loop = onEndOrLoop == null;
             SoundHandle handle = new SoundHandle(clip);
-            handle.setLooping(true);
+            if (loop) {
+                clip.loop(Clip.LOOP_CONTINUOUSLY);
+            } else {
+                clip.addLineListener(ev -> {
+                    if (ev.getType() != LineEvent.Type.STOP || handle.stopped || handle.silencedByGlobalMute) return;
+                    if (clip.getFramePosition() < clip.getFrameLength() - 1) return;   // not at the end
+                    javax.swing.SwingUtilities.invokeLater(() -> {
+                        if (handle.stopped) return;
+                        handle.stop();
+                        onEndOrLoop.run();
+                    });
+                });
+                clip.start();
+            }
+            handle.setLooping(loop);
             handle.setTargetVolume(volume);
             handle.baseVolume = base;
             musicHandles.add(handle);
@@ -414,7 +454,6 @@ public class SoundManager {
         String[] candidates = {
             "src/assets/extras/" + fileName,
             "Scaccomatto/src/assets/extras/" + fileName,
-            "Scaccomatto_final/Scaccomatto/src/assets/extras/" + fileName,
             "assets/extras/" + fileName
         };
         for (String p : candidates) {
@@ -443,7 +482,7 @@ public class SoundManager {
         java.util.TreeSet<String> out = new java.util.TreeSet<>();
         String[] dirs = {
             "src/main/assets/music", "Scaccomatto/src/main/assets/music",
-            "Scaccomatto_final/Scaccomatto/src/main/assets/music", "src/assets/music", "assets/music"
+            "src/assets/music", "assets/music"
         };
         for (String d : dirs) {
             File[] files = new File(d).listFiles((dir, n) -> n.toLowerCase().endsWith(".wav"));
@@ -457,7 +496,14 @@ public class SoundManager {
             }
         } catch (Exception ignored) {
         }
-        if (out.isEmpty()) out.add("MenuTheme.wav");
+        // Inside the installed app the tracks are packed in the .jar, where there's no folder to
+        // list, so look for "Theme 1.wav", "Theme 2.wav", ... by name until one is missing.
+        for (int n = 1; n <= 50; n++) {
+            String name = "Theme " + n + ".wav";
+            if (SoundManager.class.getResource("/assets/music/" + name) == null) break;
+            out.add(name);
+        }
+        if (out.isEmpty()) out.add("Theme 1.wav");
         return new java.util.ArrayList<>(out);
     }
 
@@ -465,10 +511,8 @@ public class SoundManager {
         String[] candidates = {
             "src/main/assets/music/" + fileName,
             "Scaccomatto/src/main/assets/music/" + fileName,
-            "Scaccomatto_final/Scaccomatto/src/main/assets/music/" + fileName,
             "src/assets/music/" + fileName,
             "Scaccomatto/src/assets/music/" + fileName,
-            "Scaccomatto_final/Scaccomatto/src/assets/music/" + fileName,
             "assets/music/" + fileName
         };
         for (String p : candidates) {
@@ -496,7 +540,6 @@ public class SoundManager {
         String[] candidates = {
             "src/assets/spell chess sounds/" + fileName,
             "Scaccomatto/src/assets/spell chess sounds/" + fileName,
-            "Scaccomatto_final/Scaccomatto/src/assets/spell chess sounds/" + fileName,
             "assets/spell chess sounds/" + fileName
         };
         for (String p : candidates) {

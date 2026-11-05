@@ -538,8 +538,7 @@ public class puzzles extends JFrame {
             String[] candidates = {
                 "/assets/maps/" + mapName,
                 "assets/maps/" + mapName,
-                "src/assets/maps/" + mapName,
-                "Scaccomatto_final/Scaccomatto/src/assets/maps/" + mapName
+                "src/assets/maps/" + mapName
             };
 
             for (String c : candidates) {

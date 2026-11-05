@@ -71,13 +71,13 @@ public class OnlinePanel extends JPanel {
     };
     private static final String[] VARIANT_DESCRIPTIONS = {
             "Standard chess rules",
-            "Randomized back rank setup!",
+            "Randomized back rank setup",
             "Reach the center with your king",
             "Win by giving three checks",
-            "Captures explode nearby pieces!",
-            "Cast spells and see the magic uncover!",
+            "Captures explode nearby pieces",
+            "Cast spells and see the magic",
             "Limited vision outside piece range",
-            "Place the duck, chaos ensues"
+            "Move, then drop the duck in the way"
     };
     // Chess960 and Duck Chess shipped -- per "chess960 and duckchess
     // variants are already released btw, treat them like normal modes" --
@@ -517,6 +517,15 @@ public class OnlinePanel extends JPanel {
         back.addActionListener(event -> playExitThenBack());
         // Esc goes back the same way, exit animation included (see MainMenu.ESCAPE_BACK)
         putClientProperty(MainMenu.ESCAPE_BACK, (Runnable) back::doClick);
+        // Up / Down arrows pick the variant above / below, wrapping round at the ends
+        getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "variantUp");
+        getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0), "variantDown");
+        getActionMap().put("variantUp", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { moveVariantSelection(-1); }
+        });
+        getActionMap().put("variantDown", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { moveVariantSelection(1); }
+        });
         JPanel headerButtons = transparent(new FlowLayout(FlowLayout.RIGHT, 14, 0));
         headerButtons.add(back);
         header.add(headerButtons, BorderLayout.EAST);
@@ -761,7 +770,6 @@ public class OnlinePanel extends JPanel {
         } catch (Exception ignored) {
         }
         String[] paths = {
-                "Scaccomatto_final/Scaccomatto/src/assets/multiplayer/" + file,
                 "src/assets/multiplayer/" + file,
                 "assets/multiplayer/" + file
         };
@@ -1264,6 +1272,25 @@ public class OnlinePanel extends JPanel {
         if (timeControlReveal != null) timeControlReveal.setOpen(false);
         if (timeControlHeader != null) timeControlHeader.setExpanded(false);
         updateLobbyScrollbar();
+    }
+
+    /** Selects the next variant up (-1) or down (+1), wrapping round, skipping locked ones. */
+    private void moveVariantSelection(int step) {
+        int n = listCards.size();
+        if (n == 0) return;
+        int i = 0;
+        for (int k = 0; k < n; k++) {
+            if (selectedVariant != null && selectedVariant.equals(listCards.get(k).getClientProperty("variant_value"))) { i = k; break; }
+        }
+        for (int tries = 0; tries < n; tries++) {
+            i = ((i + step) % n + n) % n;
+            Object v = listCards.get(i).getClientProperty("variant_value");
+            if (v instanceof String && !AppSettings.variantLocked((String) v)) break;
+        }
+        JButton card = listCards.get(i);
+        if (card.getClientProperty("variant_value").equals(selectedVariant)) return;
+        card.doClick(0);
+        card.scrollRectToVisible(new Rectangle(0, 0, card.getWidth(), card.getHeight()));
     }
 
     private void updateVariantUI() {
@@ -4299,6 +4326,8 @@ public class OnlinePanel extends JPanel {
         for (String word : words) {
             if (result.length() > 0) result.append(' ');
             if (word.isEmpty()) continue;
+            // small words stay small after the first ("King of the Hill", like the other screens)
+            if (result.length() > 0 && (word.equals("of") || word.equals("the"))) { result.append(word); continue; }
             result.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
         }
         return result.toString();

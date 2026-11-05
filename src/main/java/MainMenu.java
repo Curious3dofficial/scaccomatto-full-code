@@ -221,7 +221,6 @@ public class MainMenu extends JFrame implements ActionListener {
     private JPanel localVariantPanel;
     private OnlinePanel onlineScreen;
     private AnalysisPanel analysisPanel;
-    private Image backgroundImage;
     private Image appLogoImage;
     // Settings > Gameplay > Default game mode (follows the setting when it changes)
     private String selectedLocalVariant = AppSettings.variantLocked(AppSettings.defaultGameMode())
@@ -281,7 +280,7 @@ public class MainMenu extends JFrame implements ActionListener {
     // already running, so calling it from every "back on a menu screen"
     // spot (including ones where it was never stopped, like Puzzles or the
     // bot-select screen) never restarts/doubles the track.
-    private static final String MENU_MUSIC_FILE = "MenuTheme.wav";
+    private static final String MENU_MUSIC_FILE = "Theme 1.wav";
     private static final float MENU_MUSIC_VOLUME = 0.5f;
     private static final int MENU_MUSIC_FADE_IN_MS = 900;
     private static final int COLD_LAUNCH_MUSIC_DELAY_MS = 4000;
@@ -297,12 +296,35 @@ public class MainMenu extends JFrame implements ActionListener {
     // permanently once the one-shot timer started in the constructor fires.
     private boolean coldLaunchMusicDelayActive = true;
 
+    // "All themes": which one plays next (Theme 1, 2, 3, 4, then round again)
+    private static int nextThemeIndex = 0;
+
     private void ensureMenuMusicPlaying() {
         if (menuMusicHandle != null || coldLaunchMusicDelayActive) return;
-        menuMusicHandle = SoundManager.playMusic(AppSettings.musicTrack(), MENU_MUSIC_VOLUME, MENU_MUSIC_FADE_IN_MS);
+        if (AppSettings.MUSIC_ROTATE.equals(AppSettings.musicTrack())) {
+            playNextTheme();
+            if (menuMusicHandle != null) return;
+        } else {
+            menuMusicHandle = SoundManager.playMusic(AppSettings.musicTrack(), MENU_MUSIC_VOLUME, MENU_MUSIC_FADE_IN_MS);
+        }
         if (menuMusicHandle == null) {       // a track that's gone: fall back to the bundled theme
             menuMusicHandle = SoundManager.playMusic(MENU_MUSIC_FILE, MENU_MUSIC_VOLUME, MENU_MUSIC_FADE_IN_MS);
         }
+    }
+
+    /** Plays the next theme once; when it ends by itself, the one after it starts. */
+    private void playNextTheme() {
+        java.util.List<String> themes = SoundManager.musicTracks();
+        if (themes.isEmpty()) return;
+        String file = themes.get(nextThemeIndex % themes.size());
+        nextThemeIndex = (nextThemeIndex + 1) % themes.size();
+        SoundManager.SoundHandle[] self = new SoundManager.SoundHandle[1];
+        self[0] = SoundManager.playMusicOnce(file, MENU_MUSIC_VOLUME, MENU_MUSIC_FADE_IN_MS, () -> {
+            if (menuMusicHandle != self[0]) return;   // left the menus (or switched track) meanwhile
+            menuMusicHandle = null;
+            playNextTheme();
+        });
+        menuMusicHandle = self[0];
     }
 
     /** Settings picked another background track: swap to it if music is playing. */
@@ -450,8 +472,6 @@ public class MainMenu extends JFrame implements ActionListener {
     // per-frame loop).
     private ImageGhost[] botSelectEntranceGhosts;
 
-    private AccountModalPane accountOverlay;
-    private Timer accountOverlayTimer;
     private static final int ACCOUNT_OVERLAY_ANIMATION_MS = 300;
     private StartupIntroPane startupIntroPane;
     private Timer startupIntroTimer;
@@ -516,7 +536,6 @@ public class MainMenu extends JFrame implements ActionListener {
             }
         });
         
-        backgroundImage = loadBackgroundImage();
         appLogoImage = loadAppLogoImage();
         if (appLogoImage != null) {
             Image windowIcon = appLogoImage.getScaledInstance(256, 256, Image.SCALE_SMOOTH);
@@ -596,14 +615,7 @@ public class MainMenu extends JFrame implements ActionListener {
 
             @Override
             public void onAccount() {
-                // The real sign-in/create-account screen (AccountPanel,
-                // showAccountOverlay()) stays in the project, fully working,
-                // just not wired to this button for now -- per "i asked for
-                // an empty popup", a plain Classic placeholder is what shows
-                // here instead, the same "GOT IT" recipe the Lessons button
-                // uses. Swap this back to showAccountOverlay() whenever the
-                // account system is ready to go live.
-                AccountPopup.show(MainMenu.this); // new themed Account popup (UI only, dummy data for now)
+                AccountPopup.show(MainMenu.this);   // the Account popup (or "coming soon" with no server)
             }
 
             @Override
@@ -1116,7 +1128,6 @@ public class MainMenu extends JFrame implements ActionListener {
         } catch (IOException ignored) {
         }
         String[] paths = {
-            "Scaccomatto_final/Scaccomatto/src/assets/screens/alekhine.png",
             "src/assets/screens/alekhine.png",
             "assets/screens/alekhine.png"
         };
@@ -1599,10 +1610,6 @@ public class MainMenu extends JFrame implements ActionListener {
         am.put("globalBack", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (accountOverlay != null && accountOverlay.isVisible()) {
-                    closeAccountOverlay();
-                    return;
-                }
                 Runnable screenBack = findEscapeBack(mainPanel);
                 if (screenBack != null) {
                     screenBack.run();       // the screen's own back button, animation and all
@@ -1632,14 +1639,10 @@ public class MainMenu extends JFrame implements ActionListener {
             public void actionPerformed(ActionEvent event) {
                 if (!"MENU".equals(currentCard)
                         || startupIntroRunning
-                        || exitDialogOpen
-                        || (accountOverlay != null && accountOverlay.isVisible())) {
+                        || exitDialogOpen) {
                     return;
                 }
-                // Same placeholder redirect as the account button -- see
-                // onAccount() above. showAccountOverlay() still works, this
-                // hotkey just isn't pointed at it for now.
-                AccountPopup.show(MainMenu.this); // new themed Account popup (UI only, dummy data for now)
+                AccountPopup.show(MainMenu.this);   // same as the account button
             }
         });
     }
@@ -1750,285 +1753,6 @@ public class MainMenu extends JFrame implements ActionListener {
         screen.requestFocusInWindow();
     }
 
-    private void showAccountOverlay() {
-        if (accountOverlay != null && accountOverlay.isVisible()) return;
-        SoundManager.playExtraSound("tap.wav");
-        if (accountOverlayTimer != null) {
-            accountOverlayTimer.stop();
-            accountOverlayTimer = null;
-        }
-
-        accountOverlay = new AccountModalPane(
-                new AccountPanel(this),
-                backgroundImage);
-        accountOverlay.setAnimationProgress(0f);
-        setGlassPane(accountOverlay);
-        accountOverlay.setBounds(
-                0,
-                0,
-                getRootPane().getWidth(),
-                getRootPane().getHeight());
-        accountOverlay.prepareBackground();
-        accountOverlay.doLayout();
-        accountOverlay.validate();
-
-        accountOverlay.setVisible(true);
-        getRootPane().revalidate();
-        getRootPane().repaint();
-        accountOverlay.paintImmediately(accountOverlay.getBounds());
-        // Hide the Board Room screen only after the overlay has pixels ready.
-        modeSelectScreen.setVisible(false);
-        accountOverlay.repaint();
-        accountOverlay.requestFocusInWindow();
-
-        long startedAt = System.nanoTime();
-        accountOverlayTimer = AnimationTiming.createUiTimer(event -> {
-            float progress = AnimationTiming.progress(
-                    startedAt,
-                    ACCOUNT_OVERLAY_ANIMATION_MS);
-            accountOverlay.setAnimationProgress(progress);
-            if (progress < 1f) return;
-            ((Timer) event.getSource()).stop();
-            accountOverlayTimer = null;
-            accountOverlay.setAnimationProgress(1f);
-        });
-        accountOverlayTimer.start();
-    }
-
-    public void closeAccountOverlay() {
-        if (accountOverlay == null || !accountOverlay.isVisible()) return;
-        if (accountOverlayTimer != null) {
-            accountOverlayTimer.stop();
-            accountOverlayTimer = null;
-        }
-
-        AccountModalPane closingOverlay = accountOverlay;
-        float closingStartProgress = closingOverlay.getAnimationProgress();
-        closingOverlay.setClosing(true);
-        long startedAt = System.nanoTime();
-        accountOverlayTimer = AnimationTiming.createUiTimer(event -> {
-            float progress = AnimationTiming.progress(
-                    startedAt,
-                    Math.max(
-                            1,
-                            Math.round(
-                                    ACCOUNT_OVERLAY_ANIMATION_MS
-                                            * closingStartProgress)));
-            closingOverlay.setAnimationProgress(
-                    closingStartProgress * (1f - progress));
-            if (progress < 1f) return;
-            ((Timer) event.getSource()).stop();
-            accountOverlayTimer = null;
-            closingOverlay.setVisible(false);
-            if (accountOverlay == closingOverlay) accountOverlay = null;
-            modeSelectScreen.setVisible(true);
-            mainPanel.revalidate();
-            mainPanel.repaint();
-            mainPanel.requestFocusInWindow();
-        });
-        accountOverlayTimer.start();
-    }
-
-    private static final class AccountModalPane extends JComponent {
-        private final AccountPanel content;
-        private final Image backgroundImage;
-        private BufferedImage cachedBackground;
-        private int cachedBackgroundWidth = -1;
-        private int cachedBackgroundHeight = -1;
-        private float animationProgress;
-        private boolean closing;
-
-        AccountModalPane(AccountPanel content, Image backgroundImage) {
-            this.content = content;
-            this.backgroundImage = backgroundImage;
-            setLayout(null);
-            setOpaque(false);
-            setFocusable(true);
-            add(content);
-            addMouseListener(new MouseAdapter() {
-                @Override
-                public void mousePressed(MouseEvent event) {
-                    event.consume();
-                }
-            });
-        }
-
-        void setClosing(boolean closing) {
-            this.closing = closing;
-        }
-
-        float getAnimationProgress() {
-            return animationProgress;
-        }
-
-        void prepareBackground() {
-            getCachedBackground();
-        }
-
-        void setAnimationProgress(float progress) {
-            animationProgress = Math.max(0f, Math.min(1f, progress));
-            repaint();
-        }
-
-        @Override
-        public void doLayout() {
-            Dimension preferred = content.getPreferredSize();
-            int maxWidth = Math.max(1, getWidth() - 100);
-            int maxHeight = Math.max(1, getHeight() - 90);
-            float fit = Math.min(
-                    1f,
-                    Math.min(
-                            maxWidth / (float) preferred.width,
-                            maxHeight / (float) preferred.height));
-            int width = Math.max(1, Math.round(preferred.width * fit));
-            int height = Math.max(1, Math.round(preferred.height * fit));
-            int centeredY = (getHeight() - height) / 2;
-            int restingY = Math.min(
-                    Math.max(18, getHeight() - height - 18),
-                    centeredY + 20);
-            content.setBounds(
-                    (getWidth() - width) / 2,
-                    restingY,
-                    width,
-                    height);
-            content.doLayout();
-        }
-
-        @Override
-        protected void paintComponent(Graphics graphics) {
-            Graphics2D g2 = (Graphics2D) graphics.create();
-            BufferedImage background = getCachedBackground();
-            if (background != null) {
-                g2.drawImage(background, 0, 0, null);
-            } else {
-                // The only image this pane ever tries to load is
-                // "/assets/bg2.png", which does not exist anywhere in the
-                // project, so this fallback is what actually paints every
-                // time right now -- a flat Color.BLACK fill, which read as
-                // a broken black void behind the Classic white card. A
-                // deep warm gradient (the same warm-dark family the
-                // Classic card's own shadow uses) reads as a deliberate
-                // backdrop instead, with no new image dependency.
-                g2.setPaint(new GradientPaint(
-                        0, 0, UiTheme.same(new Color(36, 27, 18)),
-                        0, getHeight(), UiTheme.same(new Color(14, 10, 7))));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-            }
-
-            float eased = smootherStep(animationProgress);
-            int shadeAlpha = Math.round(152f * eased);
-            if (shadeAlpha > 0) {
-                g2.setColor(UiTheme.c(0, 3, 5, shadeAlpha));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-            }
-
-            // A cool translucent wash separates the static scene from the UI.
-            if (eased > 0f) {
-                g2.setPaint(new GradientPaint(
-                        0, 0, UiTheme.c(197, 221, 226, Math.round(26f * eased)),
-                        0, getHeight(), UiTheme.c(5, 13, 17, Math.round(76f * eased))));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-            }
-
-            g2.dispose();
-        }
-
-        private BufferedImage getCachedBackground() {
-            int width = getWidth();
-            int height = getHeight();
-            if (backgroundImage == null || width <= 0 || height <= 0) return null;
-            if (cachedBackground != null
-                    && cachedBackgroundWidth == width
-                    && cachedBackgroundHeight == height) {
-                return cachedBackground;
-            }
-
-            int imageWidth = backgroundImage.getWidth(this);
-            int imageHeight = backgroundImage.getHeight(this);
-            if (imageWidth <= 0 || imageHeight <= 0) return null;
-
-            int blurWidth = Math.max(1, width / 2);
-            int blurHeight = Math.max(1, height / 2);
-            BufferedImage softened = new BufferedImage(
-                    blurWidth,
-                    blurHeight,
-                    BufferedImage.TYPE_INT_RGB);
-            Graphics2D softenGraphics = softened.createGraphics();
-            softenGraphics.setRenderingHint(
-                    RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            double scale = Math.max(
-                    blurWidth / (double) imageWidth,
-                    blurHeight / (double) imageHeight);
-            int drawWidth = Math.max(1, (int) Math.ceil(imageWidth * scale));
-            int drawHeight = Math.max(1, (int) Math.ceil(imageHeight * scale));
-            softenGraphics.drawImage(
-                    backgroundImage,
-                    (blurWidth - drawWidth) / 2,
-                    (blurHeight - drawHeight) / 2,
-                    drawWidth,
-                    drawHeight,
-                    this);
-            softenGraphics.dispose();
-
-            BufferedImage scaled = new BufferedImage(
-                    width,
-                    height,
-                    BufferedImage.TYPE_INT_RGB);
-            Graphics2D cacheGraphics = scaled.createGraphics();
-            cacheGraphics.setRenderingHint(
-                    RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            cacheGraphics.setRenderingHint(
-                    RenderingHints.KEY_RENDERING,
-                    RenderingHints.VALUE_RENDER_SPEED);
-            cacheGraphics.drawImage(
-                    softened,
-                    0,
-                    0,
-                    width,
-                    height,
-                    this);
-            cacheGraphics.dispose();
-
-            cachedBackground = scaled;
-            cachedBackgroundWidth = width;
-            cachedBackgroundHeight = height;
-            return cachedBackground;
-        }
-
-        @Override
-        protected void paintChildren(Graphics graphics) {
-            float eased = smootherStep(animationProgress);
-            if (eased <= 0.001f) return;
-            Graphics2D g2 = (Graphics2D) graphics.create();
-            g2.setComposite(AlphaComposite.SrcOver.derive(eased));
-            float motion = closing ? eased : easeOutBack(animationProgress);
-            float scale = 0.985f + 0.015f * Math.max(0f, Math.min(1.06f, motion));
-            int centerX = content.getX() + content.getWidth() / 2;
-            int centerY = content.getY() + content.getHeight() / 2;
-            g2.translate(centerX, centerY);
-            g2.scale(scale, scale);
-            g2.translate(-centerX, -centerY);
-            g2.translate(0, Math.round(18f * (1f - eased)));
-            super.paintChildren(g2);
-            g2.dispose();
-        }
-
-        private float easeOutBack(float value) {
-            float t = Math.max(0f, Math.min(1f, value));
-            float c1 = closing ? 0f : 1.15f;
-            float c3 = c1 + 1f;
-            return 1f + c3 * (float) Math.pow(t - 1f, 3)
-                    + c1 * (float) Math.pow(t - 1f, 2);
-        }
-
-        private static float smootherStep(float value) {
-            float t = Math.max(0f, Math.min(1f, value));
-            return t * t * t * (t * (t * 6f - 15f) + 10f);
-        }
-    }
-
     // Instant version (screen fully covered straight away) -- kept for any
     // caller that needs it.
     public void beginGameLaunchOverlay() {
@@ -2134,7 +1858,7 @@ public class MainMenu extends JFrame implements ActionListener {
                         // A constructor failure used to leave the opaque launch curtain
                         // covering the menu forever because only ChessGame's successful
                         // constructor path calls finishGameLaunchOverlay().
-                        failure.printStackTrace();
+                        CrashLog.record(Thread.currentThread(), failure);
                         finishGameLaunchOverlay(null, 0);
                         String detail = failure.getMessage();
                         GameDialogs.info(this, "Game Startup Error", String.valueOf("The game could not be started."
@@ -2912,10 +2636,10 @@ public class MainMenu extends JFrame implements ActionListener {
                 if (action != null) action.run();
             } catch (RuntimeException failure) {
                 runtimeFailure = failure;
-                failure.printStackTrace();
+                CrashLog.record(Thread.currentThread(), failure);
             } catch (Error failure) {
                 errorFailure = failure;
-                failure.printStackTrace();
+                CrashLog.record(Thread.currentThread(), failure);
             }
             // 2s closed in total = hold + bar fill + pause on full
             finishGameLaunchOverlay(null,
@@ -3571,36 +3295,6 @@ public class MainMenu extends JFrame implements ActionListener {
         }
     }
 
-    private Image loadBackgroundImage() {
-        try {
-            URL res = getClass().getResource("/assets/bg2.png");
-            if (res != null) {
-                return ImageIO.read(res);
-            }
-        } catch (IOException e) {
-            System.err.println("Error loading background image from resources: " + e.getMessage());
-        }
-
-        String[] paths = {
-            "src/assets/bg2.png",
-            "Scaccomatto_final/Scaccomatto/src/assets/bg2.png",
-            "assets/bg2.png",
-            "bg2.png"
-        };
-
-        for (String p : paths) {
-            File f = new File(p);
-            if (!f.exists()) continue;
-            try {
-                return ImageIO.read(f);
-            } catch (IOException e) {
-                System.err.println("Error loading background image from " + p + ": " + e.getMessage());
-            }
-        }
-
-        return null;
-    }
-
     private Image loadAppLogoImage() {
         String[] candidates = {
             "/assets/icon.png",
@@ -3619,10 +3313,8 @@ public class MainMenu extends JFrame implements ActionListener {
         }
 
         String[] fs = {
-            "Scaccomatto_final/Scaccomatto/src/assets/pieces/wk.png",
             "src/assets/pieces/wk.png",
             "assets/pieces/wk.png",
-            "Scaccomatto_final/Scaccomatto/src/assets/logo.png",
             "src/assets/logo.png",
             "assets/logo.png"
         };
@@ -3895,7 +3587,7 @@ public class MainMenu extends JFrame implements ActionListener {
             new LocalVariantOption("Atomic", "Captures explode nearby pieces", "Atomic", "atomic.png", true),
             new LocalVariantOption("Spell Chess", "Cast spells and see the magic", "Spell Chess", "spellchess.png", true),
             new LocalVariantOption("Fog of War", "Limited vision outside piece range", "Fog of War", "fogofwar.png", true),
-            new LocalVariantOption("Duck Chess", "Normal mode card enabled", "Duck Chess", "duck.png", true)
+            new LocalVariantOption("Duck Chess", "Move, then drop the duck in the way", "Duck Chess", "duck.png", true)
         };
 
         Color normalBg = UiTheme.c(255, 255, 255);
@@ -4012,6 +3704,31 @@ public class MainMenu extends JFrame implements ActionListener {
                 public void actionPerformed(ActionEvent e) {
                     if (AppSettings.variantLocked(variantValue)) return;
                     selectedLocalVariant = variantValue;
+                    refreshLocalVariantSelection();
+                }
+            });
+        }
+        // Arrow keys move the selection around the 2-column grid and wrap round:
+        // left/right go card by card (Duck Chess -> Classic), up/down a row at a time
+        // (bottom row -> top row). A locked card is skipped.
+        int[][] arrows = {{KeyEvent.VK_LEFT, -1}, {KeyEvent.VK_RIGHT, 1}, {KeyEvent.VK_UP, -2}, {KeyEvent.VK_DOWN, 2}};
+        for (int[] arrow : arrows) {
+            final int step = arrow[1];
+            String actionKey = "moveLocalVariant" + step;
+            im.put(KeyStroke.getKeyStroke(arrow[0], 0), actionKey);
+            am.put(actionKey, new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    int n = variantOrder.length;
+                    int i = java.util.Arrays.asList(variantOrder).indexOf(selectedLocalVariant);
+                    if (i < 0) i = 0;
+                    for (int tries = 0; tries < n; tries++) {
+                        i = ((i + step) % n + n) % n;
+                        if (!AppSettings.variantLocked(variantOrder[i])) break;
+                    }
+                    if (variantOrder[i].equals(selectedLocalVariant)) return;
+                    SoundManager.playExtraSound("tap.wav");
+                    selectedLocalVariant = variantOrder[i];
                     refreshLocalVariantSelection();
                 }
             });
@@ -5493,10 +5210,7 @@ public class MainMenu extends JFrame implements ActionListener {
                 break;
 
             case "ACCOUNT":
-                // Same placeholder redirect as the account button -- see
-                // onAccount() above. showAccountOverlay() still works, this
-                // action command just isn't pointed at it for now.
-                AccountPopup.show(MainMenu.this); // new themed Account popup (UI only, dummy data for now)
+                AccountPopup.show(MainMenu.this);   // same as the account button
                 break;
                 
             case "START_ANALYSIS":
@@ -5647,6 +5361,12 @@ public class MainMenu extends JFrame implements ActionListener {
     // adding another one here would double it up.
     // Package-private (was private) so OnlinePanel can reuse it.
     void showUnderDevelopmentDialog(String featureName) {
+        showUnderDevelopmentDialog(featureName,
+                featureName + " is on its way in a future update. Check back soon!");
+    }
+
+    /** The same card with its own message under the name (may hold simple HTML like <b>). */
+    void showUnderDevelopmentDialog(String featureName, String message) {
         JDialog dialog = new JDialog(this, true);
         dialog.setUndecorated(true);
 
@@ -5697,13 +5417,6 @@ public class MainMenu extends JFrame implements ActionListener {
         copy.setOpaque(false);
         copy.setLayout(new BoxLayout(copy, BoxLayout.Y_AXIS));
 
-        // "COMING SOON" above the name, the same small gold heading the locked-bot popup uses
-        JLabel eyebrow = new JLabel("COMING SOON");
-        eyebrow.setFont(UiFonts.subtext(24f));
-        eyebrow.setForeground(UiTheme.c(177, 134, 58));
-        eyebrow.setAlignmentX(Component.CENTER_ALIGNMENT);
-        copy.add(eyebrow);
-        copy.add(Box.createVerticalStrut(8));
 
         JLabel title = crispLabel(featureName);
         title.setFont(variantDisplayFont(52f));
@@ -5714,7 +5427,7 @@ public class MainMenu extends JFrame implements ActionListener {
 
         // Plain, friendly copy -- no "under development" boilerplate.
         JLabel body = new JLabel("<html><div style='text-align:center; width:480px;'>"
-                + featureName + " is on its way in a future update. Check back soon!</div></html>");
+                + message + "</div></html>");
         body.setFont(UiFonts.subtext(30f));
         body.setForeground(UiTheme.c(130, 117, 98));
         body.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -5830,9 +5543,7 @@ public class MainMenu extends JFrame implements ActionListener {
         }
 
         String[] fs = {
-            "Scaccomatto_final/Scaccomatto/src/assets/avatars/" + base + ".png",
-            "Scaccomatto_final/Scaccomatto/src/assets/avatars/" + base + ".jpg",
-            "Scaccomatto_final/Scaccomatto/src/assets/avatars/" + base + ".jpeg"
+            "src/main/assets/avatars/" + base + ".jpeg"
         };
         for (String path : fs) {
             try {
@@ -5889,6 +5600,7 @@ public class MainMenu extends JFrame implements ActionListener {
                 Object lockValue = getClientProperty("variant_value");
                 boolean variantLocked = getClientProperty("variant_card_title") instanceof String
                         && lockValue instanceof String && AppSettings.variantLocked((String) lockValue);
+                final float cardAlpha = fadeAlpha;      // the SOON tag isn't greyed with the card
                 if (variantLocked) fadeAlpha *= 0.45f;
                 if (fadeAlpha <= 0.001f) {
                     g2.dispose();
@@ -6027,22 +5739,6 @@ public class MainMenu extends JFrame implements ActionListener {
                     g2.setColor(UiTheme.c(28, 22, 14));
                     int titleY = blockTop + titleMetrics.getAscent();
                     g2.drawString((String) variantTitle, contentX, titleY);
-                    if (variantLocked) {
-                        // little "SOON" tag after the name
-                        Font tagFont = variantDisplayFont(13f * hRatio);
-                        FontMetrics tm = g2.getFontMetrics(tagFont);
-                        int tagH = Math.round(22 * hRatio);
-                        int tagW = tm.stringWidth("SOON") + Math.round(18 * hRatio);
-                        int tagX = contentX + titleMetrics.stringWidth((String) variantTitle) + Math.round(12 * hRatio);
-                        int tagY = titleY - titleMetrics.getAscent() / 2 - tagH / 2 + Math.round(2 * hRatio);
-                        g2.setColor(UiTheme.c(214, 206, 192));
-                        g2.fillRoundRect(tagX, tagY, tagW, tagH, tagH, tagH);
-                        g2.setFont(tagFont);
-                        g2.setColor(UiTheme.c(96, 86, 72));
-                        g2.drawString("SOON", tagX + Math.round(9 * hRatio),
-                                tagY + tagH / 2 + (tm.getAscent() - tm.getDescent()) / 2);
-                        g2.setFont(titleFont);
-                    }
 
                     if (hasSubtitle) {
                         g2.setFont(subtitleFont);
@@ -6056,6 +5752,16 @@ public class MainMenu extends JFrame implements ActionListener {
                     // removed per "remove this icon" -- selectedGlow still
                     // drives the card's tinted background/gold border/thicker
                     // stroke above, just no longer this extra badge on top.
+
+                    // a variant that isn't finished yet: the gold "SOON" tag in the card's
+                    // top-right corner, at full strength even though the card is greyed
+                    if (variantLocked) {
+                        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, cardAlpha))));
+                        float tagH = 24 * hRatio;
+                        float tagW = SoonBadge.width(g2, tagH);
+                        SoonBadge.paintCentred(g2, inset + w - tagW / 2f - 12 * hRatio, inset + tagH / 2f + 10 * hRatio,
+                                tagH, UiTheme.c(Color.WHITE));
+                    }
                     g2.dispose();
                     return;
                 }
@@ -6645,7 +6351,6 @@ public class MainMenu extends JFrame implements ActionListener {
     Icon loadVariantIcon(String file, int size) {
         if (file == null || file.trim().isEmpty()) return null;
         String[] fs = {
-            "Scaccomatto_final/Scaccomatto/src/assets/multiplayer/" + file,
             "src/assets/multiplayer/" + file,
             "assets/multiplayer/" + file
         };
@@ -7047,14 +6752,6 @@ public class MainMenu extends JFrame implements ActionListener {
 
     @Override
     public void dispose() {
-        if (accountOverlayTimer != null) {
-            accountOverlayTimer.stop();
-            accountOverlayTimer = null;
-        }
-        if (accountOverlay != null) {
-            accountOverlay.setVisible(false);
-            accountOverlay = null;
-        }
         if (applicationTopBarMouseTracker != null) {
             Toolkit.getDefaultToolkit().removeAWTEventListener(applicationTopBarMouseTracker);
             applicationTopBarMouseTracker = null;

@@ -1,131 +1,64 @@
-# Scaccomatto Server — What Changed
+<p align="center"><img src="docs/img/wordmark.png" alt="Scaccomatto" width="520"></p>
 
-*Account service updates · June 2026*
+<p align="center"><b>Chess, with personality.</b><br>
+A free chess game for Windows and Linux by Alekhine Studios Private Limited.</p>
 
----
+<p align="center"><a href="../../releases/latest"><b>Download the latest version</b></a></p>
 
-# Security
+<p align="center"><img src="docs/img/boardroom.jpg" alt="Scaccomatto's Board Room" width="760"></p>
 
-## Required database credentials
-Server now reads credentials from environment variables and refuses to start if they are missing.
+## What's in it
 
-No silent fallback to an empty password.
+- **Eight variants.** Classic, Chess960, King of the Hill, Three-check, Atomic, Fog of War and Duck Chess, with Spell Chess coming later.
+- **Bots with a story.** Each one plays its own way, from Gary, who grabs anything you leave hanging, up to Margot.
+- **Analysis and Game Review.** Load a game, step through it, and see which moves were good and which ones lost it.
+- **Play a friend.** On the same computer, or on the same Wi-Fi with a six-letter join code.
+- **Achievements**, three piece sets, board themes, and light and dark mode.
 
----
+The engine, **Argus**, was written from scratch for Scaccomatto. It plays every bot and runs the analysis.
 
-## Admin role system
-All sensitive operations now require admin status:
+## Installing
 
-- Ban users
-- Delete accounts
-- List users
-- Reset passwords
+**Windows:** run `Scaccomatto-Setup-<version>.exe`. If Windows says "Windows protected your PC", click *More info*, then *Run anyway* (the installer isn't signed with a paid certificate yet).
 
-Non-admins receive:
+**Linux (Debian, Ubuntu, Mint):**
 
-```http
-403 Forbidden
+```bash
+sudo apt install ./scaccomatto_<version>_amd64.deb
 ```
 
-No public bootstrap endpoint exists.
+Both installers include their own Java, so there's nothing else to install.
 
-The first admin must be promoted manually through SQL.
+## Building it yourself
 
----
+You need JDK 17 or newer and Maven.
 
-## Ban enforcement at login
-Banned accounts are rejected immediately during authentication before any session is issued.
-
----
-
-## Rate limiting on auth endpoints
-Authentication endpoints are limited to:
-
-- 5 attempts per minute per IP
-
-Server returns:
-
-```http
-429 Too Many Requests
+```bash
+mvn package                 # builds target/scaccomatto-<version>.jar
+java -jar target/scaccomatto-<version>.jar
+bash build-installer.sh     # Linux .deb, in installers/
 ```
 
-Stale entries are cleaned automatically.
+The Windows installer is built by GitHub Actions (`.github/workflows/windows-installer.yml`): run it from the Actions tab, or push a tag like `v1.0.1` to build it and attach it to a release. Before each release, raise the version in `pom.xml` and `AppVersion.java`, otherwise Windows treats the new installer as the same version.
 
----
+## Project layout
 
-# New Features
+| Folder | What's in it |
+|---|---|
+| `src/main/java` | The game (Swing). `Main.java` starts it. |
+| `src/main/java/argus` | Argus, the chess engine |
+| `src/main/assets` | Pictures, sounds, music, fonts, the opening book |
+| `src/test/java` | Unit tests (`mvn test`) |
+| `server` | The account server, for a future version with accounts |
+| `docs` | The download website (GitHub Pages) |
+| `packaging` | Installer icon and the Windows build workflow |
 
-## Settings persistence
-Game settings are now saved to user accounts and restored automatically at login.
+## Privacy and credits
 
-Guest users still use temporary local preferences.
+Scaccomatto doesn't collect anything; see [docs/privacy.html](docs/privacy.html). Music, sounds, piece sets and fonts by other people are listed in [docs/credits.html](docs/credits.html) and in the app under Settings → About.
 
----
+## Contact
 
-## Remember me
-Long-lived authentication tokens (30 days) allow automatic login on future launches.
+alekhinestudios@gmail.com
 
-Security behavior:
-- Tokens rotate on every use
-- Tokens are deleted server-side on logout
-
----
-
-## Log out all devices
-New endpoint removes all active remember tokens across every device.
-
----
-
-## Request logging
-Every request is now logged with:
-
-- HTTP method
-- Endpoint path
-- IP address
-- Response status
-- Response time
-
-Log files rotate daily.
-
----
-
-## Health endpoint
-
-```http
-GET /api/health
-```
-
-Returns server status information.
-
-Useful for:
-- Monitoring
-- Uptime checks
-- Load balancers
-
----
-
-## Admin endpoints
-
-```http
-/api/admin/*
-```
-
-New administrative features:
-- List users
-- Delete accounts
-- Ban players
-
-All endpoints are role-checked through `AdminService`.
-
----
-
-# Schema Migrations
-
-## V3 — V5 added
-
-New migrations include:
-- Admin flags
-- User settings column
-- Remember tokens table
-
-All migrations execute automatically on startup in filename order.
+© 2026 Alekhine Studios Private Limited

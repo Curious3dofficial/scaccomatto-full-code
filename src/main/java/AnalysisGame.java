@@ -2973,7 +2973,7 @@ public class AnalysisGame extends JFrame {
                     });
 
                 } catch (IOException e) {
-                    if (!shutdownRequested) e.printStackTrace();
+                    if (!shutdownRequested) CrashLog.record(Thread.currentThread(), e);
                 } catch (RuntimeException e) {
                     // the board changed under us mid-read (it's read off the UI thread);
                     // just try again on the next request instead of killing the worker

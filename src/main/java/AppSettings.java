@@ -44,6 +44,19 @@ final class AppSettings {
     static String str(String key, String def) { return NODE.get(key, def); }
     static void setStr(String key, String v) { NODE.put(key, v == null ? "" : v); changed(); }
 
+    /**
+     * The name this computer plays under when nobody is signed in, like "Guest482913".
+     * Made up once and then kept, so the same player always shows up with the same name.
+     */
+    static synchronized String guestName() {
+        String n = NODE.get("guestName", "");
+        if (n.isBlank()) {
+            n = "Guest" + (100000 + new java.util.Random().nextInt(900000));
+            NODE.put("guestName", n);
+        }
+        return n;
+    }
+
     // ── Piece set ────────────────────────────────────────────────────────────
 
     /** Settings > Board > Piece set: Classic, Neo or Minimal. */
@@ -115,7 +128,19 @@ final class AppSettings {
     static int masterVolume() { return integer("masterVolume", 100); }
     static int musicVolume() { return integer("musicVolume", 100); }
     static int effectsVolume() { return integer("effectsVolume", 100); }
-    static String musicTrack() { return str("musicTrack", "MenuTheme.wav"); }
+    /** The menu music: one theme's file name, or {@link #MUSIC_ROTATE} for all of them in turn (the default). */
+    static String musicTrack() { return str("musicTrack", MUSIC_ROTATE); }
+    static final String MUSIC_ROTATE = "rotate";
+
+    /**
+     * Every launch starts the same way: all the themes in turn, master and music volume at
+     * 100%. Changes in Settings last until the app is closed, then aren't remembered.
+     */
+    static void resetAudioForLaunch() {
+        NODE.put("musicTrack", MUSIC_ROTATE);
+        NODE.putInt("masterVolume", 100);
+        NODE.putInt("musicVolume", 100);
+    }
 
     // ── Board & pieces (shared with the in-game settings panel) ─────────────
 

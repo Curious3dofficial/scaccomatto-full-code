@@ -805,7 +805,13 @@ final class AnalysisTheme {
             setMaximumSize(new Dimension(50, 28));
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             addMouseListener(new MouseAdapter() {
-                @Override public void mouseClicked(MouseEvent e) { setOn(!Toggle.this.on, true); }
+                private long lastFlip;
+                @Override public void mouseClicked(MouseEvent e) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastFlip < 500) return;      // 0.5 s cooldown between flips
+                    lastFlip = now;
+                    setOn(!Toggle.this.on, true);
+                }
             });
         }
 

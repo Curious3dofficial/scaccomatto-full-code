@@ -646,10 +646,7 @@ public class AchievementsScreen extends JPanel {
                 String tag = "SOON";
                 int pw = sm.stringWidth(tag) + 24, ph = 30;
                 int px = w - 20 - starsW / 2 - pw / 2, py = 2 - lift + (h - 2) / 2 - ph / 2;
-                g2.setColor(UiTheme.c(222, 218, 210));
-                g2.fillRoundRect(px, py, pw, ph, ph, ph);
-                g2.setColor(UiTheme.c(120, 112, 100));
-                g2.drawString(tag, px + 12, py + ph / 2 + (sm.getAscent() - sm.getDescent()) / 2);
+                SoonBadge.paintCentred(g2, px + pw / 2f, py + ph / 2f, ph, null);   // the same gold tag as everywhere
             } else {
                 Achievements.paintStars(g2, w - 20 - starsW / 2, 2 - lift + (h - 2) / 2, starSize, stars);
             }

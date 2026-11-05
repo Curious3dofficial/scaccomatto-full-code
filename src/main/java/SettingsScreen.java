@@ -185,6 +185,14 @@ public class SettingsScreen extends JPanel {
         pageHost.show(buildPage(current), false);
     }
 
+    /** A setting changed from outside (the Ctrl +/- size keys): redraw any Settings page showing in {@code root}. */
+    static void refreshShowing(java.awt.Container root) {
+        for (java.awt.Component c : root.getComponents()) {
+            if (c instanceof SettingsScreen && c.isShowing()) ((SettingsScreen) c).rebuildCurrent();
+            else if (c instanceof java.awt.Container) refreshShowing((java.awt.Container) c);
+        }
+    }
+
     private void refreshAudioPage() {
         if (current == Category.AUDIO) SwingUtilities.invokeLater(this::rebuildCurrent);
     }
@@ -521,17 +529,7 @@ public class SettingsScreen extends JPanel {
     /** "SOON" chip for the items that aren't built yet. */
     static final class SoonTag {
         static int paint(Graphics2D g, int x, int cy) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setFont(body(13f).deriveFont(Font.BOLD));
-            FontMetrics fm = g2.getFontMetrics();
-            String t = "SOON";
-            int w = fm.stringWidth(t) + s(18), h = s(26);
-            g2.setColor(TRACK);
-            g2.fillRoundRect(x, cy - h / 2, w, h, h, h);
-            g2.setColor(MUTED);
-            g2.drawString(t, x + s(8), cy + (fm.getAscent() - fm.getDescent()) / 2);
-            g2.dispose();
-            return w;
+            return SoonBadge.paintAfter(g, x, cy, s(26), null);     // the same gold tag as everywhere else
         }
     }
 
@@ -907,8 +905,12 @@ public class SettingsScreen extends JPanel {
                 repaint();
             });
             addMouseListener(new MouseAdapter() {
+                private long lastFlip;
                 @Override public void mouseClicked(MouseEvent e) {
                     if (!isEnabled()) return;
+                    long now = System.currentTimeMillis();
+                    if (now - lastFlip < 500) return;      // 0.5 s cooldown between flips
+                    lastFlip = now;
                     SoundManager.playExtraSound("tap.wav");
                     setOn(!Toggle.this.on, true);
                 }
@@ -1589,9 +1591,13 @@ public class SettingsScreen extends JPanel {
                 rows.add(new Row("Music volume", "Background music on the menus",
                         new Slider(0, 100, 5, AppSettings.musicVolume(), "%",
                                 v -> { AppSettings.setInteger("musicVolume", v); SoundManager.refreshVolumes(); }, null), false));
-                List<String> tracks = SoundManager.musicTracks();
+                List<String> tracks = new java.util.ArrayList<>();
+                tracks.add(AppSettings.MUSIC_ROTATE);              // first option: every theme, in turn
+                tracks.addAll(SoundManager.musicTracks());
                 String[] trackNames = new String[tracks.size()];
-                for (int i = 0; i < tracks.size(); i++) trackNames[i] = prettyTrack(tracks.get(i));
+                for (int i = 0; i < tracks.size(); i++) {
+                    trackNames[i] = i == 0 ? "All themes, in turn" : prettyTrack(tracks.get(i));
+                }
                 rows.add(new Row("Background music track", "What plays on the menus",
                         new Dropdown(trackNames, Math.max(0, tracks.indexOf(AppSettings.musicTrack())), null, i -> {
                             AppSettings.setStr("musicTrack", tracks.get(i));
@@ -1762,23 +1768,33 @@ public class SettingsScreen extends JPanel {
             case PRIVACY: {
                 AccountApiClient.Session session = AccountSession.get();
                 boolean signedIn = session != null && session.profile() != null;
-                String who = signedIn ? session.profile().profileName() + "  (@" + session.profile().username() + ")" : "Not signed in";
+                String who = signedIn ? session.profile().profileName() + "  (@" + session.profile().username() + ")"
+                        : AccountPopup.accountsAvailable() ? "Not signed in"
+                        : "Playing as " + AppSettings.guestName() + " -- accounts are coming soon";
+                if (!signedIn && !AccountPopup.accountsAvailable()) {
+                    rows.add(soonRow("Account", who, new PillButton("Log in", PillButton.Kind.PRIMARY, () -> { })));
+                } else
                 rows.add(new Row("Account", who, signedIn
                         ? new PillButton("Sign out", PillButton.Kind.SECONDARY, this::confirmSignOut)
                         : new PillButton("Log in", PillButton.Kind.PRIMARY, () -> {
                             AccountPopup.show(host);
                             rebuildCurrent();
                         }), false));
-                String[] who1 = {"Everyone", "Friends", "Only me"};
-                Dropdown vis = new Dropdown(who1, indexOf(who1, AppSettings.profileVisibility()), null,
-                        i -> AppSettings.setProfileVisibility(who1[i]));
-                rows.add(new Row("Profile visibility", "Who can see your profile and stats", vis, !signedIn));
-                String[] who2 = {"Everyone", "Friends", "Nobody"};
-                Dropdown status = new Dropdown(who2, indexOf(who2, AppSettings.onlineStatusVisibility()), null,
-                        i -> AppSettings.setOnlineStatusVisibility(who2[i]));
-                rows.add(new Row("Online status visibility", "Who can see when you're online", status, !signedIn));
-                rows.add(new Row("Account data and privacy", "What's stored, and where",
-                        new PillButton("Read", PillButton.Kind.SECONDARY, () -> info("Your data", DATA_TEXT)), false));
+                boolean accounts = AccountPopup.accountsAvailable();
+                // profiles and online status only exist with accounts: no point showing them without
+                if (accounts) {
+                    String[] who1 = {"Everyone", "Friends", "Only me"};
+                    Dropdown vis = new Dropdown(who1, indexOf(who1, AppSettings.profileVisibility()), null,
+                            i -> AppSettings.setProfileVisibility(who1[i]));
+                    rows.add(new Row("Profile visibility", "Who can see your profile and stats", vis, !signedIn));
+                    String[] who2 = {"Everyone", "Friends", "Nobody"};
+                    Dropdown status = new Dropdown(who2, indexOf(who2, AppSettings.onlineStatusVisibility()), null,
+                            i -> AppSettings.setOnlineStatusVisibility(who2[i]));
+                    rows.add(new Row("Online status visibility", "Who can see when you're online", status, !signedIn));
+                }
+                String dataText = accounts ? DATA_TEXT : LOCAL_DATA_TEXT;
+                rows.add(new Row(accounts ? "Account data and privacy" : "Your data and privacy", "What's stored, and where",
+                        new PillButton("Read", PillButton.Kind.SECONDARY, () -> info("Your data", dataText)), false));
                 if (signedIn) {
                     rows.add(new Row("Delete account", "Removes your account and everything stored with it, for good",
                             new PillButton("Delete", PillButton.Kind.DANGER, this::confirmDeleteAccount), false));
@@ -2204,6 +2220,10 @@ public class SettingsScreen extends JPanel {
             + "\n"
             + "Opening names come from the Lichess chess-openings list. The piece sets, fonts and emoji are other people's work, shared under open licences; see Licenses for who made them.\n"
             + "\n"
+            + "Menu music: \"Caketown\", \"Pleasant Creek\" and \"Curious Critters\" by Matthew Pablo, and \"Blueberries\" by Viktor Kraus, all from OpenGameArt.org.\n"
+            + "\n"
+            + "Sound effects: the Three-check fuse and glass break come from Pixabay. The Spell Chess teleport and shield sounds were made for Scaccomatto.\n"
+            + "\n"
             + "Thanks to everyone who played the early versions and said what was broken.\n"
             + "\n"
             + "Contact: alekhinestudios@gmail.com";
@@ -2337,6 +2357,18 @@ public class SettingsScreen extends JPanel {
             + "\n"
             + "Contact\n"
             + "alekhinestudios@gmail.com";
+
+    /** "Your data" while there are no accounts: everything stays on this computer. */
+    private static final String LOCAL_DATA_TEXT =
+            "Everything stays on this computer\n\n"
+            + "Scaccomatto doesn't have accounts yet, so nothing about you is sent to us or to anyone else.\n\n"
+            + "What it keeps, on this computer only:\n"
+            + "• Your settings, achievements and guest name (in your system's settings store)\n"
+            + "• Your Game Library, your last analysis and player pictures (in ~/.scaccomatto)\n"
+            + "• Problem reports, if something goes wrong (in ~/.scaccomatto/logs). They stay here unless you send them yourself.\n\n"
+            + "When you play someone on your network, your guest name, your moves and your chat messages go straight to "
+            + "their computer and nowhere else.\n\n"
+            + "To remove your games and pictures, delete the .scaccomatto folder in your home folder.";
 
     private static final String DATA_TEXT =
             "What Scaccomatto keeps\n\n"

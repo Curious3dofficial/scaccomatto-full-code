@@ -747,8 +747,8 @@ public class ChessGame extends JFrame {
             flipped = !playerIsWhite;
         } else if (onlineMode) {
             String them = opponentNameOr("Opponent");
-            white = localIsWhite ? myName() : them;
-            black = localIsWhite ? them : myName();
+            white = localIsWhite ? onlineName() : them;
+            black = localIsWhite ? them : onlineName();
             flipped = !localIsWhite;
         } else {
             white = LocalPlayers.name(true);
@@ -822,6 +822,12 @@ public class ChessGame extends JFrame {
         } catch (Exception ignored) {
         }
         return "You";
+    }
+
+    /** Your name in an online game: your account name, or your guest name (like "Guest482913") when signed out. */
+    private static String onlineName() {
+        AccountApiClient.Session session = AccountSession.get();
+        return session != null && session.profile() != null ? myName() : AppSettings.guestName();
     }
 
     /**
@@ -943,7 +949,7 @@ public class ChessGame extends JFrame {
         }
         if (onlineMode) {
             String them = opponentNameOr("Opponent");
-            return localIsWhite ? new String[]{myName(), them} : new String[]{them, myName()};
+            return localIsWhite ? new String[]{onlineName(), them} : new String[]{them, onlineName()};
         }
         return new String[]{LocalPlayers.name(true), LocalPlayers.name(false)};
     }
@@ -1306,7 +1312,7 @@ public class ChessGame extends JFrame {
                     try {
                         AccountApiClient.Session me = AccountSession.get();
                         Double myRating = me != null && me.profile() != null ? me.profile().rating() : null;
-                        this.networkManager.sendPlayerInfo(myRating, myName());
+                        this.networkManager.sendPlayerInfo(myRating, onlineName());
                     } catch (Exception ignored) {
                     }
                     this.networkManager.setListener(new NetworkManager.Listener() {
@@ -1616,7 +1622,9 @@ public class ChessGame extends JFrame {
 	    timeGbc.gridy = 2;
 	    timeGbc.insets = new Insets(14, 0, 0, 0);
 	    timeControlPanel.add(startGameBtn, timeGbc);
-	    startGameBtn.setVisible(false); // Starting is the primary action in the Analysis-style footer.
+	    // Starting is the primary action in the Analysis-style footer -- except in Spell Chess,
+	    // which has no move list (and so no footer): there the button sits under the time control.
+	    startGameBtn.setVisible("Spell Chess".equalsIgnoreCase(gameVariant) && !onlineMode && !isBotGame);
         updateTimeControlPanelSize();
 
     // For online games and bot games, we don't want local time-selection UI
@@ -1814,7 +1822,8 @@ public class ChessGame extends JFrame {
                     });
             flipButton.setPreferredSize(new Dimension(AnalysisTheme.k(64), AnalysisTheme.k(64)));
             AnalysisTheme.IconButton sidebarSettingsButton = new AnalysisTheme.IconButton(
-                    AnalysisTheme.Glyph.GEAR, false, "Settings", () -> showSidebarSettings(true));
+                    AnalysisTheme.Glyph.GEAR, false, "Settings",
+                    () -> showSidebarSettings(!showingSidebarSettings));   // again: back to the game panel
             sidebarSettingsButton.setPreferredSize(new Dimension(AnalysisTheme.k(64), AnalysisTheme.k(64)));
             this.sidebarSettingsButton = sidebarSettingsButton;
             AnalysisTheme.IconButton gameActionsButton = new AnalysisTheme.IconButton(
@@ -2772,7 +2781,7 @@ public class ChessGame extends JFrame {
                 });
 
             } catch (Exception e) {
-                e.printStackTrace();
+                CrashLog.record(Thread.currentThread(), e);
                 SwingUtilities.invokeLater(() -> {
                     GameDialogs.info((java.awt.Component) null, "Engine Error", String.valueOf("Bot error: " + e.getMessage()));
                 });
@@ -4553,10 +4562,6 @@ public class ChessGame extends JFrame {
 
         if (img == null) {
             String[] fileCandidates = new String[] {
-                "Scaccomatto_final/Scaccomatto/src/assets/spells/" + base + "_inside.png",
-                "Scaccomatto_final/Scaccomatto/src/assets/spells/" + base + ".png",
-                "Scaccomatto_final/Scaccomatto/src/assets/spells/" + base + "_inside.jpg",
-                "Scaccomatto_final/Scaccomatto/src/assets/spells/" + base + ".jpg",
                 "src/assets/spells/" + base + "_inside.png",
                 "src/assets/spells/" + base + ".png",
                 "assets/spells/" + base + "_inside.png",
@@ -5565,9 +5570,19 @@ public class ChessGame extends JFrame {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 if (board != null && board.cancelKeyboardTabSelection()) return;
-                if (!"Spell Chess".equalsIgnoreCase(gameVariant)) return;
-                if (board != null) board.cancelActiveSpellInteraction();
-                cancelAllSpellSelections();
+                if ("Spell Chess".equalsIgnoreCase(gameVariant)) {
+                    // a spell being aimed or picked: Esc cancels that first
+                    boolean busy = board != null && board.cancelActiveSpellInteraction();
+                    busy |= whitePendingTargetCardIndex != -1 || blackPendingTargetCardIndex != -1
+                            || whitePendingTargetSpellId != null || blackPendingTargetSpellId != null;
+                    cancelAllSpellSelections();
+                    if (busy) return;
+                }
+                // otherwise: "Exit to main menu?", the same as the Exit to Menu button
+                Object leave = embeddedHotkeyTarget == null ? null
+                        : embeddedHotkeyTarget.getClientProperty("scaccomatto.escape");
+                if (leave instanceof Runnable) ((Runnable) leave).run();
+                else if (exitToMenuBtn != null && exitToMenuBtn.isEnabled()) exitToMenuBtn.doClick();
             }
         });
         im.put(KeyStroke.getKeyStroke(
@@ -6653,6 +6668,7 @@ public class ChessGame extends JFrame {
     private void applySpellChessPreStartLayout() {
         if (!"Spell Chess".equalsIgnoreCase(gameVariant) || onlineMode || isBotGame) return;
         if (timeControlPanel != null) timeControlPanel.setVisible(true);
+        if (startGameBtn != null) startGameBtn.setVisible(true);   // no move-list footer to start from
         setSpellPanelsVisible(false);
         if (centerColumnPanel != null) {
             centerColumnPanel.revalidate();
@@ -6857,7 +6873,6 @@ public class ChessGame extends JFrame {
         }
 
         String[] filePaths = {
-            "Scaccomatto_final/Scaccomatto/src/assets/doodle.png",
             "src/assets/doodle.png",
             "assets/doodle.png"
         };

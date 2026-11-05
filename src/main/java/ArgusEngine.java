@@ -69,7 +69,7 @@ public class ArgusEngine {
     static synchronized java.io.File bookFile() {
         java.io.File directory = new java.io.File(".").getAbsoluteFile();
         for (int depth = 0; depth < 6 && directory != null; depth++) {
-            for (String rel : new String[]{"engines/argus.book", "Scaccomatto_final/Scaccomatto/engines/argus.book"}) {
+            for (String rel : new String[]{"engines/argus.book"}) {
                 java.io.File candidate = new java.io.File(directory, rel);
                 if (candidate.isFile()) return candidate;
             }
@@ -271,7 +271,6 @@ public class ArgusEngine {
      */
     public static String resolveEnginePath() {
         for (String candidate : new String[]{
-                "Scaccomatto_final/Scaccomatto/engines/argus.jar",
                 "Scaccomatto/engines/argus.jar",
                 "engines/argus.jar"
         }) {

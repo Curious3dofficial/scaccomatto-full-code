@@ -246,7 +246,43 @@ final class AccountPopup {
     private JComponent page;
 
     static void show(Window owner) {
+        if (!accountsAvailable()) {
+            // no account server yet: say so, instead of a log-in form that can't connect
+            MainMenu menu = owner instanceof MainMenu ? (MainMenu) owner : null;
+            if (menu == null) {
+                for (Frame f : Frame.getFrames()) if (f instanceof MainMenu && f.isShowing()) menu = (MainMenu) f;
+            }
+            if (menu != null) {
+                menu.showUnderDevelopmentDialog("Accounts", "Accounts are on their way in a future update. "
+                        + "Until then you play online as <b>" + AppSettings.guestName() + "</b>.");
+            }
+            return;
+        }
         new AccountPopup().open(owner);
+    }
+
+    /**
+     * Whether this copy has accounts at all: true once account-server.txt names a real server
+     * (or while building the app, where the TEST login stands in for one). A released copy
+     * with no server lets everyone straight in as a guest.
+     */
+    static boolean accountsAvailable() {
+        return !talksToThisComputer() || developerToolsShown();
+    }
+
+    private static boolean talksToThisComputer() {
+        String server = API.baseUrl();
+        return server.startsWith("http://127.0.0.1") || server.startsWith("http://localhost");
+    }
+
+    /** Started from the project folder (VS Code, mvn exec) rather than from the installed app's .jar. */
+    private static boolean runningFromSource() {
+        try {
+            java.security.CodeSource src = AccountPopup.class.getProtectionDomain().getCodeSource();
+            return src != null && !src.getLocation().getPath().toLowerCase().endsWith(".jar");
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
@@ -473,7 +509,9 @@ final class AccountPopup {
 
     /** The same "log in first" popup, with its own title and explanation. */
     static void requireSignIn(Window owner, String title, String message, Runnable onSignedIn) {
-        if (AccountSession.isSignedIn()) {
+        // signed in -- or there's no real account server yet, so everyone plays as a guest
+        // (also while building the app: the TEST login is still there in the Account popup)
+        if (AccountSession.isSignedIn() || talksToThisComputer()) {
             if (onSignedIn != null) onSignedIn.run();
             return;
         }
@@ -666,11 +704,13 @@ final class AccountPopup {
         return row;
     }
 
-    /** The TEST login and DEV switch: for development only, never in a release talking to the real server. */
+    /**
+     * The TEST login and DEV switch: for development only. Shown when started from the project
+     * folder with no real server set, or with -Dscaccomatto.dev=true -- never in the installed app.
+     */
     static boolean developerToolsShown() {
         if (Boolean.getBoolean("scaccomatto.dev") || "1".equals(System.getenv("SCACCOMATTO_DEV"))) return true;
-        String server = API.baseUrl();
-        return server.startsWith("http://127.0.0.1") || server.startsWith("http://localhost");
+        return runningFromSource() && talksToThisComputer();
     }
 
     // Swap the popup's body and re-fit it, staying centred where it was.

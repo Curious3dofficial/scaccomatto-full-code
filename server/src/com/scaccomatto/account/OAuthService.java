@@ -48,25 +48,6 @@ final class OAuthService {
                         "access_type", "online",
                         "prompt", "select_account"));
             }
-            case "discord" -> {
-                requireEnv("DISCORD_CLIENT_ID");
-                yield "https://discord.com/oauth2/authorize?"
-                        + query(Map.of(
-                        "client_id", env("DISCORD_CLIENT_ID"),
-                        "redirect_uri", redirectUri,
-                        "response_type", "code",
-                        "scope", "identify email",
-                        "state", state,
-                        "prompt", "none"));
-            }
-            case "steam" -> "https://steamcommunity.com/openid/login?"
-                    + query(Map.of(
-                    "openid.ns", "http://specs.openid.net/auth/2.0",
-                    "openid.mode", "checkid_setup",
-                    "openid.return_to", redirectUri + "?state=" + encode(state),
-                    "openid.realm", baseUrl,
-                    "openid.identity", "http://specs.openid.net/auth/2.0/identifier_select",
-                    "openid.claimed_id", "http://specs.openid.net/auth/2.0/identifier_select"));
             default -> throw new ApiException(404, "unknown_provider", "Unsupported OAuth provider.");
         };
     }
@@ -75,8 +56,6 @@ final class OAuthService {
         String normalized = normalizeProvider(provider);
         return switch (normalized) {
             case "google" -> googleProfile(required(params, "code"));
-            case "discord" -> discordProfile(required(params, "code"));
-            case "steam" -> steamProfile(params);
             default -> throw new ApiException(404, "unknown_provider", "Unsupported OAuth provider.");
         };
     }
@@ -101,50 +80,6 @@ final class OAuthService {
                 required(profile, "id"),
                 blankToNull(profile.get("email")),
                 firstPresent(profile.get("name"), profile.get("email"), "Google Player"));
-    }
-
-    private ProviderProfile discordProfile(String code) throws IOException, InterruptedException, ApiException {
-        requireEnv("DISCORD_CLIENT_ID");
-        requireEnv("DISCORD_CLIENT_SECRET");
-        Map<String, String> token = postForm(
-                "https://discord.com/api/oauth2/token",
-                Map.of(
-                        "client_id", env("DISCORD_CLIENT_ID"),
-                        "client_secret", env("DISCORD_CLIENT_SECRET"),
-                        "code", code,
-                        "grant_type", "authorization_code",
-                        "redirect_uri", redirectUri("discord")));
-        String accessToken = required(token, "access_token");
-        Map<String, String> profile = getJson("https://discord.com/api/users/@me", accessToken);
-        String name = firstPresent(
-                profile.get("global_name"),
-                profile.get("username"),
-                "Discord Player");
-        return new ProviderProfile(
-                "discord",
-                required(profile, "id"),
-                blankToNull(profile.get("email")),
-                name);
-    }
-
-    private ProviderProfile steamProfile(Map<String, String> params) throws IOException, InterruptedException, ApiException {
-        requireEnv("STEAM_API_KEY");
-        Map<String, String> verifyParams = new LinkedHashMap<>(params);
-        verifyParams.remove("state");
-        verifyParams.put("openid.mode", "check_authentication");
-        String verification = postFormText("https://steamcommunity.com/openid/login", verifyParams);
-        if (!verification.contains("is_valid:true")) {
-            throw new ApiException(401, "steam_openid_invalid", "Steam sign-in could not be verified.");
-        }
-        String claimedId = required(params, "openid.claimed_id");
-        String steamId = claimedId.substring(claimedId.lastIndexOf('/') + 1);
-        if (!steamId.matches("\\d{17}")) {
-            throw new ApiException(400, "steam_id_invalid", "Steam returned an invalid account id.");
-        }
-        String json = getText("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?"
-                + query(Map.of("key", env("STEAM_API_KEY"), "steamids", steamId)), null);
-        String displayName = firstPresent(jsonStringField(json, "personaname"), "Steam Player");
-        return new ProviderProfile("steam", steamId, null, displayName);
     }
 
     private Map<String, String> postForm(String uri, Map<String, String> fields)
@@ -223,32 +158,6 @@ final class OAuthService {
             values.put(decode(key), decode(value));
         }
         return values;
-    }
-
-    private static String jsonStringField(String json, String key) {
-        String needle = "\"" + key + "\"";
-        int keyIndex = json.indexOf(needle);
-        if (keyIndex < 0) return null;
-        int colon = json.indexOf(':', keyIndex + needle.length());
-        if (colon < 0) return null;
-        int start = json.indexOf('"', colon + 1);
-        if (start < 0) return null;
-        StringBuilder value = new StringBuilder();
-        boolean escaped = false;
-        for (int i = start + 1; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (escaped) {
-                value.append(c);
-                escaped = false;
-            } else if (c == '\\') {
-                escaped = true;
-            } else if (c == '"') {
-                return value.toString();
-            } else {
-                value.append(c);
-            }
-        }
-        return null;
     }
 
     private static String required(Map<String, String> values, String key) throws ApiException {

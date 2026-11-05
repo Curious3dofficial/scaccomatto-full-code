@@ -131,6 +131,35 @@ public class BotPanel extends JPanel {
         setLayout(new BorderLayout());
         setOpaque(false);
         rebuild();
+        // Up / Down arrows pick the bot above / below, wrapping round at the ends
+        InputMap im = getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = getActionMap();
+        im.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0), "botUp");
+        im.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_DOWN, 0), "botDown");
+        am.put("botUp", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { moveSelection(-1); }
+        });
+        am.put("botDown", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { moveSelection(1); }
+        });
+    }
+
+    /** Selects the next unlocked bot up (-1) or down (+1), wrapping round, and scrolls it into view. */
+    private void moveSelection(int step) {
+        java.util.List<JButton> open = new java.util.ArrayList<>();
+        for (JButton card : botCards) {
+            Object v = card.getClientProperty("bot_value");
+            if (v instanceof ChessBot && !((ChessBot) v).isLocked()) open.add(card);
+        }
+        if (open.isEmpty()) return;
+        int i = 0;
+        for (int k = 0; k < open.size(); k++) {
+            if (open.get(k).getClientProperty("bot_value") == selectedBot) { i = k; break; }
+        }
+        JButton next = open.get(((i + step) % open.size() + open.size()) % open.size());
+        if (next.getClientProperty("bot_value") == selectedBot) return;
+        next.doClick(0);
+        next.scrollRectToVisible(new Rectangle(0, 0, next.getWidth(), next.getHeight()));
     }
 
     private void rebuild() {

@@ -308,12 +308,6 @@ public final class AccountApiClient {
         send("POST", "/api/auth/remember/delete", body, null);
     }
 
-    public OAuthStart oauthUrl(String provider)
-            throws IOException, InterruptedException, ApiException {
-        Map<String, String> values = send("GET", "/api/auth/oauth/url/" + provider, null, null);
-        return new OAuthStart(required(values, "state"), required(values, "url"));
-    }
-
     public OAuthStart googleOAuthUrl() {
         String state = newState();
         String url = baseUrl + "/oauth/google/login?state="

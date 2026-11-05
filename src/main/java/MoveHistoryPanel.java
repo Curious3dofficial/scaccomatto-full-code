@@ -1061,7 +1061,6 @@ public class MoveHistoryPanel extends JPanel {
         } catch (Exception ignored) {
         }
         String[] paths = {
-            "Scaccomatto_final/Scaccomatto/src/assets/multiplayer/" + file,
             "src/assets/multiplayer/" + file,
             "assets/multiplayer/" + file
         };
