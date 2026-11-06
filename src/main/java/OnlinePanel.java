@@ -1373,6 +1373,9 @@ public class OnlinePanel extends JPanel {
                 selectedPreset.label,
                 selectedPreset.initialSeconds,
                 selectedPreset.incrementSeconds));
+        // ...and on the internet too, so a friend anywhere can join with the same code.
+        net.hostOnlineToo(false, selectedVariant, selectedPreset.label,
+                selectedPreset.initialSeconds, selectedPreset.incrementSeconds);
         setProgressStatus("Hosting " + selectedVariant + " -- code " + code + ". Waiting for opponent...");
         return true;
     }
@@ -1480,6 +1483,14 @@ public class OnlinePanel extends JPanel {
             } catch (java.io.IOException e) {
                 lobbies = new ArrayList<>();
             }
+            // Players waiting on the internet count too (the local ones are listed first,
+            // so a game that's on both is joined over the faster local network).
+            if (OnlineRelay.available()) {
+                try {
+                    lobbies.addAll(OnlineRelay.findPublic(variant, clock.initialSeconds, clock.incrementSeconds));
+                } catch (Exception ignored) {
+                }
+            }
             if (!matchmaking || run != matchmakingRun) return;
             LocalLobbyDiscovery.Lobby best = null;
             for (LocalLobbyDiscovery.Lobby l : lobbies) {
@@ -1527,6 +1538,7 @@ public class OnlinePanel extends JPanel {
         lobbyAdvertiser = LocalLobbyDiscovery.advertise(LocalLobbyDiscovery.Lobby.create(
                 code, localHostName(), port, variant,
                 clock.label, clock.initialSeconds, clock.incrementSeconds));
+        net.hostOnlineToo(true, variant, clock.label, clock.initialSeconds, clock.incrementSeconds);
         myPublicCode = code;
     }
 
@@ -1539,8 +1551,12 @@ public class OnlinePanel extends JPanel {
         onHostConnected = () -> finishMatchmaking(run);
         onHostFailed = () -> restartMatchmaking(run); // e.g. someone else got there first
         setProgressStatus("Found a game. Connecting...");
-        net.join(target.hostAddress(), target.port(), target.code(),
-                createNetworkListener(gameRef, pendingEvents, false));
+        if (OnlineRelay.isOnline(target)) {
+            net.joinOnline(target.code(), createNetworkListener(gameRef, pendingEvents, false));
+        } else {
+            net.join(target.hostAddress(), target.port(), target.code(),
+                    createNetworkListener(gameRef, pendingEvents, false));
+        }
     }
 
     private void finishMatchmaking(int run) {
@@ -1581,10 +1597,24 @@ public class OnlinePanel extends JPanel {
         Thread lookup = new Thread(() -> {
             LocalLobbyDiscovery.Lobby lobby = null;
             String error = null;
+            // Look on the internet at the same time as on this network.
+            java.util.concurrent.CompletableFuture<LocalLobbyDiscovery.Lobby> online =
+                    OnlineRelay.available()
+                            ? java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                                try { return OnlineRelay.findByCode(code); } catch (Exception e) { return null; }
+                            })
+                            : java.util.concurrent.CompletableFuture.completedFuture(null);
             try {
-                lobby = LocalLobbyDiscovery.findByCode(code, 3000);
+                lobby = LocalLobbyDiscovery.findByCode(code, 2000);
             } catch (java.io.IOException e) {
                 error = "Couldn't search for games: " + e.getMessage();
+            }
+            if (lobby == null) {
+                try {
+                    lobby = online.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                    if (lobby != null) error = null;
+                } catch (Exception ignored) {
+                }
             }
             final LocalLobbyDiscovery.Lobby found = lobby;
             final boolean lookupFailed = error != null;
@@ -1611,8 +1641,12 @@ public class OnlinePanel extends JPanel {
                 final List<Runnable> pendingEvents = new ArrayList<>();
                 setProgressStatus("Found " + code + " (" + found.variant() + ", " + found.timeLabel()
                         + "). Connecting...");
-                net.join(found.hostAddress(), found.port(), code,
-                        createNetworkListener(gameRef, pendingEvents, false));
+                if (OnlineRelay.isOnline(found)) {
+                    net.joinOnline(code, createNetworkListener(gameRef, pendingEvents, false));
+                } else {
+                    net.join(found.hostAddress(), found.port(), code,
+                            createNetworkListener(gameRef, pendingEvents, false));
+                }
             });
         }, "scaccomatto-code-lookup");
         lookup.setDaemon(true);

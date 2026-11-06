@@ -1138,11 +1138,17 @@ public class ChessGame extends JFrame {
         java.util.function.BooleanSupplier whiteSide = () -> bottomRow;
         // vs a bot only your own row (the bottom one) is yours to edit
         boolean editable = offline && (!isBotGame || bottomRow);
-        PlayerAvatarCard avatar = new PlayerAvatarCard(nameLabel, whiteSide,
-                offline ? () -> {
-                    boolean w = whiteSide.getAsBoolean();
-                    return isBotGame && !bottomRow ? null : LocalPlayers.avatar(w);
-                } : null);
+        PlayerAvatarCard avatar = new PlayerAvatarCard(nameLabel, whiteSide, () -> {
+            // a bot's row shows the bot's own portrait
+            if (spectateMode) {
+                ChessBot bot = bottomRow
+                        ? (spectateWhiteBot != null ? spectateWhiteBot : selectedBot)
+                        : (spectateBlackBot != null ? spectateBlackBot : selectedBot);
+                return botPortrait(bot);
+            }
+            if (isBotGame && !bottomRow) return botPortrait(selectedBot);
+            return offline ? LocalPlayers.avatar(whiteSide.getAsBoolean()) : null;
+        });
         row.add(avatar);
 
         JPanel textStack = new JPanel();
@@ -3928,6 +3934,41 @@ public class ChessGame extends JFrame {
             }
             g2.dispose();
         }
+    }
+
+    // ── bot portraits, for the player rows (loaded once each) ──
+    private static final java.util.Map<ChessBot, java.awt.image.BufferedImage> BOT_PORTRAITS = new java.util.HashMap<>();
+
+    private static java.awt.image.BufferedImage botPortrait(ChessBot bot) {
+        if (bot == null) return null;
+        if (BOT_PORTRAITS.containsKey(bot)) return BOT_PORTRAITS.get(bot);
+        String base = bot == ChessBot.BOBBY_BEGINNER ? "bobby"
+                : bot == ChessBot.CASUAL_CARL ? "Carl"
+                : bot == ChessBot.TACTICAL_TOM ? "Tom"
+                : bot == ChessBot.STRATEGIC_SARAH ? "Sarah" : "levi";
+        java.awt.image.BufferedImage img = null;
+        for (String ext : new String[]{".png", ".jpg", ".jpeg"}) {
+            try {
+                java.net.URL url = ChessGame.class.getResource("/assets/avatars/" + base + ext);
+                if (url == null) continue;
+                java.awt.image.BufferedImage full = javax.imageio.ImageIO.read(url);
+                if (full == null) continue;
+                // shrink once to tile size (the tile is about 70 px; 2x for sharp screens)
+                int side = 160;
+                img = new java.awt.image.BufferedImage(side, side, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g = img.createGraphics();
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                int s = Math.min(full.getWidth(), full.getHeight());
+                g.drawImage(full, 0, 0, side, side, (full.getWidth() - s) / 2, (full.getHeight() - s) / 2,
+                        (full.getWidth() + s) / 2, (full.getHeight() + s) / 2, null);
+                g.dispose();
+                break;
+            } catch (Exception ignored) {
+            }
+        }
+        BOT_PORTRAITS.put(bot, img);
+        return img;
     }
 
     private static class PlayerAvatarCard extends JComponent {

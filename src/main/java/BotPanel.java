@@ -166,7 +166,10 @@ public class BotPanel extends JPanel {
         removeAll();
         botCards.clear();
 
-        JPanel cardsList = new JPanel();
+        // The list always fits the visible width: on a screen where the scroll area comes
+        // out narrower than the cards' full width (seen on Windows), the cards shrink to
+        // fit instead of being cut off on the right under the scrollbar.
+        JPanel cardsList = new FitWidthPanel();
         cardsList.setOpaque(false);
         cardsList.setLayout(new BoxLayout(cardsList, BoxLayout.Y_AXIS));
 
@@ -212,6 +215,17 @@ public class BotPanel extends JPanel {
         repaint();
     }
 
+    /** A panel that a scroll pane keeps exactly as wide as what's visible (only scrolls up and down). */
+    private static final class FitWidthPanel extends JPanel implements Scrollable {
+        @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+        @Override public int getScrollableUnitIncrement(Rectangle r, int o, int d) { return 28; }
+        @Override public int getScrollableBlockIncrement(Rectangle r, int o, int d) {
+            return o == SwingConstants.VERTICAL ? r.height : r.width;
+        }
+        @Override public boolean getScrollableTracksViewportWidth() { return true; }
+        @Override public boolean getScrollableTracksViewportHeight() { return false; }
+    }
+
     private JButton createBotCard(ChessBot bot) {
         final boolean locked = bot.isLocked();
         Color normalBg = locked ? LOCKED_BG : NORMAL_BG;
@@ -241,7 +255,7 @@ public class BotPanel extends JPanel {
         card.setCursor(Cursor.getPredefinedCursor(
                 locked ? Cursor.DEFAULT_CURSOR : Cursor.HAND_CURSOR));
         card.setPreferredSize(new Dimension(CARD_WIDTH, CARD_HEIGHT));
-        card.setMinimumSize(new Dimension(CARD_WIDTH, CARD_HEIGHT));
+        card.setMinimumSize(new Dimension(CARD_WIDTH / 2, CARD_HEIGHT));   // may shrink to fit a narrow list
         // createRoundedFillButton() never needs an explicit maximumSize in
         // its original home (createLocalVariantPanel()'s GridLayout grid
         // ignores min/preferred/max entirely and just divides space

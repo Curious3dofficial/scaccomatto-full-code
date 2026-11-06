@@ -10417,13 +10417,21 @@ g2.dispose();
      * and in Atomic, which has its own explosion.
      */
     private void playCaptureFx(Piece captured, int row, int col) {
+        playCaptureFx(captured, row, col, null, -1, -1);
+    }
+
+    /** {@code capturer} standing on (capRow, capCol) is drawn in front of the vanishing piece. */
+    private void playCaptureFx(Piece captured, int row, int col, Piece capturer, int capRow, int capCol) {
         if (!animationsEnabled || isAtomicMode() || captured == null || !inBounds(row, col)) return;
         try {
             int dr = boardFlipped ? 7 - row : row, dc = boardFlipped ? 7 - col : col;
             double scale = renderScale();
             int x0 = (int) Math.round(dc * SQUARE_SIZE * scale), y0 = (int) Math.round(dr * SQUARE_SIZE * scale);
             int side = (int) Math.round(SQUARE_SIZE * scale);
-            CaptureFx.play(this, captured, new Rectangle(x0, y0, side, side));
+            boolean sameSquare = capturer != null && capRow == row && capCol == col;
+            CaptureFx.play(this, captured, new Rectangle(x0, y0, side, side),
+                    sameSquare ? capturer : null,
+                    sameSquare ? () -> inBounds(capRow, capCol) && board[capRow][capCol] == capturer : null);
         } catch (Exception ignored) {
             // a missing animation must never get in the way of the move itself
         }
@@ -10466,7 +10474,7 @@ g2.dispose();
         if (capturedPiece != null) {
             addCapturedPieceToOwner(capturedPiece.isWhite(), capturedPiece);
             // the taken piece floats up and fades away (en passant: from the pawn's own square)
-            playCaptureFx(capturedPiece, isEnPassant ? fromRow : toRow, toCol);
+            playCaptureFx(capturedPiece, isEnPassant ? fromRow : toRow, toCol, board[toRow][toCol], toRow, toCol);   // (the promoted piece, after a promotion)
         }
 
         if (isSpellChessMode() && movingPiece instanceof Zoglin) {

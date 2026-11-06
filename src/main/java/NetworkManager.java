@@ -48,6 +48,24 @@ public class NetworkManager {
     private volatile boolean closing;
     private static final int HEARTBEAT_INTERVAL_MS = 5000;
     private static final int HEARTBEAT_TIMEOUT_MS = 10000;
+    // Over the internet (through Firebase) messages take a little longer, so be more patient.
+    private static final int ONLINE_HEARTBEAT_INTERVAL_MS = 8000;
+    private static final int ONLINE_HEARTBEAT_TIMEOUT_MS = 30000;
+
+    // ── internet play ────────────────────────────────────────────────────────
+    // A hosted game is offered on the local network AND on the internet at once;
+    // whichever opponent turns up first gets it (claimed), and the other offer is
+    // withdrawn. Once the game runs over the internet, relay is set and in/out are
+    // the relay's reader and writer instead of a socket's.
+    private volatile OnlineRelay relay;
+    private volatile boolean relayMode;
+    private final java.util.concurrent.atomic.AtomicBoolean claimed =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private volatile boolean resumeSignal;
+    private static final long ONLINE_JOIN_TIMEOUT_MS = 12000;
+
+    /** True when this game is running over the internet rather than the local network. */
+    public boolean isOnline() { return relayMode; }
 
     // Handshake so a "connection" only counts when there's a real
     // Scaccomatto host on the other end, hosting the game code the joiner
@@ -127,8 +145,15 @@ public class NetworkManager {
             while (!closing) {
                 Socket candidate = server.accept();
                 if (handshakeAsHost(candidate, HELLO)) {
+                    if (!claimed.compareAndSet(false, true)) {   // an internet opponent got here first
+                        try { candidate.close(); } catch (IOException ignored) {}
+                        return;
+                    }
                     socket = candidate;
                     hostedConnection = true;
+                    OnlineRelay r = relay;                        // withdraw the internet offer
+                    relay = null;
+                    if (r != null) r.close();
                     break;
                 }
                 try { candidate.close(); } catch (IOException ignored) {}
@@ -143,9 +168,113 @@ public class NetworkManager {
             startListenLoop();
         } catch (IOException e) {
             try { server.close(); } catch (IOException ignored) {}
-            if (closing) return;
+            if (closing || claimed.get()) return;   // closed because the game started online
             if (listener != null) listener.onError("Host error: " + e.getMessage());
         }
+    }
+
+    /**
+     * Also offers the game hosted with {@link #hostGame} on the internet (call right after
+     * it). Quietly does nothing if internet play isn't set up or Firebase can't be reached:
+     * the local-network game is still there either way.
+     */
+    public void hostOnlineToo(boolean isPublic, String variant, String timeLabel,
+                              int initialSeconds, int incrementSeconds) {
+        if (!OnlineRelay.available()) return;
+        final String code = hostCode;
+        Thread t = new Thread(() -> {
+            OnlineRelay r;
+            try {
+                r = OnlineRelay.host(code, isPublic, variant, timeLabel, initialSeconds, incrementSeconds);
+            } catch (Exception e) {
+                System.err.println("Internet hosting unavailable: " + e.getMessage());
+                return;
+            }
+            if (closing || claimed.get()) { r.close(); return; }
+            relay = r;
+            try {
+                while (!closing && !claimed.get()) {
+                    String line = r.take(1000);
+                    if (line == null) {
+                        if (r.denied() || closing || claimed.get() || relay != r) return;
+                        continue;
+                    }
+                    if (!line.startsWith(HELLO)) continue;
+                    String theirCode = line.substring(HELLO.length()).trim();
+                    if (!code.equalsIgnoreCase(theirCode)) { r.send(WRONG_CODE); continue; }
+                    if (!claimed.compareAndSet(false, true)) return;
+                    r.unlist();
+                    r.send(WELCOME);
+                    relayMode = true;
+                    hostedConnection = true;
+                    in = r.reader();
+                    out = r.writer();
+                    try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
+                    if (closing) return;
+                    if (listener != null) listener.onConnected(true);
+                    startListenLoop();
+                    return;
+                }
+            } catch (InterruptedException ignored) {
+            }
+        }, "scaccomatto-host-online");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Joins an internet game by its code (found with OnlineRelay.findByCode / findPublic). */
+    public void joinOnline(String code, Listener listener) {
+        this.listener = listener;
+        hostedConnection = false;
+        closing = false;
+        joinCode = code == null ? "" : code;
+        Thread t = new Thread(() -> {
+            OnlineRelay r;
+            try {
+                r = OnlineRelay.join(joinCode);
+            } catch (FirebaseLink.FirebaseException e) {
+                if (closing) return;
+                if (listener != null) listener.onError(e.permissionDenied()
+                        ? "That game has already started."
+                        : "Couldn't reach that game: " + e.getMessage());
+                return;
+            } catch (Exception e) {
+                if (closing) return;
+                if (listener != null) listener.onError("Couldn't reach that game: " + e.getMessage());
+                return;
+            }
+            relay = r;
+            if (closing) { r.close(); return; }
+            r.send(HELLO + " " + joinCode);
+            String reply = null;
+            long until = System.currentTimeMillis() + ONLINE_JOIN_TIMEOUT_MS;
+            try {
+                while (!closing && System.currentTimeMillis() < until) {
+                    String line = r.take(500);
+                    if (line == null) { if (r.denied()) break; continue; }
+                    if (WELCOME.equals(line) || WRONG_CODE.equals(line)) { reply = line; break; }
+                }
+            } catch (InterruptedException ignored) {
+            }
+            if (closing) { r.close(); return; }
+            if (!WELCOME.equals(reply)) {
+                relay = null;
+                r.close();
+                if (listener != null) {
+                    listener.onError(WRONG_CODE.equals(reply)
+                            ? "That code belongs to a different game."
+                            : "No game is being hosted with that code.");
+                }
+                return;
+            }
+            relayMode = true;
+            in = r.reader();
+            out = r.writer();
+            if (listener != null) listener.onConnected(false);
+            startListenLoop();
+        }, "scaccomatto-join-online");
+        t.setDaemon(true);
+        t.start();
     }
 
     // Waits for the joiner's HELLO (with the right code) and answers
@@ -237,6 +366,11 @@ public class NetworkManager {
             try {
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    if (relayMode) {
+                        // over the internet, anything from the other side shows they're still there
+                        lastPongTimestamp = System.currentTimeMillis();
+                        if (reconnecting) resumeSignal = true;
+                    }
                     handleLine(line);
                 }
                 if (!closing) connectionDropped("Opponent disconnected.", mine);
@@ -256,23 +390,27 @@ public class NetworkManager {
         }
         lastPongTimestamp = System.currentTimeMillis();
         heartbeatTimer = new Timer("NetworkManager-Heartbeat", true);
+        final int interval = relayMode ? ONLINE_HEARTBEAT_INTERVAL_MS : HEARTBEAT_INTERVAL_MS;
+        final int timeout = relayMode ? ONLINE_HEARTBEAT_TIMEOUT_MS : HEARTBEAT_TIMEOUT_MS;
         heartbeatTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
                 if (closing || out == null) return;
                 long now = System.currentTimeMillis();
-                if (now - lastPongTimestamp > HEARTBEAT_TIMEOUT_MS) {
+                if (now - lastPongTimestamp > timeout) {
                     connectionDropped("Connection lost: heartbeat timeout.", socket);
                     return;
                 }
                 sendLine("PING");
             }
-        }, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS);
+        }, interval, interval);
     }
 
     private void handleLine(String line) {
         if ("BYE".equals(line)) {           // they're leaving on purpose: not a dropped link
             remoteSaidBye = true;
+            // Over the internet there's no socket closing behind it to notice, so say so now.
+            if (relayMode) connectionDropped("Opponent disconnected.", socket);
             return;
         }
         if (line.startsWith("SYNC ")) {
@@ -285,6 +423,16 @@ public class NetworkManager {
                 if (listener != null) listener.onSyncReceived(moves, w, b);
             } catch (Exception ignored) {
             }
+            return;
+        }
+        if ("RESUME_PING".equals(line)) {     // internet play: "are you back?"
+            PrintWriter w = out;
+            if (w != null && !closing) w.println("RESUME_ACK");
+            if (reconnecting) resumeSignal = true;
+            return;
+        }
+        if ("RESUME_ACK".equals(line)) {
+            if (reconnecting) resumeSignal = true;
             return;
         }
         if ("PING".equals(line)) {
@@ -560,6 +708,27 @@ public class NetworkManager {
     }
 
     private void reconnectLoop() {
+        if (relayMode) {
+            // The internet link mends itself; we just wait until the other side is heard
+            // from again (asking every couple of seconds), then carry on.
+            resumeSignal = false;
+            while (!closing && !giveUp) {
+                PrintWriter w = out;
+                if (w != null) w.println("RESUME_PING");
+                for (int i = 0; i < 20 && !resumeSignal && !closing && !giveUp; i++) {
+                    try { Thread.sleep(100); } catch (InterruptedException e) { return; }
+                }
+                if (resumeSignal) {
+                    if (closing || giveUp) return;
+                    remoteSaidBye = false;
+                    reconnecting = false;
+                    startHeartbeat();
+                    if (listener != null) listener.onConnectionRestored();
+                    return;
+                }
+            }
+            return;
+        }
         while (!closing && !giveUp) {
             boolean ok = hostedConnection ? waitForReturningJoiner() : dialHostAgain();
             if (ok) {
@@ -652,6 +821,9 @@ public class NetworkManager {
         try { if (socket != null) socket.close(); } catch (IOException ignored) {}
         try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
         if (out != null) out.close();
+        OnlineRelay r = relay;          // sends anything still queued (BYE), then leaves the room
+        relay = null;
+        if (r != null) r.close();
     }
 
     public void setListener(Listener l) {

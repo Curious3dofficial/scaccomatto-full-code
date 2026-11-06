@@ -17,7 +17,7 @@
   <h1>Privacy</h1>
   <p class="updated">Last updated: November 2026. This covers Scaccomatto version 1.0.</p>
 
-  <p>Short version: Scaccomatto doesn't have accounts yet, doesn't track you, and doesn't send anything about you to us or to anyone else. Everything it saves stays on your computer.</p>
+  <p>Short version: Scaccomatto doesn't have accounts and doesn't track you. Everything it saves stays on your computer. Only when you play someone over the internet does anything leave it, and then only what the game needs.</p>
 
   <h2>What the app keeps on your computer</h2>
   <ul>
@@ -29,11 +29,21 @@
   <h2>Playing someone on your network</h2>
   <p>When you host or join a game on the same Wi-Fi or network, the two computers talk to each other directly. What gets sent is only what the game needs: your guest name, your moves and any chat messages you type. None of it goes through us.</p>
 
+  <h2>Playing someone over the internet</h2>
+  <p>Internet games are passed between the two players through Google Firebase, a service we use for this.</p>
+  <ul>
+    <li>The first time you host or join a game, the app gets a random guest number from Firebase. There's no name, email or account behind it, and unused guest numbers are deleted after 30 days.</li>
+    <li>While a game is waiting for an opponent, Firebase holds its code, variant and clock.</li>
+    <li>During the game it holds your guest name, your moves and any chat messages, just long enough to pass them on. Each message is removed once the other player has it, and the whole game is deleted when it ends.</li>
+    <li>Like any website, Google's servers see your IP address when the app talks to them.</li>
+  </ul>
+  <p>We don't look at games or chat, and we don't keep them.</p>
+
   <h2>What we don't do</h2>
   <ul>
     <li>No accounts, so no email address or password is collected.</li>
     <li>No ads, no analytics, no tracking.</li>
-    <li>Nothing is sold or shared, because nothing is collected.</li>
+    <li>Nothing about you is sold or shared.</li>
   </ul>
 
   <h2>This website</h2>
@@ -43,7 +53,7 @@
   <p>Uninstall Scaccomatto, then delete the <code>.scaccomatto</code> folder in your home folder.</p>
 
   <h2>If this changes</h2>
-  <p>Accounts and internet play are planned for a future update. Before any version starts storing anything off your computer, this page will be updated to say exactly what and why, and that version will ask before you sign in.</p>
+  <p>Accounts are planned for a future update. Before any version stores more than this off your computer, this page will be updated to say exactly what and why, and that version will ask before you sign in.</p>
 
   <h2>Contact</h2>
   <p>Questions: <a href="mailto:alekhinestudios@gmail.com">alekhinestudios@gmail.com</a></p>

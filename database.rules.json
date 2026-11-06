@@ -1,0 +1,59 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "presence": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.isNumber()"
+      }
+    },
+
+    "public": {
+      ".read": "auth != null",
+      ".indexOn": ["key"],
+      "$code": {
+        ".write": "auth != null && (data.exists() ? data.child('host').val() === auth.uid : newData.child('host').val() === auth.uid)",
+        ".validate": "$code.length <= 8 && newData.hasChildren(['host', 'key', 'seen'])"
+      }
+    },
+
+    "private": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (data.exists() ? data.child('host').val() === auth.uid : newData.child('host').val() === auth.uid)",
+        ".validate": "$code.length <= 8 && newData.hasChildren(['host', 'key', 'seen'])"
+      }
+    },
+
+    "rooms": {
+      "$code": {
+        ".write": "auth != null && data.child('host').val() === auth.uid && !newData.exists()",
+        "host": {
+          ".read": "auth != null",
+          ".write": "auth != null && $code.length <= 8 && (!data.exists() || data.val() === auth.uid) && newData.val() === auth.uid"
+        },
+        "guest": {
+          ".read": "auth != null && (data.val() === auth.uid || data.parent().child('host').val() === auth.uid)",
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid && data.parent().child('host').exists() && data.parent().child('host').val() !== auth.uid"
+        },
+        "h2g": {
+          ".read": "auth != null && (data.parent().child('host').val() === auth.uid || data.parent().child('guest').val() === auth.uid)",
+          "$msg": {
+            ".write": "auth != null && (root.child('rooms/' + $code + '/host').val() === auth.uid ? newData.exists() : (root.child('rooms/' + $code + '/guest').val() === auth.uid && !newData.exists()))",
+            ".validate": "newData.isString() && newData.val().length <= 4000"
+          }
+        },
+        "g2h": {
+          ".read": "auth != null && (data.parent().child('host').val() === auth.uid || data.parent().child('guest').val() === auth.uid)",
+          "$msg": {
+            ".write": "auth != null && (root.child('rooms/' + $code + '/guest').val() === auth.uid ? newData.exists() : (root.child('rooms/' + $code + '/host').val() === auth.uid && !newData.exists()))",
+            ".validate": "newData.isString() && newData.val().length <= 4000"
+          }
+        }
+      }
+    }
+  }
+}

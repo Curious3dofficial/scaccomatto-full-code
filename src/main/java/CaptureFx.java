@@ -26,12 +26,15 @@ final class CaptureFx extends JComponent {
 
     private static final float DURATION_MS = 520f;
     private static final float LOGICAL_SQUARE = 70f;     // Piece.draw() paints at 70x70
+    private static final float START_OPACITY = 0.55f;    // the taken piece is see-through from the start
 
     private final List<Fx> running = new ArrayList<>();
     private final Timer ticker;
 
     private static final class Fx {
         final Piece piece;
+        Piece cover;                                  // the piece that took it, drawn in front
+        java.util.function.BooleanSupplier coverStillThere;
         final float cx, cy, size;     // square centre and side, in this layer's pixels
         final float tilt;
         final long start = System.nanoTime();
@@ -66,6 +69,16 @@ final class CaptureFx extends JComponent {
      * {@code squareOnBoard} is the square's rectangle in {@code board}'s own pixels.
      */
     static void play(JComponent board, Piece piece, Rectangle squareOnBoard) {
+        play(board, piece, squareOnBoard, null, null);
+    }
+
+    /**
+     * Same, with the piece that made the capture: it's drawn again on top of the vanishing
+     * piece while it still stands on that square, so the taken piece fades away behind it
+     * instead of in front of it.
+     */
+    static void play(JComponent board, Piece piece, Rectangle squareOnBoard,
+                     Piece capturer, java.util.function.BooleanSupplier capturerStillThere) {
         if (board == null || piece == null || !board.isShowing()) return;
         JRootPane root = SwingUtilities.getRootPane(board);
         if (root == null) return;
@@ -81,6 +94,8 @@ final class CaptureFx extends JComponent {
         layer.setBounds(0, 0, layers.getWidth(), layers.getHeight());
         Point p = SwingUtilities.convertPoint(board, squareOnBoard.x, squareOnBoard.y, layers);
         Fx fx = new Fx(piece, p.x + squareOnBoard.width / 2f, p.y + squareOnBoard.height / 2f, squareOnBoard.width);
+        fx.cover = capturer;
+        fx.coverStillThere = capturerStillThere;
         layer.running.add(fx);
         layer.repaint(fx.area());
         if (!layer.ticker.isRunning()) layer.ticker.start();
@@ -125,13 +140,23 @@ final class CaptureFx extends JComponent {
             // floats up one full square, arriving centred on the square above as it ends
             float rise = f.size * smooth(t);
             Graphics2D g = (Graphics2D) g2.create();
-            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.min(1f, alpha)));
+            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.min(1f, alpha * START_OPACITY)));
             g.translate(f.cx, f.cy - rise);
             g.rotate(Math.toRadians(f.tilt * t));
             float k = scale * f.size / LOGICAL_SQUARE;
             g.scale(k, k);
             f.piece.draw(g, Math.round(-LOGICAL_SQUARE / 2), Math.round(-LOGICAL_SQUARE / 2));
             g.dispose();
+            // the capturing piece stays in front, exactly where the board draws it
+            if (f.cover != null && (f.coverStillThere == null || f.coverStillThere.getAsBoolean())) {
+                Graphics2D c = (Graphics2D) g2.create();
+                c.setComposite(AlphaComposite.SrcOver);
+                c.translate(f.cx - f.size / 2f, f.cy - f.size / 2f);
+                float s = f.size / LOGICAL_SQUARE;
+                c.scale(s, s);
+                f.cover.draw(c, 0, 0);
+                c.dispose();
+            }
         }
         g2.dispose();
     }
