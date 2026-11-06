@@ -862,10 +862,13 @@ public class ChessGame extends JFrame {
 
     private void recordRatingResult(String result) {
         if (ratingResultRecorded || result == null || result.isBlank()) return;
-        // rating only moves in online games against real players -- never against bots
+        // rating only moves in Quick Match games over the internet between two accounts --
+        // never against bots, and never in a private game with a code
         if (spectateMode || !onlineMode || isBotGame) return;
+        if (networkManager == null || !networkManager.isRated()) return;
         AccountApiClient.Session session = AccountSession.get();
         if (session == null) return;
+        final NetworkManager ratedGame = networkManager;
         ratingResultRecorded = true;
         final Double opponentRating = opponentRatingForResult();
 
@@ -875,7 +878,7 @@ public class ChessGame extends JFrame {
                 Exception lastFailure = null;
                 for (int attempt = 0; attempt < 3; attempt++) {
                     try {
-                        return accountApi.recordGameResult(session.token(), result, opponentRating);
+                        return accountApi.recordOnlineResult(result, ratedGame, opponentRating);
                     } catch (Exception failure) {
                         lastFailure = failure;
                         if (attempt < 2) Thread.sleep(1000L * (attempt + 1));
@@ -1026,7 +1029,8 @@ public class ChessGame extends JFrame {
             r.newGameLabel = isBotGame ? "PLAY AGAIN" : "NEW GAME";
             r.canRematch = onlineMode && !spectateMode && networkManager != null;
             r.onRematch = this::requestOnlineRematch;
-            r.rated = !spectateMode && onlineMode && !isBotGame && AccountSession.get() != null;
+            r.rated = !spectateMode && onlineMode && !isBotGame && AccountSession.get() != null
+                    && networkManager != null && networkManager.isRated();
 
             GameDialogs.Choice choice = GameDialogs.result(dialogAnchor(), r, w -> {
                 openResultWindow = w;
@@ -1147,6 +1151,10 @@ public class ChessGame extends JFrame {
                 return botPortrait(bot);
             }
             if (isBotGame && !bottomRow) return botPortrait(selectedBot);
+            if (onlineMode) {
+                // online: your own account picture, and your opponent's once it's loaded
+                return bottomRow == localIsWhite ? AccountPopup.currentAvatar() : opponentPicture();
+            }
             return offline ? LocalPlayers.avatar(whiteSide.getAsBoolean()) : null;
         });
         row.add(avatar);
@@ -3938,6 +3946,32 @@ public class ChessGame extends JFrame {
 
     // ── bot portraits, for the player rows (loaded once each) ──
     private static final java.util.Map<ChessBot, java.awt.image.BufferedImage> BOT_PORTRAITS = new java.util.HashMap<>();
+
+    private volatile java.awt.image.BufferedImage opponentPicture;
+    private volatile boolean opponentPictureAsked;
+
+    /** An online opponent's account picture: fetched once in the background, null until then (or if none). */
+    private java.awt.image.BufferedImage opponentPicture() {
+        if (!opponentPictureAsked && networkManager != null && networkManager.opponentUid() != null) {
+            opponentPictureAsked = true;
+            final String uid = networkManager.opponentUid();
+            Thread t = new Thread(() -> {
+                byte[] bytes = AccountApiClient.avatarOf(uid);
+                if (bytes == null) return;
+                try {
+                    opponentPicture = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
+                } catch (Exception ignored) {
+                }
+                SwingUtilities.invokeLater(() -> {
+                    if (topPanel != null) topPanel.repaint();
+                    if (bottomPanel != null) bottomPanel.repaint();
+                });
+            }, "opponent-picture");
+            t.setDaemon(true);
+            t.start();
+        }
+        return opponentPicture;
+    }
 
     private static java.awt.image.BufferedImage botPortrait(ChessBot bot) {
         if (bot == null) return null;

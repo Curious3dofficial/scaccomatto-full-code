@@ -23,6 +23,8 @@ public final class AccountSession {
 
     public static synchronized void clear() {
         current = null;
+        FirebaseLink.useGuest();   // internet games go back to the anonymous guest
+        Achievements.useProfile(null);   // and achievements back to the guest's
     }
 
     public static synchronized boolean isSignedIn() {

@@ -67,6 +67,34 @@ public class NetworkManager {
     /** True when this game is running over the internet rather than the local network. */
     public boolean isOnline() { return relayMode; }
 
+    // The opponent's account id (internet games, when they're signed in); null for a guest.
+    private volatile String opponentUid;
+    private volatile String myUidOnline;
+
+    /** The game's code on the internet ("*ABCDEF" for Quick Match). */
+    public String onlineCode() { return hostedConnection ? hostCode : joinCode; }
+
+    /** The opponent's account id, or null if they're playing as a guest. */
+    public String opponentUid() { return opponentUid; }
+
+    /**
+     * Whether this game counts for rating: a Quick Match game over the internet, with both
+     * players signed in to accounts. Private games with a code never count.
+     */
+    public boolean isRated() {
+        String code = onlineCode();
+        return relayMode && code != null && code.startsWith("*")
+                && opponentUid != null && myUidOnline != null && FirebaseLink.signedInToAccount();
+    }
+
+    /** Internet games: tell the other side which account (if any) we're playing as. */
+    private void announceAccount() {
+        String uid = null;
+        try { if (FirebaseLink.signedInToAccount()) uid = FirebaseLink.uid(); } catch (Exception ignored) {}
+        myUidOnline = uid;
+        sendLine("ACCOUNT " + (uid == null ? "-" : uid));
+    }
+
     // Handshake so a "connection" only counts when there's a real
     // Scaccomatto host on the other end, hosting the game code the joiner
     // typed. Before this, join() treated ANY accepted TCP connection as a
@@ -211,6 +239,7 @@ public class NetworkManager {
                     out = r.writer();
                     try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
                     if (closing) return;
+                    announceAccount();
                     if (listener != null) listener.onConnected(true);
                     startListenLoop();
                     return;
@@ -270,6 +299,7 @@ public class NetworkManager {
             relayMode = true;
             in = r.reader();
             out = r.writer();
+            announceAccount();
             if (listener != null) listener.onConnected(false);
             startListenLoop();
         }, "scaccomatto-join-online");
@@ -541,6 +571,10 @@ public class NetworkManager {
             }
         } else if (line.equals("TYPING")) {
             if (listener != null) listener.onOpponentTyping();
+        } else if (line.startsWith("ACCOUNT ")) {
+            // FORMAT: ACCOUNT <account id or ->
+            String id = line.substring(8).trim();
+            opponentUid = id.isEmpty() || "-".equals(id) || !id.matches("[A-Za-z0-9_-]{1,128}") ? null : id;
         } else if (line.startsWith("PLAYER ")) {
             // FORMAT: PLAYER <rating or -> <base64 name>
             String[] parts = line.split(" ");

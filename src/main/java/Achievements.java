@@ -133,7 +133,24 @@ final class Achievements {
 
     // ── progress ─────────────────────────────────────────────────────────────────
 
-    private static final Preferences PREFS = Preferences.userNodeForPackage(Achievements.class).node("achievements4");
+    // Each player has their own progress on this computer: the guest's (the original
+    // "achievements4"), and one per account that has signed in here. Signing in switches to
+    // that account's progress (filled from the cloud save); signing out switches back.
+    private static final Preferences BASE = Preferences.userNodeForPackage(Achievements.class);
+    private static volatile Preferences PREFS = BASE.node("achievements4");
+
+    /** Whose progress to show and add to: an account id, or null for the guest. */
+    static synchronized void useProfile(String accountId) {
+        Preferences next = accountId == null || !accountId.matches("[A-Za-z0-9_-]{1,128}")
+                ? BASE.node("achievements4") : BASE.node("account-" + accountId);
+        if (next.absolutePath().equals(PREFS.absolutePath())) return;
+        PREFS = next;
+        SwingUtilities.invokeLater(() -> {
+            for (Runnable r : new ArrayList<>(LISTENERS)) {
+                try { r.run(); } catch (Exception ignored) { }
+            }
+        });
+    }
 
     static int count(String counter)  { return counter == null ? 0 : PREFS.getInt("c." + counter, 0); }
 
@@ -184,6 +201,7 @@ final class Achievements {
             }
         }
         try { PREFS.flush(); } catch (Exception ignored) { }
+        CloudSave.achievementsChanged();
     }
 
     private static void add(String counter, int by) { setCount(counter, count(counter) + by); }
@@ -196,7 +214,54 @@ final class Achievements {
     private static boolean setFlag(String key) {
         if (flag(key)) return false;
         PREFS.putBoolean("f." + key, true);
+        CloudSave.achievementsChanged();
         return true;
+    }
+
+    // ── cloud save (signed in): everything above, as one map ────────────────────
+
+    /** All progress: "c.x" counters, "t.x.n" times a star was earned, "f.x" one-off flags. */
+    static synchronized java.util.Map<String, Object> snapshot() {
+        java.util.Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            for (String k : PREFS.keys()) {
+                if (k.startsWith("c.")) out.put(k, PREFS.getInt(k, 0));
+                else if (k.startsWith("t.")) out.put(k, PREFS.getLong(k, 0L));
+                else if (k.startsWith("f.")) out.put(k, PREFS.getBoolean(k, false));
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    /**
+     * Merges progress saved on another computer into this one: the higher count wins,
+     * flags add up, and a star keeps the earliest time it was earned. No pop-ups.
+     */
+    static synchronized boolean absorb(java.util.Map<String, Object> saved) {
+        boolean changed = false;
+        for (java.util.Map.Entry<String, Object> e : saved.entrySet()) {
+            String k = e.getKey();
+            Object v = e.getValue();
+            if (k.startsWith("c.") && v instanceof Number) {
+                int n = ((Number) v).intValue();
+                if (n > PREFS.getInt(k, 0)) { PREFS.putInt(k, n); changed = true; }
+            } else if (k.startsWith("t.") && v instanceof Number) {
+                long t = ((Number) v).longValue(), mine = PREFS.getLong(k, 0L);
+                if (t > 0 && (mine == 0 || t < mine)) { PREFS.putLong(k, t); changed = true; }
+            } else if (k.startsWith("f.") && Boolean.TRUE.equals(v)) {
+                if (!PREFS.getBoolean(k, false)) { PREFS.putBoolean(k, true); changed = true; }
+            }
+        }
+        if (changed) {
+            try { PREFS.flush(); } catch (Exception ignored) { }
+            SwingUtilities.invokeLater(() -> {
+                for (Runnable r : new ArrayList<>(LISTENERS)) {
+                    try { r.run(); } catch (Exception ignored) { }
+                }
+            });
+        }
+        return changed;
     }
 
     private static void announce(Def d, int stars) {

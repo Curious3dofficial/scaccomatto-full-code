@@ -47,6 +47,9 @@ final class FirebaseLink {
 
     private static final String API_KEY;
     private static final String DATABASE_URL;
+    /** Google sign-in for desktop apps (Google Cloud > Credentials > Desktop app); null if not set. */
+    static final String GOOGLE_CLIENT_ID;
+    static final String GOOGLE_CLIENT_SECRET;
     // Overridable only so the game can be tested against a stand-in server.
     private static final String AUTH_BASE = System.getProperty(
             "scaccomatto.firebase.authBase", "https://identitytoolkit.googleapis.com");
@@ -72,6 +75,11 @@ final class FirebaseLink {
         boolean ok = !key.isEmpty() && !key.startsWith("PASTE") && url.startsWith("http");
         API_KEY = ok ? key : null;
         DATABASE_URL = ok ? url : null;
+        String gid = p.getProperty("googleClientId", "").trim();
+        String gsec = p.getProperty("googleClientSecret", "").trim();
+        boolean g = ok && gid.endsWith(".apps.googleusercontent.com") && !gsec.isEmpty() && !gsec.startsWith("PASTE");
+        GOOGLE_CLIENT_ID = g ? gid : null;
+        GOOGLE_CLIENT_SECRET = g ? gsec : null;
     }
 
     /** True when the app was built with Firebase settings, so internet play can be tried. */
@@ -92,16 +100,58 @@ final class FirebaseLink {
     private static volatile long serverOffsetMs;
     private static volatile boolean offsetKnown;
 
-    /** This computer's anonymous guest id (signs in first if needed). */
+    // Signed in to an account: these replace the anonymous guest until signing out.
+    private static String accountUid;
+    private static String accountToken;
+    private static String accountRefresh;
+    private static long accountExpiresAt;
+
+    /** From now on, talk to Firebase as this account (after signing in). */
+    static synchronized void useAccount(String userId, String token, String refreshToken, long expiresInSeconds) {
+        if (userId == null || token == null) return;
+        accountUid = userId;
+        accountToken = token;
+        accountRefresh = refreshToken;
+        accountExpiresAt = System.currentTimeMillis() + Math.max(60, expiresInSeconds) * 1000;
+    }
+
+    /** Signed out: back to the anonymous guest. */
+    static synchronized void useGuest() {
+        accountUid = null;
+        accountToken = null;
+        accountRefresh = null;
+    }
+
+    /** The signed-in account's refresh token ("keep me signed in"), or null. */
+    static synchronized String accountRefreshToken() { return accountRefresh; }
+
+    /** Reads a spot as the current player; null if it's empty or not readable. */
+    static Object getPublicOrNull(String path) {
+        try { return get(path); } catch (IOException e) { return null; }
+    }
+
+    /** True while signed in to an account (not just the anonymous guest). */
+    static synchronized boolean signedInToAccount() { return accountUid != null; }
+
+    /** The id we play under: the account's, or the anonymous guest's (signing in first if needed). */
     static synchronized String uid() throws IOException {
         token();
-        return uid;
+        return accountUid != null ? accountUid : uid;
     }
 
     /** A valid sign-in token, refreshing or signing in again when needed. */
     static synchronized String token() throws IOException {
         if (!configured()) throw new IOException("Internet play isn't set up in this build.");
         long now = System.currentTimeMillis();
+        if (accountUid != null) {
+            if (accountToken != null && now < accountExpiresAt - 120_000) return accountToken;
+            if (accountRefresh == null) throw new IOException("Please sign in again.");
+            Map<String, Object> r = refresh(accountRefresh);
+            accountToken = str(r.get("id_token"));
+            if (r.get("refresh_token") != null) accountRefresh = str(r.get("refresh_token"));
+            accountExpiresAt = now + num(r.get("expires_in"), 3600) * 1000;
+            return accountToken;
+        }
         if (idToken != null && now < tokenExpiresAt - 120_000) return idToken;
         String refresh = PREFS.get("refreshToken", null);
         if (refresh != null) {
@@ -121,6 +171,30 @@ final class FirebaseLink {
         adopt(str(r.get("idToken")), str(r.get("refreshToken")), str(r.get("localId")),
                 str(r.get("expiresIn")));
         return idToken;
+    }
+
+    /** Swaps a refresh token for a fresh sign-in token: {id_token, refresh_token, user_id, expires_in}. */
+    static Map<String, Object> refresh(String refreshToken) throws IOException {
+        return asMap(postForm(TOKEN_BASE + "/v1/token?key=" + API_KEY,
+                "grant_type=refresh_token&refresh_token=" + enc(refreshToken)));
+    }
+
+    /** Calls a Firebase sign-in service, e.g. "accounts:signInWithPassword", with a JSON body. */
+    static Map<String, Object> auth(String method, Map<String, ?> body) throws IOException {
+        if (!configured()) throw new IOException("Accounts aren't set up in this build.");
+        return asMap(postJson(AUTH_BASE + "/v1/" + method + "?key=" + API_KEY, Json.write(body)));
+    }
+
+    /** Plain JSON POST to any address (used for Google's sign-in). */
+    static Map<String, Object> postFormTo(String url, String form) throws IOException {
+        return asMap(postForm(url, form));
+    }
+
+    /** Reads a spot anyone may read, without signing in (e.g. the "latest version" note). */
+    static Object getPublic(String path) throws IOException {
+        if (!configured()) return null;
+        return send(HttpRequest.newBuilder(URI.create(DATABASE_URL + "/" + path + ".json"))
+                .timeout(Duration.ofSeconds(8)).GET().build());
     }
 
     private static void adopt(String token, String refresh, String userId, String expiresIn) throws IOException {
@@ -164,6 +238,8 @@ final class FirebaseLink {
     static Object put(String path, Object value) throws IOException { return db("PUT", path, value, ""); }
     static Object patch(String path, Map<String, ?> values) throws IOException { return db("PATCH", path, values, ""); }
     static void delete(String path) throws IOException { db("DELETE", path, null, ""); }
+    /** Several writes at once, all-or-nothing: keys are full paths like "players/abc/rating". */
+    static Object update(Map<String, ?> pathsToValues) throws IOException { return db("PATCH", "", pathsToValues, ""); }
     /** Adds a new child with a server-made, time-ordered key; returns that key. */
     static String push(String path, Object value) throws IOException {
         return str(asMap(db("POST", path, value, "")).get("name"));

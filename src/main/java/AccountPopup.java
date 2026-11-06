@@ -182,6 +182,7 @@ final class AccountPopup {
         }
         signedIn = toProfile(session.profile(), avatar);
         avatarChanged();
+        CloudSave.signedIn();      // bring achievements from the account, save this computer's
     }
 
     /**
@@ -501,6 +502,9 @@ final class AccountPopup {
      * in first -- LOG IN opens the account popup on its sign-in page, and if
      * they come out of it signed in, {@code onSignedIn} runs then.
      */
+    /** Off: nothing in the game needs an account. */
+    private static final boolean SIGN_IN_REQUIRED = false;
+
     static void requireSignIn(Window owner, Runnable onSignedIn) {
         requireSignIn(owner, "LOG IN TO PLAY ONLINE",
                 "Online games are played from your account, so your rating and "
@@ -509,9 +513,9 @@ final class AccountPopup {
 
     /** The same "log in first" popup, with its own title and explanation. */
     static void requireSignIn(Window owner, String title, String message, Runnable onSignedIn) {
-        // signed in -- or there's no real account server yet, so everyone plays as a guest
-        // (also while building the app: the TEST login is still there in the Account popup)
-        if (AccountSession.isSignedIn() || talksToThisComputer()) {
+        // Accounts are optional: guests can do everything (they just aren't rated), so this
+        // never stops anyone. The popup below is kept for a future "accounts only" feature.
+        if (AccountSession.isSignedIn() || talksToThisComputer() || !SIGN_IN_REQUIRED) {
             if (onSignedIn != null) onSignedIn.run();
             return;
         }
@@ -716,12 +720,36 @@ final class AccountPopup {
     // Swap the popup's body and re-fit it, staying centred where it was.
     private Btn testLogin;
 
+    /**
+     * Every account page sits in a frame of this one size, so the popup never changes size
+     * when you go from page to page (or when an error line appears). Pages shorter than this
+     * sit in the middle; every page is laid out to fit inside it.
+     */
+    private static final int PAGE_H = s(660);
+    private JComponent pageFrame;
+
     private void setPage(JComponent next) {
         onProfilePage = Boolean.TRUE.equals(next.getClientProperty("profilePage"));
         if (testLogin != null) testLogin.setVisible(!AccountSession.isSignedIn());
-        if (page != null) card.remove(page);
+        if (pageFrame != null) card.remove(pageFrame);
         page = next;
-        card.add(page, BorderLayout.CENTER);
+        // pinned to the top, so the tabs and fields stay put when switching pages or when an
+        // error line appears; the short pages (inbox, almost there, edit) sit in the middle
+        JPanel frame = transparent(new GridBagLayout());
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.gridx = 0;
+        gc.gridy = 0;
+        gc.weighty = 1;
+        gc.anchor = Boolean.TRUE.equals(page.getClientProperty("centreInFrame"))
+                ? GridBagConstraints.CENTER : GridBagConstraints.NORTH;
+        frame.add(page, gc);
+        frame.setPreferredSize(new Dimension(CONTENT_W, PAGE_H));
+        frame.setMinimumSize(frame.getPreferredSize());
+        if (Boolean.getBoolean("scaccomatto.debugAccountPages") && page.getPreferredSize().height > PAGE_H) {
+            System.err.println("Account page too tall: " + page.getPreferredSize().height + " > " + PAGE_H);
+        }
+        pageFrame = frame;
+        card.add(frame, BorderLayout.CENTER);
         card.revalidate();
         card.repaint();
         if (dialog != null && dialog.isShowing()) {
@@ -739,11 +767,11 @@ final class AccountPopup {
     private JComponent signInPage() {
         JPanel p = column();
         p.add(tabs(true));
-        p.add(Box.createVerticalStrut(s(26)));
+        p.add(Box.createVerticalStrut(s(18)));
 
-        Field login = new Field("Username or email", false);
+        Field login = new Field("you@example.com", false);
         Field password = new Field("Password", true);
-        p.add(fieldBlock("USERNAME OR EMAIL", login));
+        p.add(fieldBlock("EMAIL", login));
         p.add(Box.createVerticalStrut(s(16)));
         p.add(fieldBlock("PASSWORD", password));
         p.add(Box.createVerticalStrut(s(14)));
@@ -756,26 +784,40 @@ final class AccountPopup {
         Btn signIn = new Btn("SIGN IN", Btn.GREEN_STYLE);
         Runnable submit = () -> {
             if (signIn.isBusy() || signIn.isError()) return;
+            if (takeEmailFix(signIn, login)) return;
             if (login.getText().isBlank() || password.getPassword().length == 0) {
                 signIn.setError("FILL IN BOTH FIELDS");
                 return;
             }
+            if (offerEmailFix(signIn, login)) return;
             String who = login.getText().trim();
             char[] pw = password.getPassword();
             boolean keep = remember.isOn();
             signIn.runTask("SIGNING IN", () -> {
-                AccountApiClient.Session session = API.login(who, pw, keep);
-                return new Object[] {session, fetchAvatar(session.token())};
+                try {
+                    AccountApiClient.Session session = API.login(who, pw, keep);
+                    return new Object[] {session, fetchAvatar(session.token())};
+                } catch (AccountApiClient.ApiException e) {
+                    if (e.getStatusCode() == AccountApiClient.NEEDS_EMAIL_CONFIRMATION) return new Object[] {"confirm"};
+                    if (e.getStatusCode() == AccountApiClient.NEEDS_PROFILE) return new Object[] {"profile"};
+                    throw e;
+                }
             }, result -> {
-                adoptSession((AccountApiClient.Session) result[0], keep,
-                        (java.awt.image.BufferedImage) result[1]);
-                setPage(profilePage());
+                if ("confirm".equals(result[0])) {
+                    setPage(checkInboxPage());
+                } else if ("profile".equals(result[0])) {
+                    setPage(finishProfilePage(who, null));
+                } else {
+                    adoptSession((AccountApiClient.Session) result[0], keep,
+                            (java.awt.image.BufferedImage) result[1]);
+                    setPage(profilePage());
+                }
             });
         };
         signIn.addActionListener(e -> submit.run());
         password.addActionListener(e -> submit.run());
         clearErrorOnEdit(signIn, login, password);
-        p.add(full(signIn, s(76)));
+        p.add(full(signIn, s(66)));
         p.add(signIn.note());
         p.add(Box.createVerticalStrut(s(18)));
         p.add(orDivider());
@@ -813,7 +855,7 @@ final class AccountPopup {
                 throw new java.io.IOException("Google sign-in timed out. Try again.");
             }, result -> {
                 if (result[0] instanceof AccountApiClient.Session session) {
-                    adoptSession(session, false, (java.awt.image.BufferedImage) result[1]);
+                    adoptSession(session, true, (java.awt.image.BufferedImage) result[1]);
                     setPage(profilePage());
                 } else {
                     setPage(googleUsernamePage((String) result[0],
@@ -821,32 +863,130 @@ final class AccountPopup {
                 }
             });
         });
-        p.add(full(google, s(70)));
+        p.add(full(google, s(60)));
         p.add(google.note());
+        p.add(Box.createVerticalStrut(s(12)));
+
+        Btn forgot = new Btn("FORGOT PASSWORD?", Btn.GREY_STYLE);
+        forgot.addActionListener(e -> {
+            if (forgot.isBusy() || forgot.isError()) return;
+            if (!login.getText().contains("@")) {
+                forgot.setError("TYPE YOUR EMAIL ABOVE");
+                return;
+            }
+            String who = login.getText().trim();
+            forgot.runTask("SENDING", () -> {
+                API.sendPasswordReset(who);
+                return new Object[0];
+            }, result -> {
+                forgot.note().setForeground(GREEN_EDGE);
+                forgot.showNote("If there's an account for " + who + ", a link to pick a new password is on its way.");
+            });
+        });
+        clearErrorOnEdit(forgot, login);
+        p.add(full(forgot, s(50)));
+        p.add(forgot.note());
         return p;
+    }
+
+    private String typoWarnedFor;
+
+    /**
+     * A likely typo in the email ("gmail.co")? The button turns red and asks
+     * "DID YOU MEAN you@gmail.com?" -- still clickable. Returns true if it did.
+     * Typing the same address again after editing it keeps it as typed.
+     */
+    private boolean offerEmailFix(Btn button, JTextField field) {
+        String typed = field.getText().trim();
+        String fixed = emailTypoFix(typed);
+        if (fixed == null || typed.equalsIgnoreCase(typoWarnedFor)) return false;
+        typoWarnedFor = typed;
+        button.putClientProperty("emailFix", fixed);
+        button.setConfirming("DID YOU MEAN " + fixed + "?", 600_000);
+        // editing the address yourself drops the suggestion
+        if (field.getClientProperty("emailFixListener") == null) {
+            field.putClientProperty("emailFixListener", Boolean.TRUE);
+            field.getDocument().addDocumentListener(new DocumentListener() {
+                private void drop() {
+                    if (Boolean.TRUE.equals(button.getClientProperty("applyingFix"))) return;
+                    button.putClientProperty("emailFix", null);
+                    button.clearConfirming();
+                }
+                @Override public void insertUpdate(DocumentEvent e) { drop(); }
+                @Override public void removeUpdate(DocumentEvent e) { drop(); }
+                @Override public void changedUpdate(DocumentEvent e) { drop(); }
+            });
+        }
+        return true;
+    }
+
+    /** The red suggestion was clicked: put the fixed address in, button back to normal. */
+    private boolean takeEmailFix(Btn button, JTextField field) {
+        Object fixed = button.getClientProperty("emailFix");
+        if (!(fixed instanceof String) || !button.isConfirming()) return false;
+        SoundManager.playExtraSound("tap.wav");
+        button.putClientProperty("applyingFix", Boolean.TRUE);
+        field.setText((String) fixed);
+        button.putClientProperty("applyingFix", null);
+        button.putClientProperty("emailFix", null);
+        button.clearConfirming();
+        return true;
+    }
+
+    private static final java.util.Map<String, String> EMAIL_TYPOS = new java.util.HashMap<>();
+    static {
+        for (String t : new String[]{"gmail.co", "gmail.con", "gmail.cm", "gmail.om", "gmail.comm", "gmai.com",
+                "gmial.com", "gmal.com", "gamil.com", "gnail.com", "gmaill.com", "gmail.c", "gmailcom"}) {
+            EMAIL_TYPOS.put(t, "gmail.com");
+        }
+        for (String t : new String[]{"hotmail.co", "hotmail.con", "hotmal.com", "hotmial.com", "hotmai.com"}) {
+            EMAIL_TYPOS.put(t, "hotmail.com");
+        }
+        for (String t : new String[]{"yahoo.con", "yahoo.cm", "yaho.com", "yahooo.com"}) EMAIL_TYPOS.put(t, "yahoo.com");
+        for (String t : new String[]{"outlook.co", "outlook.con", "outlok.com", "outloo.com"}) EMAIL_TYPOS.put(t, "outlook.com");
+        for (String t : new String[]{"icloud.co", "icloud.con", "iclod.com", "icoud.com"}) EMAIL_TYPOS.put(t, "icloud.com");
+        for (String t : new String[]{"yandex.r", "yandex.ri", "yandx.ru"}) EMAIL_TYPOS.put(t, "yandex.ru");
+        for (String t : new String[]{"mail.r", "mail.ri"}) EMAIL_TYPOS.put(t, "mail.ru");
+    }
+
+    /** The address with a common domain typo fixed (gmail.co -> gmail.com), or null if it looks fine. */
+    static String emailTypoFix(String email) {
+        int at = email == null ? -1 : email.lastIndexOf('@');
+        if (at <= 0) return null;
+        String domain = email.substring(at + 1).toLowerCase(Locale.ROOT);
+        String fix = EMAIL_TYPOS.get(domain);
+        return fix == null ? null : email.substring(0, at + 1) + fix;
     }
 
     private JComponent createPage() {
         JPanel p = column();
         p.add(tabs(false));
-        p.add(Box.createVerticalStrut(s(26)));
+        p.add(Box.createVerticalStrut(s(18)));
 
         Field name = new Field("What should we call you?", false);
         Field username = new Field("Letters, numbers, _ (unchangeable)", false);
         Field email = new Field("you@example.com", false);
         Field password = new Field("At least 10 characters", true);
         p.add(fieldBlock("PROFILE NAME", name));
-        p.add(Box.createVerticalStrut(s(14)));
+        p.add(Box.createVerticalStrut(s(10)));
         p.add(fieldBlock("USERNAME", username));
-        p.add(Box.createVerticalStrut(s(14)));
+        p.add(Box.createVerticalStrut(s(10)));
         p.add(fieldBlock("EMAIL", email));
-        p.add(Box.createVerticalStrut(s(14)));
+        p.add(Box.createVerticalStrut(s(10)));
         p.add(fieldBlock("PASSWORD", password));
-        p.add(Box.createVerticalStrut(s(26)));
+        p.add(Box.createVerticalStrut(s(10)));
+        JLabel terms = new JLabel("<html><div style='width:" + s(470) + "px'>By creating an account you confirm you're 13 or older"
+                + " and agree to the Terms and Privacy Policy (Settings > About).</div></html>");
+        terms.setFont(UiFonts.subtext(sf(15f)));
+        terms.setForeground(TEXT_MUTED);
+        terms.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(terms);
+        p.add(Box.createVerticalStrut(s(12)));
 
         Btn create = new Btn("CREATE ACCOUNT", Btn.GREEN_STYLE);
         Runnable submit = () -> {
             if (create.isBusy() || create.isError()) return;
+            if (takeEmailFix(create, email)) return;
             String problem = null;
             if (name.getText().isBlank() || username.getText().isBlank()
                     || email.getText().isBlank() || password.getPassword().length == 0) {
@@ -867,19 +1007,137 @@ final class AccountPopup {
             String n = name.getText().trim();
             String u = username.getText().trim();
             String em = email.getText().trim();
+            // "gmail.co", "gmial.com"...: fix it once and ask them to check (typing the same
+            // address again keeps it, for the rare person whose address really is like that)
+            if (offerEmailFix(create, email)) return;
             char[] pw = password.getPassword();
-            create.runTask("CREATING", () -> new Object[] {API.register(n, u, em, pw)},
-                    result -> {
-                        adoptSession((AccountApiClient.Session) result[0], false, null);
-                        setPage(profilePage());
-                    });
+            create.runTask("SENDING LINK", () -> {
+                API.startSignup(n, u, em, pw);
+                return new Object[0];
+            }, result -> setPage(checkInboxPage()));
         };
         create.addActionListener(e -> submit.run());
         password.addActionListener(e -> submit.run());
         clearErrorOnEdit(create, name, username, email, password);
-        p.add(full(create, s(76)));
+        p.add(full(create, s(66)));
         p.add(create.note());
         return p;
+    }
+
+    /**
+     * "Check your inbox": the account only comes to life once the link in the email is
+     * clicked. Checks by itself every few seconds; a mistyped address can start again.
+     */
+    private JComponent checkInboxPage() {
+        JPanel p = column();
+        p.putClientProperty("centreInFrame", Boolean.TRUE);
+        String email = AccountApiClient.unconfirmedEmail();
+        JLabel heading = new JLabel("Check your inbox");
+        heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
+        heading.setForeground(TEXT_DARK);
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(heading);
+        p.add(Box.createVerticalStrut(s(10)));
+        JLabel body = new JLabel("<html><div style='width:" + s(470) + "px'>We sent a link to <b>"
+                + escape(email == null ? "your email" : email) + "</b>. Click it to confirm it's your address, "
+                + "then come back here. Can't find it? Look in your spam folder.</div></html>");
+        body.setFont(UiFonts.subtext(sf(18f)));
+        body.setForeground(TEXT_MUTED);
+        body.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(body);
+        p.add(Box.createVerticalStrut(s(26)));
+
+        Btn done = new Btn("I'VE CONFIRMED IT", Btn.GREEN_STYLE);
+        final boolean[] checking = {false};
+        // what to do with a check's answer (from the button or the timer)
+        java.util.function.Consumer<Object[]> onChecked = result -> {
+            if (page != p) return;
+            if (result[0] instanceof AccountApiClient.Session session) {
+                adoptSession(session, true, null);
+                setPage(profilePage());
+            } else if ("profile".equals(result[0])) {
+                setPage(finishProfilePage(email, (String) result[1]));
+            }
+        };
+        java.util.concurrent.Callable<Object[]> check = () -> {
+            try {
+                AccountApiClient.Session session = API.checkConfirmed();
+                return new Object[] {session == null ? "waiting" : session};
+            } catch (AccountApiClient.ApiException e) {
+                if (e.getStatusCode() == AccountApiClient.NEEDS_PROFILE) return new Object[] {"profile", e.getMessage()};
+                throw e;
+            }
+        };
+        done.addActionListener(e -> {
+            if (done.isBusy() || done.isError() || checking[0]) return;
+            done.runTask("CHECKING", check, result -> {
+                if ("waiting".equals(result[0])) done.setError("NOT CONFIRMED YET");
+                else onChecked.accept(result);
+            });
+        });
+        p.add(full(done, s(66)));
+        p.add(done.note());
+        p.add(Box.createVerticalStrut(s(12)));
+
+        JPanel row = transparent(new GridLayout(1, 2, s(14), 0));
+        Btn resend = new Btn("RESEND EMAIL", Btn.WHITE_STYLE);
+        resend.addActionListener(e -> {
+            if (resend.isBusy() || resend.isError()) return;
+            resend.runTask("SENDING", () -> {
+                API.resendConfirmation();
+                return new Object[0];
+            }, result -> {
+                resend.note().setForeground(GREEN_EDGE);
+                resend.showNote("Sent again.");
+            });
+        });
+        Btn back = new Btn("WRONG EMAIL?", Btn.GREY_STYLE);
+        back.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            Thread t = new Thread(API::cancelSignup, "cancel-signup");
+            t.setDaemon(true);
+            t.start();
+            setPage(createPage());
+        });
+        row.add(resend);
+        row.add(back);
+        p.add(full(row, s(66)));
+        p.add(resend.note());
+
+        // look every 4 seconds while this page is showing
+        Timer poll = new Timer(4000, null);
+        poll.addActionListener(e -> {
+            if (page != p || dialog == null || !dialog.isDisplayable()) {
+                poll.stop();
+                return;
+            }
+            if (checking[0] || done.isBusy()) return;
+            checking[0] = true;
+            new SwingWorker<Object[], Void>() {
+                @Override protected Object[] doInBackground() throws Exception { return check.call(); }
+                @Override protected void done() {
+                    checking[0] = false;
+                    try {
+                        Object[] result = get();
+                        if (!"waiting".equals(result[0])) {
+                            poll.stop();
+                            onChecked.accept(result);
+                        }
+                    } catch (Exception ignored) {
+                        // offline for a moment: try again next tick
+                    }
+                }
+            }.execute();
+        });
+        poll.start();
+        return p;
+    }
+
+    /** Confirmed, but no profile yet (e.g. the app was closed before): pick a username. */
+    private JComponent finishProfilePage(String email, String reason) {
+        JComponent page = googleUsernamePage(null, new AccountApiClient.OAuthPending(
+                "needs_profile", "password", null, email, null, reason, null));
+        return page;
     }
 
     private JComponent profilePage() {
@@ -899,6 +1157,9 @@ final class AccountPopup {
         profile.add(avatarWrap, BorderLayout.WEST);
         JPanel who = transparent();
         who.setLayout(new BoxLayout(who, BoxLayout.Y_AXIS));
+        // name, @username and "member since" read from the left, next to the picture
+        // (popups centre their contents otherwise -- see PopupCentring)
+        who.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
         // The name is the Edit Profile button: hover shows a pencil beside
         // it, clicking the name or the pencil opens Edit Profile.
         EditableName nameLabel = new EditableName(me.name, () -> {
@@ -942,7 +1203,13 @@ final class AccountPopup {
 
         // --- actions
         // (EDIT PROFILE button removed -- the name/pencil does that now.)
-        JPanel actions = transparent(new GridLayout(1, 1, s(14), 0));
+        JPanel actions = transparent(new GridLayout(1, 2, s(14), 0));
+        Btn board = new Btn("LEADERBOARD", Btn.WHITE_STYLE);
+        board.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            setPage(leaderboardPage());
+        });
+        actions.add(board);
         Btn signOut = new Btn("SIGN OUT", Btn.GREY_STYLE);
         // First click asks "ARE YOU SURE?" (red); a second click within 3s
         // signs out, otherwise it quietly goes back to SIGN OUT.
@@ -977,9 +1244,111 @@ final class AccountPopup {
         return p;
     }
 
+    /** The top 50 players by rating (Quick Match games between accounts). */
+    private JComponent leaderboardPage() {
+        JPanel p = column();
+        JLabel heading = new JLabel("Leaderboard");
+        heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
+        heading.setForeground(TEXT_DARK);
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(heading);
+        p.add(Box.createVerticalStrut(s(4)));
+        JLabel sub = new JLabel("Ratings from Quick Match games between signed-in players");
+        sub.setFont(UiFonts.subtext(sf(16f)));
+        sub.setForeground(TEXT_MUTED);
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(sub);
+        p.add(Box.createVerticalStrut(s(16)));
+
+        JPanel list = transparent();
+        list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
+        JLabel loading = new JLabel("Loading...");
+        loading.setFont(UiFonts.subtext(sf(18f)));
+        loading.setForeground(TEXT_MUTED);
+        list.add(loading);
+        JScrollPane scroll = new JScrollPane(list,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(s(24));
+        p.add(full(scroll, s(420)));
+        p.add(Box.createVerticalStrut(s(18)));
+
+        String myId = AccountSession.get() == null || AccountSession.get().profile() == null
+                ? "" : AccountSession.get().profile().id();
+        new SwingWorker<java.util.List<java.util.Map<String, Object>>, Void>() {
+            @Override
+            protected java.util.List<java.util.Map<String, Object>> doInBackground() throws Exception {
+                return AccountApiClient.leaderboard(50);
+            }
+
+            @Override
+            protected void done() {
+                list.removeAll();
+                try {
+                    java.util.List<java.util.Map<String, Object>> top = get();
+                    if (top.isEmpty()) {
+                        loading.setText("No rated games yet. Be the first!");
+                        list.add(loading);
+                    }
+                    int rank = 1;
+                    for (java.util.Map<String, Object> m : top) {
+                        boolean me = myId.equals(m.get("uid"));
+                        JPanel row = new RoundPanel(me ? CREAM : UiTheme.c(255, 253, 248), me ? GOLD : CARD_BORDER, s(18));
+                        row.setLayout(new BorderLayout(s(14), 0));
+                        row.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
+                        row.setBorder(new EmptyBorder(s(8), s(16), s(8), s(18)));
+                        JLabel r = new JLabel(String.valueOf(rank++));
+                        r.setFont(MainMenu.variantDisplayFont(sf(22f)));
+                        r.setForeground(TEXT_DARK);
+                        r.setPreferredSize(new Dimension(s(40), s(10)));
+                        row.add(r, BorderLayout.WEST);
+                        String name = String.valueOf(m.getOrDefault("name", "?"));
+                        String user = String.valueOf(m.getOrDefault("username", ""));
+                        JLabel who = new JLabel("<html><b>" + escape(name) + "</b> <span style='color:#827562'>@"
+                                + escape(user) + " · " + m.get("games") + ("1".equals(String.valueOf(m.get("games"))) ? " game" : " games")
+                                + "</span></html>");
+                        who.setFont(UiFonts.subtext(sf(18f)));
+                        who.setForeground(TEXT_DARK);
+                        row.add(who, BorderLayout.CENTER);
+                        Object rating = m.get("rating");
+                        JLabel elo = new JLabel(rating instanceof Number
+                                ? String.valueOf(AccountApiClient.displayRating(((Number) rating).doubleValue())) : "-");
+                        elo.setFont(MainMenu.variantDisplayFont(sf(22f)));
+                        elo.setForeground(GOLD);
+                        row.add(elo, BorderLayout.EAST);
+                        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+                        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(60)));
+                        list.add(row);
+                        list.add(Box.createVerticalStrut(s(8)));
+                    }
+                } catch (Exception e) {
+                    loading.setText("Couldn't load the leaderboard. Check your internet connection.");
+                    list.add(loading);
+                }
+                list.revalidate();
+                list.repaint();
+            }
+        }.execute();
+
+        Btn back = new Btn("BACK", Btn.GREY_STYLE);
+        back.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            setPage(profilePage());
+        });
+        p.add(full(back, s(68)));
+        return p;
+    }
+
+    private static String escape(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
     private JComponent editPage() {
         Profile me = signedIn;
         JPanel p = column();
+        p.putClientProperty("centreInFrame", Boolean.TRUE);
         JLabel heading = new JLabel("Edit profile");
         heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
         heading.setForeground(TEXT_DARK);
@@ -1113,13 +1482,15 @@ final class AccountPopup {
     // Google sign-in for a brand new account: pick a username first.
     private JComponent googleUsernamePage(String state, AccountApiClient.OAuthPending pending) {
         JPanel p = column();
+        p.putClientProperty("centreInFrame", Boolean.TRUE);
         JLabel heading = new JLabel("Almost there");
         heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
         heading.setForeground(TEXT_DARK);
         heading.setAlignmentX(Component.LEFT_ALIGNMENT);
         p.add(heading);
         p.add(Box.createVerticalStrut(s(6)));
-        JLabel sub = new JLabel("Pick a username for your new account"
+        JLabel sub = new JLabel(pending.message() != null ? pending.message()
+                : "Pick a username for your new account"
                 + (pending.email() == null ? "." : " (" + pending.email() + ")."));
         sub.setFont(UiFonts.subtext(sf(17f)));
         sub.setForeground(TEXT_MUTED);
@@ -1148,14 +1519,14 @@ final class AccountPopup {
             String n = name.getText().trim();
             go.runTask("CREATING", () -> new Object[] {API.completeOAuthSignup(state, u, n)},
                     result -> {
-                        adoptSession((AccountApiClient.Session) result[0], false, null);
+                        adoptSession((AccountApiClient.Session) result[0], true, null);
                         setPage(profilePage());
                     });
         };
         go.addActionListener(e -> submit.run());
         username.addActionListener(e -> submit.run());
         clearErrorOnEdit(go, name, username);
-        p.add(full(go, s(76)));
+        p.add(full(go, s(66)));
         p.add(go.note());
         return p;
     }
@@ -1265,7 +1636,7 @@ final class AccountPopup {
         });
         row.add(signIn);
         row.add(create);
-        return full(row, s(70));
+        return full(row, s(60));
     }
 
     private static JComponent fieldBlock(String label, Field field) {
@@ -1273,8 +1644,8 @@ final class AccountPopup {
         block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
         block.setAlignmentX(Component.LEFT_ALIGNMENT);
         block.add(sectionLabel(label));
-        block.add(Box.createVerticalStrut(s(8)));
-        block.add(full(field, s(64)));
+        block.add(Box.createVerticalStrut(s(6)));
+        block.add(full(field, s(56)));
         block.setMaximumSize(new Dimension(CONTENT_W, block.getPreferredSize().height));
         return block;
     }
@@ -1763,6 +2134,13 @@ final class AccountPopup {
             } else {
                 String text = errorText != null ? errorText
                         : confirmText != null ? confirmText : label;
+                Font f = g.getFont();
+                while (fm.stringWidth(text) > w - s(40) && f.getSize2D() > 11f) {
+                    f = f.deriveFont(f.getSize2D() - 1f);
+                    g.setFont(f);
+                    fm = g.getFontMetrics();
+                    y = h / 2 + (fm.getAscent() - fm.getDescent()) / 2;
+                }
                 g.drawString(text, (w - fm.stringWidth(text)) / 2, y);
             }
             g.dispose();

@@ -82,6 +82,11 @@ final class OnlineRelay {
         lobby.put("seen", FirebaseLink.SERVER_TIME);
         r.lobbyPath = (isPublic ? "public/" : "private/") + code;
         FirebaseLink.put(r.lobbyPath, lobby);
+        if (isPublic && FirebaseLink.signedInToAccount()) {
+            // Quick Match between accounts counts for rating; the rules only allow this mark
+            // on a game that's listed for Quick Match.
+            try { FirebaseLink.put(r.room() + "/rated", true); } catch (IOException ignored) { }
+        }
         r.startLobbyRefresh();
         r.start();
         return r;
@@ -305,7 +310,18 @@ final class OnlineRelay {
             if (host) {
                 String p = lobbyPath;
                 try { if (p != null) FirebaseLink.delete(p); } catch (IOException ignored) { }
-                try { FirebaseLink.delete(room()); } catch (IOException ignored) { }
+                boolean rated = false;
+                try { rated = Boolean.TRUE.equals(FirebaseLink.get(room() + "/rated")); } catch (IOException ignored) { }
+                if (rated) {
+                    // keep who played and the results (a few bytes) so both ratings can be
+                    // checked; the messages themselves go
+                    Map<String, Object> gone = new LinkedHashMap<>();
+                    gone.put("h2g", null);
+                    gone.put("g2h", null);
+                    try { FirebaseLink.patch(room(), gone); } catch (IOException ignored) { }
+                } else {
+                    try { FirebaseLink.delete(room()); } catch (IOException ignored) { }
+                }
             }
         }, "scaccomatto-relay-close");
         t.setDaemon(true);
