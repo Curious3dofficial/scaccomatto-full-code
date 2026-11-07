@@ -37,13 +37,10 @@ public class ChessGame extends JFrame {
         private static final int BOARD_SIDE_COMPARTMENT_WIDTH = 38;
         private static final int TIME_CONTROL_WIDTH = 509;
         private static final int TIME_SELECT_HEIGHT = 92;
-        private static final int TIME_DETAILS_HEIGHT = 420;
         private static final int TIME_START_HEIGHT = 100;
         private static final int MIN_TIME_CONTROL_WIDTH = 250;
         private static final int COLLAPSED_TIME_CONTROL_HEIGHT =
             TIME_SELECT_HEIGHT + 14 + TIME_START_HEIGHT + 12;
-        private static final int TIME_PRESET_WIDTH = 156;
-        private static final int TIME_PRESET_HEIGHT = 79;
         private static final int TIME_DETAILS_ANIMATION_MS = 150;
         
         private JLabel topClockLabel;
@@ -296,7 +293,6 @@ public class ChessGame extends JFrame {
     private JSplitPane leftMainSplitPane;
     private final Map<Component, ResponsiveControlMetrics> responsiveControlMetrics = new IdentityHashMap<>();
     private final Map<Component, Font> leftPanelBaseFonts = new IdentityHashMap<>();
-    private boolean applyingResponsiveControlScale = false;
         private Component centerSpellFiller;
         private Board board;
         private SettingsPanel settingsPanel;
@@ -314,9 +310,7 @@ public class ChessGame extends JFrame {
         private ChessBot spectateBlackBot = null;
         private int botSkillLevel = 20;
         private StringBuilder uciMoves = new StringBuilder();
-        private ChessBot opponentBot;
         private boolean whiteAtBottom = true; // perspective
-        private boolean youAreWhite = true;   // player color
         private boolean isBotGame = false;
         private boolean spectateMode = false;
         private boolean playerIsWhite = true;
@@ -907,10 +901,6 @@ public class ChessGame extends JFrame {
             }
         };
         worker.execute();
-    }
-
-    private static String signedDelta(int delta) {
-        return delta > 0 ? "+" + delta : String.valueOf(delta);
     }
 
     private boolean showGameConfirm(String title, String message, String yesText, String noText) {
@@ -2332,94 +2322,6 @@ public class ChessGame extends JFrame {
             component.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
         }
 
-        private void installResponsiveControlScaling(JPanel centerPanel, JPanel rightPanel) {
-            captureResponsiveControlMetrics(centerPanel);
-            captureResponsiveControlMetrics(rightPanel);
-
-            java.awt.event.ComponentAdapter resizeListener = new java.awt.event.ComponentAdapter() {
-                @Override
-                public void componentResized(java.awt.event.ComponentEvent e) {
-                    ensurePreGameTimeControlsVisible();
-                    applyResponsiveControlScaling(centerPanel, rightPanel);
-                }
-            };
-            centerPanel.addComponentListener(resizeListener);
-            rightPanel.addComponentListener(resizeListener);
-            centerRightSplitPane.addPropertyChangeListener(
-                JSplitPane.DIVIDER_LOCATION_PROPERTY,
-                e -> {
-                    ensurePreGameTimeControlsVisible();
-                    applyResponsiveControlScaling(centerPanel, rightPanel);
-                }
-            );
-            SwingUtilities.invokeLater(() -> {
-                ensurePreGameTimeControlsVisible();
-                applyResponsiveControlScaling(centerPanel, rightPanel);
-            });
-        }
-
-        private void ensurePreGameTimeControlsVisible() {
-            if (gameStarted || onlineMode || isBotGame || timeControlPanel == null || centerColumnPanel == null
-                    || timePanelGhost != null) {
-                return;
-            }
-            if (timeControlPanel.getParent() == null) {
-                GridBagConstraints gbc = new GridBagConstraints();
-                gbc.gridx = 0;
-                gbc.gridy = 0;
-                gbc.anchor = GridBagConstraints.NORTH;
-                gbc.weightx = 1.0;
-                gbc.fill = GridBagConstraints.HORIZONTAL;
-                gbc.insets = new Insets(0, 6, 8, 6);
-                centerColumnPanel.add(timeControlPanel, gbc);
-            }
-            timeControlPanel.setVisible(true);
-            timeSelectBtn.setVisible(true);
-            startGameBtn.setVisible(true);
-            timeControlPanel.revalidate();
-            centerColumnPanel.revalidate();
-        }
-
-        private void applyResponsiveControlScaling(JPanel centerPanel, JPanel rightPanel) {
-            if (applyingResponsiveControlScale) return;
-            applyingResponsiveControlScale = true;
-            try {
-                synchronizeSpellPanelSizes(centerPanel);
-                scaleResponsiveControls(
-                    centerPanel,
-                    responsiveScale(centerPanel.getWidth(), BASE_CENTER_WIDTH)
-                );
-                scaleResponsiveControls(
-                    rightPanel,
-                    responsiveScale(rightPanel.getWidth(), BASE_RIGHT_WIDTH)
-                );
-                syncExpandedTimeDetailsHeight();
-                updateTimeControlPanelSize();
-                centerPanel.revalidate();
-                rightPanel.revalidate();
-                centerPanel.repaint();
-                rightPanel.repaint();
-            } finally {
-                applyingResponsiveControlScale = false;
-            }
-        }
-
-        private void synchronizeSpellPanelSizes(JPanel centerPanel) {
-            if (centerPanel == null || whiteSpellPanel == null || blackSpellPanel == null) return;
-            int width = Math.max(1, centerPanel.getWidth() - 12);
-            for (JPanel spellPanel : new JPanel[]{blackSpellPanel, whiteSpellPanel}) {
-                if (spellPanel instanceof SpellDeckPanel) {
-                    ((SpellDeckPanel) spellPanel).setResponsiveWidth(width);
-                }
-            }
-        }
-
-        private double responsiveScale(int currentWidth, int designWidth) {
-            if (currentWidth <= 0 || designWidth <= 0) return 1.0;
-            double widthRatio = currentWidth / (double) designWidth;
-            return 1.0 + (widthRatio - 1.0) * 0.40;
-        }
-
         private void captureResponsiveControlMetrics(Component component) {
             if (component == null || responsiveControlMetrics.containsKey(component)) return;
             responsiveControlMetrics.put(component, new ResponsiveControlMetrics(component));
@@ -3296,53 +3198,13 @@ public class ChessGame extends JFrame {
             updateReviewButton();
         }
         
-        // Timer-related public methods for Board to access
-        public boolean isTimerStarted() {
-            return timerStarted;
-        }
         
-        public void setTimerStarted(boolean started) {
-            this.timerStarted = started;
-        }
         
-        public int getWhiteTimeRemaining() {
-            return whiteTimeRemaining;
-        }
         
-        public int getBlackTimeRemaining() {
-            return blackTimeRemaining;
-        }
         
-        public int getIncrementSeconds() {
-            return incrementSeconds;
-        }
         
-        public void ensureTimerStarted() {
-            if (!timerStarted && whiteTimeRemaining > 0 && blackTimeRemaining > 0) {
-                timerStarted = true;
-                startTimer();
-            }
-        }
         
-        // Toggle turn without triggering bot move (used by applyBotMove)
-        public void toggleTurnOnly() {
-            whitesTurn = !whitesTurn;
-        }
         
-        public void addTimeIncrement(boolean forWhite) {
-            if (incrementSeconds > 0) {
-                if (forWhite) {
-                    whiteTimeRemaining += incrementSeconds;
-                    JLabel whiteLabel = getWhiteClockLabel();
-
-                    whiteLabel.setText(formatTime(whiteTimeRemaining));
-                } else {
-                    blackTimeRemaining += incrementSeconds;
-                    JLabel blackLabel = getBlackClockLabel();
-                    blackLabel.setText(formatTime(blackTimeRemaining));
-                }
-            }
-        }
 
         public boolean isOnlineMode() {
             return onlineMode;
@@ -3687,12 +3549,6 @@ public class ChessGame extends JFrame {
             return openingNamePanel;
         }
         
-        // NEW: Update opening name display
-        public void updateOpeningName() {
-            String currentFEN = board.getCurrentFEN();
-            String openingName = openingDetector.getOpeningName(currentFEN);
-            openingNamePanel.setOpeningName(openingName);
-        }
 
         public void onLocalResignRequest() {
             // Settings > Online play > Confirm before resigning (online games only skip it)
@@ -3815,17 +3671,6 @@ public class ChessGame extends JFrame {
 
         double getUiScale() {
             return uiScale;
-        }
-
-        void setResponsiveWidth(int width) {
-            responsiveWidth = Math.max(1, width);
-            int height = Math.max(1,
-                    (int) Math.round(responsiveWidth * SPELL_PANEL_H
-                            / (double) SPELL_PANEL_W));
-            Dimension responsiveSize = new Dimension(responsiveWidth, height);
-            super.setMinimumSize(responsiveSize);
-            super.setPreferredSize(responsiveSize);
-            super.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
         }
 
         @Override
@@ -3993,6 +3838,7 @@ public class ChessGame extends JFrame {
         i.variant = gameVariant;
         i.moves = () -> board == null ? java.util.List.of() : board.getUciMoveHistoryFromStates();
         i.chat = () -> net == null ? java.util.List.of() : net.chatLog.entries();
+        i.leaveGame = this::exitToMenu;
         return i;
     }
 
@@ -6027,87 +5873,6 @@ public class ChessGame extends JFrame {
         return btn;
     }
 
-    private JButton createGlossyActionButton(
-        String text,
-        Color top,
-        Color bottom,
-        Color hoverTop,
-        Color hoverBottom,
-        Color borderBright,
-        Color borderDark
-    ) {
-        JButton btn = new JButton(text) {
-            private boolean hover;
-            {
-                setFocusPainted(false);
-                setBorderPainted(false);
-                setContentAreaFilled(false);
-                setOpaque(false);
-                setCursor(new Cursor(Cursor.HAND_CURSOR));
-                setFont(new Font("Arial", Font.BOLD, 18));
-                setForeground(Color.WHITE);
-                addMouseListener(new java.awt.event.MouseAdapter() {
-                    @Override
-                    public void mouseEntered(java.awt.event.MouseEvent evt) {
-                        hover = true;
-                        repaint();
-                    }
-                    @Override
-                    public void mouseExited(java.awt.event.MouseEvent evt) {
-                        hover = false;
-                        repaint();
-                    }
-                });
-            }
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int w = getWidth();
-                int h = getHeight();
-                int arc = 14;
-                boolean on = isEnabled();
-                Color t = hover && on ? hoverTop : top;
-                Color b = hover && on ? hoverBottom : bottom;
-                if (!on) {
-                    // greyed out: same shape, colour washed toward grey
-                    t = mixGrey(t);
-                    b = mixGrey(b);
-                }
-
-                g2.setPaint(new GradientPaint(0, 0, t, 0, h, b));
-                g2.fillRoundRect(0, 0, w, h, arc, arc);
-
-                // glossy highlight band
-                g2.setPaint(new GradientPaint(0, 0, new Color(255, 255, 255, hover ? 88 : 64), 0, h / 2, new Color(255, 255, 255, 0)));
-                g2.fillRoundRect(2, 2, w - 4, h / 2, arc - 3, arc - 3);
-
-                g2.setColor(on ? borderBright : mixGrey(borderBright));
-                g2.drawRoundRect(0, 0, w - 1, h - 1, arc, arc);
-                g2.setColor(on ? borderDark : mixGrey(borderDark));
-                g2.drawRoundRect(1, 1, w - 3, h - 3, arc - 2, arc - 2);
-
-                FontMetrics fm = g2.getFontMetrics();
-                int tx = (w - fm.stringWidth(getText())) / 2;
-                int ty = (h - fm.getHeight()) / 2 + fm.getAscent();
-                g2.setColor(new Color(0, 0, 0, on ? 140 : 70));
-                g2.drawString(getText(), tx + 1, ty + 1);
-                g2.setColor(on ? Color.WHITE : new Color(255, 255, 255, 130));
-                g2.drawString(getText(), tx, ty);
-                g2.dispose();
-            }
-        };
-        btn.setPreferredSize(new Dimension(360, 48));
-        btn.setMaximumSize(new Dimension(360, 48));
-        return btn;
-    }
-
-    private static Color mixGrey(Color c) {
-        int g = (c.getRed() + c.getGreen() + c.getBlue()) / 3;
-        g = 70 + (g - 70) / 2;
-        return new Color((c.getRed() + 3 * g) / 4, (c.getGreen() + 3 * g) / 4, (c.getBlue() + 3 * g) / 4);
-    }
-
     // Under the header: a 2x2 grid of quick picks and a "More Settings" link that swaps
     // the grid for the full Bullet / Blitz / Rapid list (and back), sliding and fading.
     private JPanel createTimeDetailsPanel() {
@@ -6339,13 +6104,6 @@ public class ChessGame extends JFrame {
         return idx > 0 ? preset.display.substring(0, idx) : preset.display;
     }
 
-    private boolean isPresetSelected(JButton btn) {
-        Object p = btn.getClientProperty("preset");
-        if (!(p instanceof TimePreset)) return false;
-        TimePreset tp = (TimePreset) p;
-        return isSamePreset(selectedPreset, tp);
-    }
-
     private void updatePresetButtonStyles() {
         for (JButton b : timePresetButtons) {
             if (b instanceof TimeControlPicker.Chip) ((TimeControlPicker.Chip) b).refresh(true);
@@ -6354,91 +6112,6 @@ public class ChessGame extends JFrame {
         for (JButton b : quickPresetButtons) {
             if (b instanceof TimeControlPicker.Chip) ((TimeControlPicker.Chip) b).refresh(true);
         }
-    }
-
-    private String getPresetCategory(TimePreset preset) {
-        if (preset == null || preset.display == null) return "rapid";
-        String s = preset.display.toLowerCase();
-        if (s.contains("(bullet)")) return "bullet";
-        if (s.contains("(blitz)")) return "blitz";
-        return "rapid";
-    }
-
-    private void drawPresetIcon(
-        Graphics2D g2,
-        int x,
-        int y,
-        String iconKind,
-        boolean large,
-        float scale
-    ) {
-        Graphics2D gg = (Graphics2D) g2.create();
-        gg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        gg.translate(x, y);
-        gg.scale(scale, scale);
-        x = 0;
-        y = 0;
-        if ("blitz".equals(iconKind)) {
-            gg.setColor(new Color(248, 215, 77));
-            Polygon p = new Polygon();
-            p.addPoint(x + 7, y + 1); p.addPoint(x + 12, y + 1); p.addPoint(x + 9, y + 8);
-            p.addPoint(x + 14, y + 8); p.addPoint(x + 6, y + 18); p.addPoint(x + 8, y + 11);
-            p.addPoint(x + 4, y + 11);
-            gg.fillPolygon(p);
-        } else if ("rapid".equals(iconKind)) {
-            gg.setColor(new Color(133, 199, 78));
-            gg.setStroke(new BasicStroke(large ? 3f : 2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            int d = large ? 20 : 14;
-            int ox = x + (large ? 0 : 2);
-            int oy = y + (large ? 0 : 3);
-            gg.drawOval(ox, oy, d, d);
-            gg.drawLine(ox + d / 2, oy - 2, ox + d / 2 - 2, oy - 5);
-            gg.drawLine(ox + d / 2, oy - 2, ox + d / 2 + 2, oy - 5);
-            gg.drawLine(ox + d / 2, oy + d / 2, ox + d / 2, oy + d / 2 - 5);
-            gg.drawLine(ox + d / 2, oy + d / 2, ox + d / 2 + 4, oy + d / 2 + 3);
-        } else {
-            // Bullet uses a rocket-like glyph similar to chess.com.
-            java.awt.geom.AffineTransform old = gg.getTransform();
-            int cx = x + (large ? 12 : 9);
-            int cy = y + (large ? 10 : 9);
-            gg.rotate(Math.toRadians(-35), cx, cy);
-
-            gg.setColor(new Color(255, 205, 72));
-            java.awt.geom.RoundRectangle2D.Float hull =
-                new java.awt.geom.RoundRectangle2D.Float(cx - 2, cy - 8, 6, 13, 4, 4);
-            gg.fill(hull);
-
-            Polygon nose = new Polygon();
-            nose.addPoint(cx + 1, cy - 11);
-            nose.addPoint(cx - 2, cy - 7);
-            nose.addPoint(cx + 4, cy - 7);
-            gg.fillPolygon(nose);
-
-            gg.setColor(new Color(33, 33, 33));
-            gg.fillOval(cx, cy - 5, 2, 2);
-
-            gg.setColor(new Color(255, 216, 110));
-            Polygon finL = new Polygon();
-            finL.addPoint(cx - 2, cy + 2);
-            finL.addPoint(cx - 5, cy + 5);
-            finL.addPoint(cx - 1, cy + 4);
-            gg.fillPolygon(finL);
-            Polygon finR = new Polygon();
-            finR.addPoint(cx + 4, cy + 2);
-            finR.addPoint(cx + 6, cy + 5);
-            finR.addPoint(cx + 3, cy + 4);
-            gg.fillPolygon(finR);
-
-            gg.setColor(new Color(255, 237, 169));
-            Polygon flame = new Polygon();
-            flame.addPoint(cx + 1, cy + 5);
-            flame.addPoint(cx - 1, cy + 9);
-            flame.addPoint(cx + 3, cy + 7);
-            gg.fillPolygon(flame);
-
-            gg.setTransform(old);
-        }
-        gg.dispose();
     }
 
     private void toggleTimeDetails() {
@@ -6557,25 +6230,6 @@ public class ChessGame extends JFrame {
         updatePresetButtonStyles();
 
         applyTimeControl(selectedPreset.initialSeconds, selectedPreset.incrementSeconds);
-    }
-
-    private TimePreset promptCustomTime() {
-        JSpinner minutes = new JSpinner(new SpinnerNumberModel(10, 1, 180, 1));
-        JSpinner increment = new JSpinner(new SpinnerNumberModel(0, 0, 60, 1));
-
-        JPanel p = new JPanel(new GridLayout(2, 2, 10, 10));
-        p.add(new JLabel("Minutes:"));
-        p.add(minutes);
-        p.add(new JLabel("Increment (sec):"));
-        p.add(increment);
-
-        int result = JOptionPane.showConfirmDialog(dialogOwner(), p, "Custom Time Control", JOptionPane.OK_CANCEL_OPTION);
-        if (result != JOptionPane.OK_OPTION) return null;
-
-        int m = (Integer) minutes.getValue();
-        int inc = (Integer) increment.getValue();
-        String display = (inc > 0) ? (m + " | " + inc + " (Custom)") : (m + " min (Custom)");
-        return new TimePreset(display, m * 60, inc);
     }
 
     private void applyTimeControl(int initialSeconds, int increment) {
@@ -6945,76 +6599,6 @@ public class ChessGame extends JFrame {
             dispose();
             System.exit(0);
         }
-    }
-
-    private JButton buildExitDialogButton(String text, Color fg, Color bg, Color border) {
-        JButton btn = new JButton(text);
-        btn.setFocusPainted(false);
-        btn.setFont(new Font("SansSerif", Font.BOLD, 18));
-        btn.setForeground(fg);
-        btn.setBackground(bg);
-        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btn.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(border, 2, true),
-            BorderFactory.createEmptyBorder(8, 18, 8, 18)
-        ));
-        btn.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override public void mouseEntered(java.awt.event.MouseEvent e) {
-                btn.setBackground(new Color(
-                    Math.max(0, bg.getRed() - 10),
-                    Math.max(0, bg.getGreen() - 10),
-                    Math.max(0, bg.getBlue() - 10)
-                ));
-            }
-            @Override public void mouseExited(java.awt.event.MouseEvent e) {
-                btn.setBackground(bg);
-            }
-        });
-        return btn;
-    }
-
-    private BufferedImage loadExitDialogImage(String resourcePath, String filePath) {
-        try {
-            URL url = getClass().getResource(resourcePath);
-            if (url != null) return ImageIO.read(url);
-        } catch (Exception ignored) {}
-        try {
-            File f = new File(filePath);
-            if (f.exists()) return ImageIO.read(f);
-        } catch (Exception ignored) {}
-        return null;
-    }
-
-    private BufferedImage loadDoodleUnderlay() {
-        String[] resourcePaths = {
-            "/assets/doodle.png"
-        };
-        for (String path : resourcePaths) {
-            try {
-                URL url = getClass().getResource(path);
-                if (url != null) {
-                    BufferedImage image = ImageIO.read(url);
-                    if (image != null) return image;
-                }
-            } catch (Exception ignored) {
-            }
-        }
-
-        String[] filePaths = {
-            "src/assets/doodle.png",
-            "assets/doodle.png"
-        };
-        for (String path : filePaths) {
-            try {
-                File file = new File(path);
-                if (file.isFile()) {
-                    BufferedImage image = ImageIO.read(file);
-                    if (image != null) return image;
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return null;
     }
 
     // â”€â”€ Reset the board to starting position and restart the game â”€â”€â”€â”€â”€â”€â”€â”€â”€

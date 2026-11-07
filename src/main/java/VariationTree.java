@@ -89,8 +89,6 @@ public final class VariationTree {
     public Node root()    { return root; }
     public Node current() { return current; }
 
-    public boolean isAtRoot() { return current == root; }
-
     /** True when there is nothing but the starting position. */
     public boolean isEmpty() { return root.children.isEmpty(); }
 
@@ -124,13 +122,6 @@ public final class VariationTree {
     public boolean back() {
         if (current.parent == null) return false;
         current = current.parent;
-        return true;
-    }
-
-    /** Step forward along the line the current node is on. */
-    public boolean forward() {
-        if (current.children.isEmpty()) return false;
-        current = current.children.get(0);
         return true;
     }
 

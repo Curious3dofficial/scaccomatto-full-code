@@ -32,6 +32,7 @@ final class PlayerCard {
         String variant;
         Supplier<List<String>> moves;
         Supplier<List<ChatLog.Entry>> chat;
+        Runnable leaveGame;       // back to the menus (Challenge after the game)
     }
 
     private static final Color CARD = UiTheme.c(255, 253, 248);
@@ -72,12 +73,13 @@ final class PlayerCard {
         // --- top: picture + who
         JPanel top = new JPanel(new BorderLayout(16, 0));
         top.setOpaque(false);
+        final boolean[] hidden = {false};
         JComponent pic = new JComponent() {
             @Override protected void paintComponent(Graphics g0) {
                 Graphics2D g = (Graphics2D) g0.create();
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 int sz = Math.min(getWidth(), getHeight()) - 2;
-                AnalysisPlayers.paint(g, 1, 1, sz, true, info.picture == null ? null : info.picture.get(),
+                AnalysisPlayers.paint(g, 1, 1, sz, true, info.picture == null || hidden[0] ? null : info.picture.get(),
                         info.name == null ? "?" : info.name);
                 if (info.connected != null && info.connected.getAsBoolean()) {
                     int d = sz / 4;
@@ -118,7 +120,7 @@ final class PlayerCard {
 
         // after the game: your record against them
         Runnable showRecord = () -> {
-            if (info.gameOver != null && info.gameOver.getAsBoolean() && info.playerId != null) {
+            if (!hidden[0] && info.gameOver != null && info.gameOver.getAsBoolean() && info.playerId != null) {
                 int[] r = Moderation.record(info.playerId);
                 record.setText("<html><span style='color:" + hex(GREEN) + "'><b>" + r[0] + "</b></span> / "
                         + "<b>" + r[1] + "</b> / <span style='color:" + hex(RED) + "'><b>" + r[2] + "</b></span>"
@@ -151,12 +153,77 @@ final class PlayerCard {
             }.execute();
         }
 
-        // --- buttons
-        JPanel buttons = new JPanel(new GridLayout(1, 1, 10, 0));
+        // --- buttons: •••, and for two signed-in players Add Friend and Challenge
+        boolean accounts = info.accountId != null && FirebaseLink.signedInToAccount();
+        JPanel buttons = new JPanel(accounts ? new BorderLayout(10, 0) : new GridLayout(1, 1, 10, 0));
         buttons.setOpaque(false);
         CardButton more = new CardButton("•••", false);
         more.addActionListener(e -> showMenu(more, w, info));
-        buttons.add(more);
+        if (accounts) {
+            more.setPreferredSize(new Dimension(72, 52));
+            buttons.add(more, BorderLayout.WEST);
+            JPanel two = new JPanel(new GridLayout(1, 2, 10, 0));
+            two.setOpaque(false);
+            CardButton friend = new CardButton("Add Friend", false);
+            CardButton challenge = new CardButton("Challenge", true);
+            friend.setEnabled(false);
+            challenge.setEnabled(false);
+            challenge.setToolTipText("Friends can challenge each other once the game is over");
+            two.add(friend);
+            two.add(challenge);
+            buttons.add(two, BorderLayout.CENTER);
+            // friendship and Profile visibility, looked up in the background
+            new SwingWorker<boolean[], Void>() {
+                @Override protected boolean[] doInBackground() {
+                    boolean f = Friends.isFriend(info.accountId);
+                    return new boolean[]{f, !f && Friends.requestSentTo(info.accountId),
+                            Friends.canSeeProfile(info.accountId)};
+                }
+                @Override protected void done() {
+                    boolean[] r;
+                    try { r = get(); } catch (Exception ex) { return; }
+                    if (r[0]) friend.setText("Friends");
+                    else if (r[1]) friend.setText("Request sent");
+                    else friend.setEnabled(true);
+                    boolean over = info.gameOver != null && info.gameOver.getAsBoolean();
+                    challenge.setEnabled(r[0] && over && info.leaveGame != null);
+                    if (!r[2]) {                 // their profile is for friends only / private
+                        hidden[0] = true;
+                        record.setText(" ");
+                        line.setText(line.getText().replaceAll("  ·  Joined.*$", ""));
+                        pic.repaint();
+                    }
+                }
+            }.execute();
+            friend.addActionListener(e -> {
+                SoundManager.playExtraSound("tap.wav");
+                friend.setEnabled(false);
+                new SwingWorker<String, Void>() {
+                    @Override protected String doInBackground() {
+                        try { return Friends.add(info.accountId, info.name); }
+                        catch (Exception ex) { return null; }
+                    }
+                    @Override protected void done() {
+                        String msg;
+                        try { msg = get(); } catch (Exception ex) { msg = null; }
+                        if (msg == null) { friend.setEnabled(true); return; }
+                        friend.setText(msg.startsWith("You and") ? "Friends" : "Request sent");
+                    }
+                }.execute();
+            });
+            challenge.addActionListener(e -> {
+                SoundManager.playExtraSound("tap.wav");
+                w.dispose();
+                if (info.leaveGame != null) info.leaveGame.run();
+                SwingUtilities.invokeLater(() -> {
+                    for (Frame f : Frame.getFrames()) {
+                        if (f instanceof MainMenu) { ((MainMenu) f).challengeFriend(info.accountId, info.name); break; }
+                    }
+                });
+            });
+        } else {
+            buttons.add(more);
+        }
         card.add(buttons, BorderLayout.SOUTH);
 
         w.setContentPane(card);

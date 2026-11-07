@@ -286,7 +286,6 @@ final class AnalysisTheme {
         }
 
         void setKind(Kind k) { kind = k; repaint(); }
-        void setArc(int a) { arc = a; }
 
         @Override
         protected void paintComponent(Graphics g) {

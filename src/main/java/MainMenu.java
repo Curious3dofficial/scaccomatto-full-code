@@ -153,8 +153,6 @@ public class MainMenu extends JFrame implements ActionListener {
     // Spectate card's old (196,142,38) vs ReviewSummaryPanel's old GOLD
     // (244,196,81)). See ChessBot.getDifficultyStarCount() and
     // createSpectateBotSelectorCard()'s own comments for the first use.
-    private static final Image STAR_FILLED_ICON = loadHeaderImage("/assets/icons/star-filled.png");
-    private static final Image STAR_EMPTY_ICON = loadHeaderImage("/assets/icons/starempty.png");
 
     private static Image loadHeaderImage(String resourcePath) {
         try (InputStream in = MainMenu.class.getResourceAsStream(resourcePath)) {
@@ -162,38 +160,6 @@ public class MainMenu extends JFrame implements ActionListener {
         } catch (IOException ignored) {
         }
         return null;
-    }
-
-    // JLabel's default Swing painting honors the desktop's text-AA hint --
-    // on this system that's an LCD/subpixel hint tuned for solid white
-    // backgrounds, and painted over this screen's cream gradient instead
-    // it shows up as a visible blue/cyan fringe along bold glyph edges
-    // (reported: "remove these", pointing at exactly that fringing under
-    // the brand/subtitle text). Forcing standard grayscale text AA on the
-    // Graphics instance before the label paints removes the fringe
-    // regardless of what the desktop hint says. Scoped to this screen's
-    // plain-text labels only (brand, subtitle, status) -- the heading
-    // itself is now an image (see CHESS_VARIANTS_WORDMARK above) and
-    // every other piece of text on this screen already paints through
-    // createRoundedFillButton()'s own explicit AA hint, so neither needed
-    // this fix.
-    /**
-     * An icon that draws {@code img} at {@code px} square each time it paints (not a
-     * scaled copy made once), so it follows the picture when a Light / Dark switch
-     * repaints it.
-     */
-    private static Icon liveScaledIcon(Image img, int px) {
-        return new Icon() {
-            @Override public void paintIcon(Component c, Graphics g, int x, int y) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-                g2.drawImage(img, x, y, px, px, null);
-                g2.dispose();
-            }
-            @Override public int getIconWidth() { return px; }
-            @Override public int getIconHeight() { return px; }
-        };
     }
 
     private static JLabel crispLabel(String text) {
@@ -248,7 +214,6 @@ public class MainMenu extends JFrame implements ActionListener {
     private JComponent gameLaunchOverlay;
     private Timer gameLaunchOverlayTimer;
     private long gameLaunchOverlayStartedAtNanos;
-    private static final int GAME_LAUNCH_OVERLAY_MS = 3000;
     private static final int GAME_LAUNCH_CURTAIN_MS = 520;
     // Loading screen (see LoadingScreen / GameLaunchCurtainPane): its two
     // halves slide in from the left and right edges and join over
@@ -472,7 +437,6 @@ public class MainMenu extends JFrame implements ActionListener {
     // per-frame loop).
     private ImageGhost[] botSelectEntranceGhosts;
 
-    private static final int ACCOUNT_OVERLAY_ANIMATION_MS = 300;
     private StartupIntroPane startupIntroPane;
     private Timer startupIntroTimer;
     private KeyEventDispatcher startupIntroKeyDispatcher;
@@ -1023,14 +987,6 @@ public class MainMenu extends JFrame implements ActionListener {
             }
             g2.dispose();
         }
-    }
-
-    protected void showMainApplicationContent() {
-        setContentPane(mainPanel);
-        showCard("MENU", false);
-        mainPanel.revalidate();
-        mainPanel.repaint();
-        mainPanel.requestFocusInWindow();
     }
 
     private void installStartupIntro() {
@@ -1698,6 +1654,20 @@ public class MainMenu extends JFrame implements ActionListener {
         if (localVariantPanel != null) return;
         localVariantPanel = createLocalVariantPanel();
         mainPanel.add(localVariantPanel, "LOCAL_VARIANT");
+    }
+
+    /** Friends list > Challenge: open Multiplayer and invite this friend to a private game. */
+    void challengeFriend(String friendUid, String friendName) {
+        ensureOnlineScreen();
+        openSection("ONLINE");
+        SwingUtilities.invokeLater(() -> onlineScreen.challengeFriend(friendUid, friendName));
+    }
+
+    /** A friend's challenge was accepted: open Multiplayer and join their game. */
+    void acceptChallenge(String code) {
+        ensureOnlineScreen();
+        openSection("ONLINE");
+        SwingUtilities.invokeLater(() -> onlineScreen.joinChallenge(code));
     }
 
     private void ensureOnlineScreen() {
@@ -4652,521 +4622,6 @@ public class MainMenu extends JFrame implements ActionListener {
         // drops down over Play Against Bot like Settings and Achievements do
         showEmbeddedScreenDropping(screen);
     }
-
-    /** The previous spectate layout (combo boxes in two cards), kept for reference. */
-    @SuppressWarnings("unused")
-    private void showSpectateSelectionScreenClassic(ChessBot preferredBot) {
-        // Full rebuild per "layout and design looks very bad, resign this
-        // tab completely from scratch". The previous pass only recolored
-        // the old structure, and that structure had a real mechanical
-        // flaw: each card's GridBagConstraints used fill=BOTH/weighty=1.0,
-        // which stretched the (mostly short) card content to the FULL
-        // height of the center row regardless of how much content was
-        // actually in it -- that's what produced the huge dead cream gaps
-        // under the description and above the strength slider. This
-        // version sizes the match row to its own natural content height
-        // (fill=NONE, weighty=0) and centers that whole cluster in the
-        // available space instead of stretching it, and replaces the
-        // slider/number-range readout (which read as a bare, bureaucratic
-        // control sitting in its own empty space) with the same
-        // Playstyle/Strength/Weakness strip the Bot Select screen's left
-        // card already uses -- richer, on-theme, and it fills the card
-        // with real content instead of a gap. Header now matches Bot
-        // Select's exactly: left-aligned title/subtitle, circular back
-        // button on the right, one "Start Spectating" button below.
-        final Color bgTop = UiTheme.c(0xF8, 0xF6, 0xF1);
-        final Color bgBottom = UiTheme.c(0xEB, 0xE7, 0xDD);
-        JPanel root = new JPanel(new BorderLayout(0, 18)) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                paintCachedGradient(this, g, bgTop, bgBottom);
-            }
-        };
-        root.setBorder(BorderFactory.createEmptyBorder(24, 42, 20, 42));
-
-        JPanel header = new JPanel(new BorderLayout());
-        header.setOpaque(false);
-        header.setBorder(BorderFactory.createEmptyBorder(0, 0, 14, 0));
-
-        JLabel title = crispLabel("Spectate Bot Battle");
-        title.setFont(variantDisplayFont(44f));
-        title.setForeground(UiTheme.c(28, 22, 14));
-
-        JLabel subtitle = crispLabel("Choose a bot for each side and watch them play");
-        subtitle.setFont(UiFonts.subtext(20f));
-        subtitle.setForeground(UiTheme.c(130, 117, 98));
-
-        JPanel titleWrap = new JPanel();
-        titleWrap.setOpaque(false);
-        titleWrap.setLayout(new BoxLayout(titleWrap, BoxLayout.Y_AXIS));
-        titleWrap.add(title);
-        titleWrap.add(Box.createVerticalStrut(4));
-        titleWrap.add(subtitle);
-
-        // Same plain white/dark circular back button Bot Select and the
-        // Chess Variants screen both use -- one consistent back
-        // affordance across every Board Room destination screen.
-        JButton headerBack = createIconRoundButton(false, UiTheme.c(Color.WHITE), UiTheme.c(28, 22, 14), 52);
-        headerBack.addActionListener(ev -> showBotSelectionScreen());
-        JPanel backWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        backWrap.setOpaque(false);
-        backWrap.add(headerBack);
-
-        header.add(titleWrap, BorderLayout.WEST);
-        header.add(backWrap, BorderLayout.EAST);
-
-        // Locked bots are excluded here too. There is no engine setting that plays at
-        // their rating, so spectating one would quietly be full strength wearing its name.
-        ChessBot[] bots = ChessBot.getPlayableBots();
-        JComboBox<ChessBot> whiteBotBox = new JComboBox<>(bots);
-        JComboBox<ChessBot> blackBotBox = new JComboBox<>(bots);
-        if (preferredBot != null && !preferredBot.isLocked()) {
-            whiteBotBox.setSelectedItem(preferredBot);
-            blackBotBox.setSelectedItem(preferredBot);
-        }
-
-        JPanel whiteCard = createSpectateBotSelectorCard("White Bot", whiteBotBox, true);
-        JPanel blackCard = createSpectateBotSelectorCard("Black Bot", blackBotBox, false);
-
-        // Gold medallion, same gradient family as the circular "Play"
-        // button (createIconRoundButton) and the gold cut-corner "Start
-        // Game" button (BotPanel.paintGoldButton). Sized to sit naturally
-        // between the now content-sized (not stretched) cards.
-        JPanel vsWrap = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int s = Math.min(getWidth(), getHeight()) - 10;
-                int x = (getWidth() - s) / 2;
-                int y = (getHeight() - s) / 2;
-                Color shadow = UiTheme.c(25, 18, 10);
-                int[] shadowAlphas = {10, 16, 24};
-                int[] shadowGrow = {7, 4, 1};
-                for (int i = 0; i < shadowAlphas.length; i++) {
-                    int gr = shadowGrow[i];
-                    g2.setColor(UiTheme.raw(shadow.getRed(), shadow.getGreen(), shadow.getBlue(), shadowAlphas[i]));
-                    g2.fillOval(x - gr / 2, y + 3 - gr / 4, s + gr, s + gr);
-                }
-                g2.setPaint(new GradientPaint(x, y, UiTheme.c(205, 147, 55), x, y + s, UiTheme.c(132, 76, 20)));
-                g2.fillOval(x, y, s, s);
-                g2.setColor(UiTheme.pick(new Color(245, 215, 150), UiTheme.ACCENT_HI));
-                g2.setStroke(new BasicStroke(2f));
-                g2.drawOval(x, y, s, s);
-                g2.setFont(variantDisplayFont(32f));
-                g2.setColor(UiTheme.pick(new Color(255, 244, 215), Color.WHITE));
-                FontMetrics fm = g2.getFontMetrics();
-                String vs = "VS";
-                g2.drawString(vs, (getWidth() - fm.stringWidth(vs)) / 2,
-                        (getHeight() + fm.getAscent() - fm.getDescent()) / 2);
-                g2.dispose();
-            }
-        };
-        vsWrap.setOpaque(false);
-        vsWrap.setPreferredSize(new Dimension(150, 150));
-
-        // The match row sizes itself to its own content (fill=NONE,
-        // weighty=0 below) instead of stretching to the full center area,
-        // then gets centered as one cluster in matchHolder -- the same
-        // "size to content, then center the whole stage" pattern
-        // showBotSelectionScreen() already uses for its own body.
-        JPanel matchRow = new JPanel(new GridBagLayout());
-        matchRow.setOpaque(false);
-        GridBagConstraints c = new GridBagConstraints();
-        c.gridy = 0;
-        c.fill = GridBagConstraints.NONE;
-        c.anchor = GridBagConstraints.CENTER;
-        c.gridx = 0;
-        c.insets = new Insets(0, 0, 0, 26);
-        matchRow.add(whiteCard, c);
-        c.gridx = 1;
-        c.insets = new Insets(0, 0, 0, 26);
-        matchRow.add(vsWrap, c);
-        c.gridx = 2;
-        c.insets = new Insets(0, 0, 0, 0);
-        matchRow.add(blackCard, c);
-
-        JPanel matchHolder = new JPanel(new GridBagLayout());
-        matchHolder.setOpaque(false);
-        GridBagConstraints hc = new GridBagConstraints();
-        hc.gridx = 0;
-        hc.gridy = 0;
-        hc.weightx = 1.0;
-        hc.weighty = 1.0;
-        hc.fill = GridBagConstraints.NONE;
-        hc.anchor = GridBagConstraints.CENTER;
-        matchHolder.add(matchRow, hc);
-
-        // One primary action -- Back already moved to the header circle,
-        // matching Bot Select's single-back-affordance pattern instead of
-        // this screen keeping its own separate Back button too.
-        JButton startBtn = createRoundedFillButton("Start Spectating", 18);
-        startBtn.setPreferredSize(new Dimension(320, 60));
-        startBtn.setFont(variantDisplayFont(22f));
-        startBtn.setForeground(UiTheme.pick(new Color(255, 244, 215), Color.WHITE));
-        startBtn.setBackground(UiTheme.c(191, 138, 45));
-        startBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        startBtn.putClientProperty("roundedBorderColor", UiTheme.c(140, 95, 30));
-        startBtn.addActionListener(ev -> {
-            ChessBot whiteBot = (ChessBot) whiteBotBox.getSelectedItem();
-            ChessBot blackBot = (ChessBot) blackBotBox.getSelectedItem();
-            launchGameWithOverlay(
-                    () -> new ChessGame(this, 600, 0, whiteBot, blackBot, true));
-        });
-        startBtn.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseEntered(MouseEvent e) {
-                startBtn.setBackground(UiTheme.c(214, 158, 60));
-                startBtn.repaint();
-            }
-
-            @Override
-            public void mouseExited(MouseEvent e) {
-                startBtn.setBackground(UiTheme.c(191, 138, 45));
-                startBtn.repaint();
-            }
-        });
-
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
-        actions.setOpaque(false);
-        actions.setBorder(BorderFactory.createEmptyBorder(14, 0, 0, 0));
-        actions.add(startBtn);
-
-        root.add(header, BorderLayout.NORTH);
-        root.add(matchHolder, BorderLayout.CENTER);
-        root.add(actions, BorderLayout.SOUTH);
-
-        InputMap im = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-        ActionMap am = root.getActionMap();
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "backToBotSelection");
-        am.put("backToBotSelection", new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                showBotSelectionScreen();
-            }
-        });
-        showEmbeddedScreen(root, null);
-    }
-
-    // "heading" ("White Bot"/"Black Bot") now doubles as the card's one top
-    // label -- folded into the side badge pill itself (e.g. "WHITE BOT")
-    // instead of printing a big heading AND a separate "WHITE SIDE" badge
-    // that both said the same thing.
-    private JPanel createSpectateBotSelectorCard(String heading, JComboBox<ChessBot> comboBox, boolean whiteSide) {
-        final int CARD_W = 420;
-        // Both cards are the same cream-white as every other card in the
-        // app; whiteSide/blackSide keeps just enough of its own accent (a
-        // warm gold border for White, a cooler bronze for Black) to tell
-        // the two apart at a glance.
-        Color border = whiteSide ? UiTheme.c(205, 150, 54) : UiTheme.c(140, 118, 84);
-        Color accentBg = whiteSide ? UiTheme.c(250, 236, 205) : UiTheme.c(237, 231, 219);
-        Color accentFg = UiTheme.pick(whiteSide ? new Color(134, 90, 24) : new Color(90, 76, 54), UiTheme.INK);
-
-        JPanel card = new JPanel(new BorderLayout()) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int w = getWidth() - 1;
-                int h = getHeight() - 1;
-                Color shadow = UiTheme.c(25, 18, 10);
-                int[] shadowAlphas = {8, 13, 20};
-                int[] shadowGrow = {7, 4, 1};
-                for (int i = 0; i < shadowAlphas.length; i++) {
-                    int gr = shadowGrow[i];
-                    g2.setColor(UiTheme.raw(shadow.getRed(), shadow.getGreen(), shadow.getBlue(), shadowAlphas[i]));
-                    g2.fillRoundRect(-gr / 2, 2 - gr / 4, w + gr, h + gr, 26, 26);
-                }
-                g2.setColor(UiTheme.c(Color.WHITE));
-                g2.fillRoundRect(0, 0, w, h, 26, 26);
-                g2.setColor(border);
-                g2.drawRoundRect(0, 0, w, h, 22, 22);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        card.setOpaque(false);
-        card.setBorder(BorderFactory.createEmptyBorder(24, 26, 24, 26));
-
-        // Everything below stacks in one centered column; the column's
-        // own preferred height is just the sum of its (fairly compact)
-        // children, so the card -- which wraps this directly, no forced
-        // preferredSize -- sizes itself to its real content instead of
-        // being stretched into a mostly-empty box by the parent layout.
-        JPanel content = new JPanel();
-        content.setOpaque(false);
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-
-        JLabel badge = new JLabel(heading.toUpperCase());
-        badge.setFont(variantDisplayFont(13f));
-        badge.setForeground(accentFg);
-        badge.setOpaque(true);
-        badge.setBackground(accentBg);
-        badge.setBorder(BorderFactory.createEmptyBorder(6, 14, 6, 14));
-        badge.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        styleSpectateCombo(comboBox);
-        comboBox.setAlignmentX(Component.CENTER_ALIGNMENT);
-        comboBox.setMaximumSize(new Dimension(CARD_W, 46));
-
-        // Circular portrait (clipped, not just boxed) -- a "fighter card"
-        // framing that's distinct enough from Bot Select's rectangular
-        // photo to read as its own screen, while the gold ring keeps it
-        // in the same family.
-        final int PORTRAIT_D = 148;
-        JLabel portrait = new JLabel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int d = Math.min(getWidth(), getHeight());
-                int x = (getWidth() - d) / 2;
-                int y = (getHeight() - d) / 2;
-                g2.setColor(UiTheme.c(248, 243, 232));
-                g2.fillOval(x, y, d, d);
-                Icon icon = getIcon();
-                if (icon != null) {
-                    Shape oldClip = g2.getClip();
-                    g2.clip(new Ellipse2D.Float(x, y, d, d));
-                    icon.paintIcon(this, g2, x, y);
-                    g2.setClip(oldClip);
-                } else {
-                    g2.setFont(variantDisplayFont(30f));
-                    g2.setColor(UiTheme.c(170, 150, 120));
-                    FontMetrics fm = g2.getFontMetrics();
-                    String t = "?";
-                    g2.drawString(t, x + (d - fm.stringWidth(t)) / 2,
-                            y + (d + fm.getAscent() - fm.getDescent()) / 2);
-                }
-                g2.setStroke(new BasicStroke(3f));
-                g2.setColor(UiTheme.c(205, 150, 54));
-                g2.drawOval(x + 1, y + 1, d - 3, d - 3);
-                g2.dispose();
-            }
-        };
-        portrait.setPreferredSize(new Dimension(PORTRAIT_D, PORTRAIT_D));
-        portrait.setMaximumSize(new Dimension(PORTRAIT_D, PORTRAIT_D));
-        portrait.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        JLabel botName = crispLabel("");
-        botName.setFont(variantDisplayFont(26f));
-        botName.setForeground(UiTheme.c(28, 22, 14));
-        botName.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        // Image-based star row + "ELO ####" text, replacing the old plain
-        // unicode "★★★☆☆   ELO ####" JLabel built from
-        // ChessBot.getDifficultyStars() -- per "i added empty and filled
-        // stars, make them png and golden, and use theme wherever u
-        // manually drew stars already, throughout the app". Always exactly
-        // 5 stars (see ChessBot.getDifficultyStarCount()), so the 5
-        // JLabels are built once here and just swapped between the
-        // filled/empty icon on every refresh instead of being rebuilt.
-        final int STAR_ICON_PX = 20;
-        final JLabel[] starIcons = new JLabel[5];
-        JPanel starsAndElo = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 0));
-        starsAndElo.setOpaque(false);
-        for (int i = 0; i < starIcons.length; i++) {
-            starIcons[i] = new JLabel();
-            starIcons[i].setPreferredSize(new Dimension(STAR_ICON_PX, STAR_ICON_PX));
-            starsAndElo.add(starIcons[i]);
-        }
-        JLabel eloLabel = crispLabel("");
-        eloLabel.setFont(new Font("DejaVu Sans", Font.PLAIN, 20));
-        eloLabel.setForeground(UiTheme.c(196, 142, 38));
-        eloLabel.setBorder(BorderFactory.createEmptyBorder(0, 3, 0, 0));
-        starsAndElo.add(eloLabel);
-        starsAndElo.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        JLabel detailsLine = crispLabel("");
-        detailsLine.setFont(UiFonts.subtext(15f));
-        detailsLine.setForeground(UiTheme.c(130, 117, 98));
-        detailsLine.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        // Plain JLabel+HTML does not reliably word-wrap inside a BoxLayout
-        // column (the "width:420px" div hint gets ignored once the label is
-        // stretched by its parent), which let long bot descriptions run
-        // past the card's right edge instead of wrapping to a second line.
-        // A JTextPane with an explicit wrap-width override is the reliable
-        // fix: it always wraps to its own component width, and the
-        // getPreferredSize() override forces that width to CARD_W so the
-        // BoxLayout column reserves the right amount of vertical space.
-        JTextPane desc = new JTextPane() {
-            @Override
-            public Dimension getPreferredSize() {
-                setSize(new Dimension(CARD_W, Integer.MAX_VALUE));
-                Dimension d = super.getPreferredSize();
-                return new Dimension(CARD_W, d.height);
-            }
-        };
-        desc.setEditable(false);
-        desc.setFocusable(false);
-        desc.setOpaque(false);
-        desc.setBorder(null);
-        desc.setFont(UiFonts.subtext(15f));
-        desc.setForeground(UiTheme.c(90, 80, 68));
-        desc.setAlignmentX(Component.CENTER_ALIGNMENT);
-        desc.setMaximumSize(new Dimension(CARD_W, 200));
-
-        JPanel divider = new JPanel();
-        divider.setBackground(UiTheme.c(224, 217, 203));
-        divider.setMaximumSize(new Dimension(CARD_W, 1));
-        divider.setPreferredSize(new Dimension(CARD_W, 1));
-        divider.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        // Same Playstyle/Strength/Weakness chip strip the Bot Select
-        // screen's left card uses (createBotProfileStat/
-        // createBotProfileValueLabel, getBotPlaystyle/Strength/Weakness)
-        // -- replaces the old bare ELO-range slider with real, on-theme
-        // content, and reuses existing helpers instead of inventing a new
-        // control.
-        JLabel playstyleValue = createBotProfileValueLabel();
-        JLabel strengthValue = createBotProfileValueLabel();
-        JLabel weaknessValue = createBotProfileValueLabel();
-        JPanel statsStrip = new JPanel(new GridLayout(1, 3, 0, 0)) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(UiTheme.c(250, 246, 236));
-                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
-                g2.setColor(UiTheme.c(205, 150, 54, 130));
-                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        statsStrip.setOpaque(false);
-        statsStrip.setBorder(BorderFactory.createEmptyBorder(10, 8, 10, 8));
-        statsStrip.add(createBotProfileStat("PLAYSTYLE", playstyleValue));
-        statsStrip.add(createBotProfileStat("STRENGTH", strengthValue));
-        statsStrip.add(createBotProfileStat("WEAKNESS", weaknessValue));
-        statsStrip.setMaximumSize(new Dimension(CARD_W, 82));
-        statsStrip.setPreferredSize(new Dimension(CARD_W, 82));
-        statsStrip.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        java.util.function.Consumer<ChessBot> refreshInfo = bot -> {
-            if (bot == null) {
-                portrait.setIcon(null);
-                botName.setText("");
-                for (JLabel star : starIcons) star.setIcon(null);
-                eloLabel.setText("");
-                detailsLine.setText("");
-                setSpectateDescText(desc, "", CARD_W);
-                playstyleValue.setText("");
-                strengthValue.setText("");
-                weaknessValue.setText("");
-                return;
-            }
-            ImageIcon icon = loadBotPortrait(bot, PORTRAIT_D, PORTRAIT_D);
-            portrait.setIcon(icon);
-            portrait.repaint();
-            botName.setText(bot.getName());
-            int filledStars = bot.getDifficultyStarCount();
-            for (int i = 0; i < starIcons.length; i++) {
-                Image starImg = i < filledStars ? STAR_FILLED_ICON : STAR_EMPTY_ICON;
-                starIcons[i].setIcon(starImg != null ? liveScaledIcon(starImg, STAR_ICON_PX) : null);
-            }
-            eloLabel.setText("ELO " + bot.getElo());
-            detailsLine.setText("Depth " + bot.getDepth() + "   •   Skill " + bot.getSkillLevel());
-            setSpectateDescText(desc, bot.getDescription(), CARD_W);
-            playstyleValue.setText(getBotPlaystyle(bot));
-            strengthValue.setText(getBotStrength(bot));
-            weaknessValue.setText(getBotWeakness(bot));
-        };
-        refreshInfo.accept((ChessBot) comboBox.getSelectedItem());
-        comboBox.addActionListener(e -> refreshInfo.accept((ChessBot) comboBox.getSelectedItem()));
-
-        content.add(badge);
-        content.add(Box.createVerticalStrut(14));
-        content.add(comboBox);
-        content.add(Box.createVerticalStrut(18));
-        content.add(portrait);
-        content.add(Box.createVerticalStrut(12));
-        content.add(botName);
-        content.add(Box.createVerticalStrut(4));
-        content.add(starsAndElo);
-        content.add(Box.createVerticalStrut(2));
-        content.add(detailsLine);
-        content.add(Box.createVerticalStrut(10));
-        content.add(desc);
-        content.add(Box.createVerticalStrut(16));
-        content.add(divider);
-        content.add(Box.createVerticalStrut(16));
-        content.add(statsStrip);
-
-        card.add(content, BorderLayout.CENTER);
-        return card;
-    }
-
-    // Sets centered, correctly colored/sized plain text on the Spectate
-    // card's description JTextPane. A JTextPane always re-wraps to its own
-    // component width (unlike JLabel+HTML in this layout), so this is what
-    // actually keeps long bot descriptions from running past the card edge.
-    private void setSpectateDescText(JTextPane desc, String text, int width) {
-        desc.setText(text);
-        javax.swing.text.StyledDocument doc = desc.getStyledDocument();
-        javax.swing.text.SimpleAttributeSet style = new javax.swing.text.SimpleAttributeSet();
-        javax.swing.text.StyleConstants.setAlignment(style, javax.swing.text.StyleConstants.ALIGN_CENTER);
-        javax.swing.text.StyleConstants.setForeground(style, UiTheme.c(90, 80, 68));
-        javax.swing.text.StyleConstants.setFontFamily(style, UiFonts.subtext(15f).getFamily());
-        javax.swing.text.StyleConstants.setFontSize(style, 15);
-        doc.setParagraphAttributes(0, doc.getLength(), style, false);
-        doc.setCharacterAttributes(0, doc.getLength(), style, false);
-    }
-
-    private void styleSpectateCombo(JComboBox<ChessBot> comboBox) {
-        comboBox.setFont(variantDisplayFont(16f));
-        comboBox.setBackground(UiTheme.c(250, 246, 236));
-        comboBox.setForeground(UiTheme.c(28, 22, 14));
-        comboBox.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
-        comboBox.setOpaque(false);
-        comboBox.setPreferredSize(new Dimension(240, 46));
-        comboBox.setMaximumRowCount(8);
-        comboBox.setUI(new javax.swing.plaf.basic.BasicComboBoxUI() {
-            @Override
-            protected JButton createArrowButton() {
-                JButton b = new JButton("\u25BE");
-                b.setFont(new Font("Segoe UI", Font.BOLD, 14));
-                b.setForeground(UiTheme.c(120, 85, 38));
-                b.setBackground(UiTheme.c(240, 230, 210));
-                b.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
-                b.setFocusable(false);
-                return b;
-            }
-
-            @Override
-            public void paintCurrentValueBackground(Graphics g, Rectangle bounds, boolean hasFocus) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(UiTheme.c(250, 246, 236));
-                g2.fillRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 10, 10);
-                g2.setColor(UiTheme.c(214, 196, 158));
-                g2.drawRoundRect(bounds.x, bounds.y, bounds.width - 1, bounds.height - 1, 10, 10);
-                g2.dispose();
-            }
-        });
-        comboBox.setRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-                JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                label.setFont(variantDisplayFont(18f));
-                label.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
-                if (value instanceof ChessBot) {
-                    ChessBot b = (ChessBot) value;
-                    label.setText(b.getName() + "  (ELO " + b.getElo() + ")");
-                }
-                if (isSelected) {
-                    label.setBackground(UiTheme.c(250, 236, 205));
-                    label.setForeground(UiTheme.c(28, 22, 14));
-                } else {
-                    label.setBackground(UiTheme.c(Color.WHITE));
-                    label.setForeground(UiTheme.c(28, 22, 14));
-                }
-                return label;
-            }
-        });
-    }
     @Override
     public void actionPerformed(ActionEvent e) {
         String command = e.getActionCommand();
@@ -5239,50 +4694,6 @@ public class MainMenu extends JFrame implements ActionListener {
         actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, command));
     }
 
-    private void updateBotInfoPanel(
-            ChessBot bot,
-            JLabel photoLabel,
-            JTextArea nameLabel,
-            JTextArea statsLabel,
-            JTextArea storyText) {
-        if (bot == null) return;
-        nameLabel.setText(bot.getName());
-        statsLabel.setText(getBotStatsLine(bot));
-        storyText.setText(getBotStory(bot));
-        ImageIcon icon = loadBotPortrait(bot, 210, 265);
-        photoLabel.setIcon(icon);
-        photoLabel.setText(icon == null ? "No photo" : "");
-    }
-
-    private JLabel createBotProfileValueLabel() {
-        JLabel label = new JLabel();
-        label.setFont(UiFonts.subtext(16f));
-        label.setForeground(UiTheme.c(28, 22, 14));
-        label.setHorizontalAlignment(SwingConstants.CENTER);
-        return label;
-    }
-
-    private JPanel createBotProfileStat(String heading, JLabel valueLabel) {
-        JPanel panel = new JPanel();
-        panel.setOpaque(false);
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createMatteBorder(
-                0, 0, 0, 1, UiTheme.c(205, 150, 54, 90)));
-
-        JLabel headingLabel = new JLabel(heading);
-        headingLabel.setFont(variantDisplayFont(13f));
-        headingLabel.setForeground(UiTheme.c(150, 105, 40));
-        headingLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        valueLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        panel.add(Box.createVerticalGlue());
-        panel.add(headingLabel);
-        panel.add(Box.createVerticalStrut(5));
-        panel.add(valueLabel);
-        panel.add(Box.createVerticalGlue());
-        return panel;
-    }
-
     private String getBotPlaystyle(ChessBot bot) {
         if (bot == ChessBot.BOBBY_BEGINNER) return "Pure Vibes";
         if (bot == ChessBot.CASUAL_CARL) return "One Opening";
@@ -5305,15 +4716,6 @@ public class MainMenu extends JFrame implements ActionListener {
         if (bot == ChessBot.TACTICAL_TOM) return "Quiet Games";
         if (bot == ChessBot.STRATEGIC_SARAH) return "Wild Chaos";
         return "Mercy";
-    }
-
-    private String getBotStatsLine(ChessBot bot) {
-        if (bot.isLocked()) {
-            // No depth or skill to quote: the engine cannot play at this rating at all,
-            // and printing a number for it would just be making one up.
-            return "Locked - beyond this engine (~" + bot.getElo() + " ELO)";
-        }
-        return "Depth " + bot.getDepth() + " - ~" + bot.getElo() + " ELO";
     }
 
     private String getBotStory(ChessBot bot) {

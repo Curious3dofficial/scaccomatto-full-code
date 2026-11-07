@@ -290,14 +290,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private static final long FIREBALL_OVERLAY_DURATION_MS = 3200L;
     private static final float FIREBALL_TRAVEL_SPEED_SCALE = FIREBALL_BASE_TRAVEL_SPEED_SCALE * FIREBALL_GLOBAL_SPEED_SCALE; // scales travel with global speed
     private static final float FIREBALL_OVERLAY_SCALE = 0.577f; // ~1/3 area
-    private static final float FIREBALL_PLANE_END_T = 0.58f;
     private static final float FIREBALL_DROP_START_T = 0.35f;
     private static final float FIREBALL_IMPACT_T = 0.62f;
-    private static final float FIREBALL_FLASH_END_T = 0.80f;
-    private static final float FIREBALL_IMPACT_AFTER_RELEASE_T = 0.18f;
     private static final int FIREBALL_START_DELAY_MS = Math.max(1, Math.round(1000f / FIREBALL_GLOBAL_SPEED_SCALE));
-    private static final long FIREBALL_POST_IMPACT_MS = Math.max(1L, Math.round(900f / FIREBALL_GLOBAL_SPEED_SCALE));
-    private static final long FIREBALL_SHADOW_POST_IMPACT_MS = 900L; // keep silhouette timing at original speed
     private static final long FIREBALL_IMPACT_FLASH_FADE_IN_MS = 100L;
     private static final long FIREBALL_IMPACT_FLASH_HOLD_MS = 0L;
     private static final long FIREBALL_IMPACT_FLASH_OUT_MS = 400L;
@@ -406,8 +401,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private static final long FIREBALL_SMALL_SMOKE_DURATION_MS = 10600L; // +0.6s linger for bottom black cloud
     private static final long FIREBALL_SMOKE_DELAY_MS = 100L;
     private static final long FIREBALL_SMALL_SMOKE_DELAY_MS = 90L;
-    private static final long FIREBALL_SMALL_SMOKE_FADE_DELAY_MS = 0L;
-    private static final long FIREBALL_SMALL_SMOKE_FADE_OUT_MS = 2600L; // longer tail for smoother black-cloud fade-away
     private static final float FIREBALL_SMOKE_FADE_IN_WHITE_END_T = 0.15625f; // 500ms / 3200ms
     private static final float FIREBALL_SMOKE_HOLD_WHITE_END_T = 0.3125f; // 1000ms / 3200ms
     private static final float FIREBALL_SMOKE_TO_WARM_END_T = 0.71875f; // 2300ms / 3200ms
@@ -1219,26 +1212,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         return blendColor(base, new Color(overlay.getRed(), overlay.getGreen(), overlay.getBlue()), alpha);
     }
 
-    private static Color diluteColorWithWhite(Color base, float mixWithWhite) {
-        float t = Math.max(0f, Math.min(1f, mixWithWhite));
-        int r = Math.round(base.getRed() * (1f - t) + 255 * t);
-        int g = Math.round(base.getGreen() * (1f - t) + 255 * t);
-        int b = Math.round(base.getBlue() * (1f - t) + 255 * t);
-        return new Color(r, g, b, 180);
-    }
-
-    private Color getReviewLastMoveHighlightColor() {
-        if (reviewBadgeClass == null) {
-            return new Color(255, 255, 102, 160);
-        }
-        try {
-            Color clsColor = Color.decode(reviewBadgeClass.colorHex);
-            return diluteColorWithWhite(clsColor, 0.22f);
-        } catch (Exception ignored) {
-            return new Color(255, 255, 102, 160);
-        }
-    }
-
     private void drawSelectedSquareGlow(Graphics2D g2, int x, int y) {
         long now = System.currentTimeMillis();
         float fade = Math.min(1f, (now - selectedGlowStartedAt) / 160f);
@@ -1656,10 +1629,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
     public boolean isAnimatingMove() { return animating; }
 
-    public void setAnimationsEnabled(boolean enabled) {
-        this.animationsEnabled = enabled;
-    }
-
     public void setAnimationSpeed(String speed) {
         animationsEnabled = AppSettings.animateMoves();   // Settings > Board & pieces > Animate moves
         if ("Slow".equals(speed)) {
@@ -1713,10 +1682,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         resetDuckState();
         updateThreeCheckRingTimer();
         repaint();
-    }
-
-    public VariantMode getVariantMode() {
-        return variantMode;
     }
 
     public boolean isSpellChessMode() {
@@ -2143,10 +2108,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
     private void clearPremove() {
         clearPremoves();
-    }
-
-    public int getPremoveCount() {
-        return premoveQueue.size();
     }
 
     /** Games where premoves exist at all: real games (bot, online or two players), plain-turn variants. */
@@ -3904,94 +3865,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         return 0f;
     }
 
-    private void drawFireballNukeFlash(Graphics2D g, int boardW, int boardH, int cx, int cy, float unit, float flashT, float tailFade) {
-        float t = Math.max(0f, Math.min(1f, flashT));
-        float fullWhitePhase = 0.18f;
-
-        if (t <= fullWhitePhase) {
-            float phase = t / Math.max(0.001f, fullWhitePhase);
-            float alpha = (0.98f - (0.03f * phase)) * tailFade;
-            if (alpha > 0f) {
-                g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, alpha))));
-                g.setColor(Color.WHITE);
-                g.fillRect(0, 0, boardW, boardH);
-            }
-            return;
-        }
-
-        float shrinkT = (t - fullWhitePhase) / Math.max(0.001f, 1f - fullWhitePhase);
-        shrinkT = Math.max(0f, Math.min(1f, shrinkT));
-        float shrinkEase = (float) Math.pow(shrinkT, 0.72);
-        float maxRadius = (float) (Math.hypot(boardW, boardH) * 0.92);
-        float minRadius = unit * 0.96f;
-        float r = maxRadius + (minRadius - maxRadius) * shrinkEase;
-
-        float coreR = r * 0.43f;
-        java.awt.geom.Area flare = new java.awt.geom.Area(
-            new java.awt.geom.Ellipse2D.Float(cx - coreR, cy - coreR, coreR * 2f, coreR * 2f)
-        );
-        flare.add(new java.awt.geom.Area(
-            new java.awt.geom.Ellipse2D.Float(cx - r * 1.65f, cy - r * 0.21f, r * 3.30f, r * 0.42f)
-        ));
-        flare.add(new java.awt.geom.Area(
-            new java.awt.geom.Ellipse2D.Float(cx - r * 0.21f, cy - r * 1.65f, r * 0.42f, r * 3.30f)
-        ));
-        flare.add(new java.awt.geom.Area(
-            new java.awt.geom.Ellipse2D.Float(cx - r * 0.34f, cy - r * 1.07f, r * 0.68f, r * 0.55f)
-        ));
-        flare.add(new java.awt.geom.Area(
-            new java.awt.geom.Ellipse2D.Float(cx - r * 0.34f, cy + r * 0.52f, r * 0.68f, r * 0.55f)
-        ));
-        flare.add(new java.awt.geom.Area(
-            new java.awt.geom.Ellipse2D.Float(cx - r * 1.07f, cy - r * 0.34f, r * 0.55f, r * 0.68f)
-        ));
-        flare.add(new java.awt.geom.Area(
-            new java.awt.geom.Ellipse2D.Float(cx + r * 0.52f, cy - r * 0.34f, r * 0.55f, r * 0.68f)
-        ));
-
-        Graphics2D gw = (Graphics2D) g.create();
-        gw.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        gw.setClip(flare);
-
-        float bodyAlpha = (0.98f - 0.03f * shrinkT) * tailFade;
-        if (bodyAlpha > 0f) {
-            gw.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, bodyAlpha))));
-            gw.setColor(Color.WHITE);
-            gw.fillRect(0, 0, boardW, boardH);
-        }
-
-        float haloAlpha = (0.66f - 0.46f * shrinkT) * tailFade;
-        if (haloAlpha > 0f) {
-            float glowR = Math.max(unit * 1.15f, r * 1.08f);
-            RadialGradientPaint glow = new RadialGradientPaint(
-                cx, cy, glowR,
-                new float[] {0f, 0.36f, 0.72f, 1f},
-                new Color[] {
-                    new Color(255, 255, 255, 232),
-                    new Color(255, 238, 194, 210),
-                    new Color(255, 191, 108, 158),
-                    new Color(255, 160, 82, 0)
-                }
-            );
-            gw.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, haloAlpha))));
-            gw.setPaint(glow);
-            int d = Math.max(1, Math.round(glowR * 2f));
-            gw.fillOval(Math.round(cx - glowR), Math.round(cy - glowR), d, d);
-        }
-        gw.dispose();
-
-        float rimAlpha = (0.55f - 0.42f * shrinkT) * tailFade;
-        if (rimAlpha > 0f) {
-            Graphics2D gr = (Graphics2D) g.create();
-            gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            gr.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, rimAlpha))));
-            gr.setColor(new Color(255, 204, 118, 180));
-            gr.setStroke(new BasicStroke(Math.max(2.2f, unit * 0.09f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            gr.draw(flare);
-            gr.dispose();
-        }
-    }
-
     private Point getFireballBoardShakeOffset(long nowMs) {
         if (!isSpellChessMode() || fireballImpactFx.isEmpty()) return new Point(0, 0);
 
@@ -4057,34 +3930,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             }
         }
         return false;
-    }
-
-    private float[] computeFireballReleaseAndImpactT(int targetCy, int boardH, boolean shadowTopToBottom) {
-        float startY;
-        float range;
-        float desiredProgress;
-        if (shadowTopToBottom) {
-            startY = -SQUARE_SIZE * 1.2f;
-            range = boardH + SQUARE_SIZE * 1.75f;
-            desiredProgress = (targetCy - startY) / Math.max(1f, range);
-        } else {
-            startY = boardH + SQUARE_SIZE * 0.55f;
-            range = boardH + SQUARE_SIZE * 1.2f;
-            desiredProgress = (startY - targetCy) / Math.max(1f, range);
-        }
-        desiredProgress = Math.max(0.05f, Math.min(0.92f, desiredProgress));
-
-        float denom = Math.max(0.05f, 1f - desiredProgress);
-        float releaseT = (desiredProgress * FIREBALL_IMPACT_AFTER_RELEASE_T) / denom;
-        float impactT = releaseT + FIREBALL_IMPACT_AFTER_RELEASE_T;
-
-        if (impactT > 0.98f) {
-            impactT = 0.98f;
-            releaseT = Math.max(0.01f, impactT - FIREBALL_IMPACT_AFTER_RELEASE_T);
-        }
-
-        releaseT = Math.max(0.01f, Math.min(impactT - 0.01f, releaseT));
-        return new float[] {releaseT, impactT};
     }
 
     private boolean isPieceInActivePreExplosionAt(int row, int col, Piece piece) {
@@ -5191,10 +5036,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         return spellManager.getAllSpells();
     }
 
-    public boolean canCurrentPlayerCastAny(String spellId) {
-        return spellManager.canCastAny(this, spellId, whiteTurn);
-    }
-
     public boolean canSideCastAny(String spellId, boolean sideWhite) {
         if (animating) return false;
         if (sideWhite != whiteTurn) return false;
@@ -5246,10 +5087,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             return type + " @ " + toSquareName(t.targetRow, t.targetCol);
         }
         return "Target";
-    }
-
-    public String castSpellInteractive(String spellId) {
-        return castSpellInteractiveForSide(spellId, whiteTurn);
     }
 
     public void requestSpellElixirRefund() {
@@ -6463,22 +6300,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         return result;
     }
 
-    private int getSpellTargetRow(SpellTarget target) {
-        if (target == null) return -1;
-        if (target.targetRow != null) return target.targetRow;
-        if (target.destRow != null) return target.destRow;
-        if (target.sourceRow != null) return target.sourceRow;
-        return -1;
-    }
-
-    private int getSpellTargetCol(SpellTarget target) {
-        if (target == null) return -1;
-        if (target.targetCol != null) return target.targetCol;
-        if (target.destCol != null) return target.destCol;
-        if (target.sourceCol != null) return target.sourceCol;
-        return -1;
-    }
-
     private SpellTarget cloneSpellTarget(SpellTarget src) {
         SpellTarget out = new SpellTarget();
         if (src == null) return out;
@@ -6756,56 +6577,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         }
         repaint();
         return true;
-    }
-
-    private void startSpellCastCardFx(String spellId, int row, int col) {
-        if (spellId == null || !inBounds(row, col)) return;
-        Spell spell = spellManager.getSpell(spellId);
-        String spellName = spell != null ? spell.getName() : spellId;
-        spellCastCardFx = new SpellCastCardFx(
-                spellId, spellName, row, col, System.currentTimeMillis(), loadSpellCastCardArt(spellId));
-
-        if (spellCastCardTimer != null) spellCastCardTimer.stop();
-        spellCastCardTimer = new Timer(AnimationTiming.FRAME_DELAY_MS, e -> {
-            SpellCastCardFx fx = spellCastCardFx;
-            if (fx == null || System.currentTimeMillis() - fx.startMs >= SPELL_CAST_CARD_TOTAL_MS) {
-                ((Timer) e.getSource()).stop();
-                spellCastCardTimer = null;
-                spellCastCardFx = null;
-            }
-            repaint();
-        });
-        spellCastCardTimer.setCoalesce(true);
-        spellCastCardTimer.setInitialDelay(0);
-        spellCastCardTimer.start();
-    }
-
-    private BufferedImage loadSpellCastCardArt(String spellId) {
-        if (spellId == null) return null;
-        if (spellCastCardArtCache.containsKey(spellId)) return spellCastCardArtCache.get(spellId);
-        BufferedImage image = null;
-        String path = "/assets/spells/" + spellId.toLowerCase() + ".png";
-        try {
-            java.net.URL resource = Board.class.getResource(path);
-            if (resource != null) image = ImageIO.read(resource);
-        } catch (Exception ignored) { }
-        if (image == null) {
-            String[] candidates = {
-                "src" + path,
-                path.substring(1)
-            };
-            for (String candidate : candidates) {
-                try {
-                    File file = new File(candidate);
-                    if (file.exists()) {
-                        image = ImageIO.read(file);
-                        break;
-                    }
-                } catch (Exception ignored) { }
-            }
-        }
-        if (image != null) spellCastCardArtCache.put(spellId, image);
-        return image;
     }
 
     private Color getSpellCastColor(String spellId) {
@@ -11374,15 +11145,6 @@ g2.dispose();
         return null; // ambiguous or no match
     }
     
-    private String getPieceTypeSymbol(Piece piece) {
-        if (piece instanceof King) return "K";
-        if (piece instanceof Queen) return "Q";
-        if (piece instanceof Rook) return "R";
-        if (piece instanceof Bishop) return "B";
-        if (piece instanceof Knight) return "N";
-        if (piece instanceof Pawn) return "";
-        return "";
-    }
     
     private boolean applyCastling(boolean kingside) {
         int row = whiteTurn ? 7 : 0;
@@ -11858,26 +11620,6 @@ private void drawArrowLine(Graphics2D g2, int x1, int y1, int x2, int y2, boolea
     head.addPoint(leftX, leftY);
     head.addPoint(rightX, rightY);
     g.fillPolygon(head);
-    g.dispose();
-}
-
-private void drawArrowShaft(Graphics2D g2, int x1, int y1, int x2, int y2, boolean green, int tailInset) {
-    int dx = x2 - x1;
-    int dy = y2 - y1;
-    double len = Math.hypot(dx, dy);
-    if (len < 1.0) return;
-
-    double ux = dx / len;
-    double uy = dy / len;
-    int startX = (int) Math.round(x1 + ux * tailInset);
-    int startY = (int) Math.round(y1 + uy * tailInset);
-    int shaftThickness = Math.max(10, (int) (SQUARE_SIZE * 0.18));
-
-    Graphics2D g = (Graphics2D) g2.create();
-    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-    g.setColor(getArrowColor(green));
-    g.setStroke(new BasicStroke(shaftThickness, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
-    g.drawLine(startX, startY, x2, y2);
     g.dispose();
 }
 

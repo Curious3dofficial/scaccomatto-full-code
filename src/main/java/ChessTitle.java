@@ -33,11 +33,6 @@ enum ChessTitle {
         this.minRating = minRating;
     }
 
-    /** Whether a player with this Elo could hold the title (no Elo given = any title). */
-    boolean allowedFor(Integer elo) {
-        return this == NONE || elo == null || elo >= minRating;
-    }
-
     static ChessTitle parse(String s) {
         if (s == null || s.isBlank()) return NONE;
         try {

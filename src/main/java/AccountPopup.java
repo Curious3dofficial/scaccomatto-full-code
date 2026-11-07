@@ -183,6 +183,7 @@ final class AccountPopup {
         signedIn = toProfile(session.profile(), avatar);
         avatarChanged();
         CloudSave.signedIn();      // bring achievements from the account, save this computer's
+        FriendsUi.signedIn();      // show as online to friends, hear their challenges
     }
 
     /**
@@ -263,7 +264,7 @@ final class AccountPopup {
     }
 
     /**
-     * Whether this copy has accounts at all: true once account-server.txt names a real server
+     * Whether this copy has accounts at all: true when this build has Firebase settings (firebase.properties)
      * (or while building the app, where the TEST login stands in for one). A released copy
      * with no server lets everyone straight in as a guest.
      */
@@ -284,64 +285,6 @@ final class AccountPopup {
         } catch (Exception e) {
             return false;
         }
-    }
-
-    /**
-     * "How deep should the engine look?" in the classic popup window: two big tiles
-     * (Classic / Standard). Returns TRUE for Standard, FALSE for Classic, null if
-     * cancelled.
-     */
-    static Boolean chooseReviewDepth(Window owner) {
-        SoundManager.playExtraSound("tap.wav");
-        JDialog d = new JDialog(owner, "Game Review", Dialog.ModalityType.APPLICATION_MODAL);
-        d.setUndecorated(true);
-        Card c = new Card();
-        c.setLayout(new BorderLayout(0, s(28)));
-        c.setBorder(new EmptyBorder(s(48), s(56), s(46), s(56)));
-
-        JPanel head = transparent(new BorderLayout(0, s(8)));
-        JLabel t = new JLabel("GAME REVIEW");
-        t.setFont(MainMenu.variantDisplayFont(sf(40f)));
-        t.setForeground(TEXT_DARK);
-        JLabel sub = new JLabel("How deep should the engine look?");
-        sub.setFont(UiFonts.subtext(sf(22f)));
-        sub.setForeground(TEXT_MUTED);
-        head.add(t, BorderLayout.NORTH);
-        head.add(sub, BorderLayout.CENTER);
-        c.add(head, BorderLayout.NORTH);
-
-        final Boolean[] choice = {null};
-        JPanel tiles = transparent(new GridLayout(1, 2, s(20), 0));
-        tiles.add(new DepthTile("CLASSIC", "QUICK", Review.MoveClass.BEST,
-                "Best to Blunder, Book, Forced and Miss.", false,
-                () -> { choice[0] = Boolean.FALSE; d.dispose(); }));
-        tiles.add(new DepthTile("STANDARD", "RECOMMENDED", Review.MoveClass.BRILLIANT,
-                "Slower, and also finds Great and Brilliant moves.", true,
-                () -> { choice[0] = Boolean.TRUE; d.dispose(); }));
-        tiles.setPreferredSize(new Dimension(s(720), s(314)));
-        c.add(tiles, BorderLayout.CENTER);
-
-        Btn cancel = new Btn("CANCEL", Btn.GREY_STYLE);
-        cancel.setPreferredSize(new Dimension(s(260), s(76)));
-        cancel.addActionListener(e -> {
-            SoundManager.playExtraSound("tap.wav");
-            d.dispose();
-        });
-        c.add(cancel, BorderLayout.SOUTH);
-
-        d.getRootPane().registerKeyboardAction(e -> d.dispose(),
-                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        d.setContentPane(c);
-        d.pack();
-        try {
-            d.setShape(new RoundRectangle2D.Float(0, 0, d.getWidth(), d.getHeight(), s(40), s(40)));
-        } catch (Exception ignored) {
-        }
-        d.setLocationRelativeTo(owner);
-        Runnable removeDim = dimBehind(owner);
-        d.setVisible(true);
-        removeDim.run();
-        return choice[0];
     }
 
     /** One option tile in the review-depth window: logo, tag, name and a line of copy. */
@@ -423,77 +366,6 @@ final class AccountPopup {
             if (line.length() > 0) g.drawString(line.toString(), (w - cm.stringWidth(line.toString())) / 2, y);
             g.dispose();
         }
-    }
-
-    /**
-     * The classic popup window (same look as the account / log-in popups) with one or
-     * two buttons, for other screens to reuse. {@code confirmLabel} null = a single
-     * GOT IT button. {@code danger} paints the confirm button red. Returns once closed;
-     * {@code onConfirm} runs only if the confirm button was pressed.
-     */
-    static void classicDialog(Window owner, String title, String text, String confirmLabel,
-                              boolean danger, Runnable onConfirm) {
-        SoundManager.playExtraSound("tap.wav");
-        JDialog d = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
-        d.setUndecorated(true);
-        Card c = new Card();
-        c.setLayout(new BorderLayout(0, s(28)));
-        c.setBorder(new EmptyBorder(s(48), s(56), s(46), s(56)));
-
-        JLabel t = new JLabel(title.toUpperCase());
-        t.setFont(MainMenu.variantDisplayFont(sf(40f)));
-        t.setForeground(TEXT_DARK);
-        c.add(t, BorderLayout.NORTH);
-
-        JLabel body = new JLabel("<html><div style='width:" + s(500) + "px'>" + text + "</div></html>");
-        body.setFont(UiFonts.subtext(sf(22f)));
-        body.setForeground(TEXT_MUTED);
-        c.add(body, BorderLayout.CENTER);
-
-        final boolean[] confirmed = {false};
-        JPanel buttons = transparent(new GridLayout(1, confirmLabel == null ? 1 : 2, s(16), 0));
-        if (confirmLabel == null) {
-            Btn ok = new Btn("GOT IT", Btn.GREEN_STYLE);
-            ok.setPreferredSize(new Dimension(s(280), s(76)));
-            ok.addActionListener(e -> {
-                SoundManager.playExtraSound("tap.wav");
-                confirmed[0] = true;
-                d.dispose();
-            });
-            buttons.add(ok);
-            d.getRootPane().setDefaultButton(ok);
-        } else {
-            Btn cancel = new Btn("CANCEL", Btn.GREY_STYLE);
-            cancel.setPreferredSize(new Dimension(s(260), s(76)));
-            cancel.addActionListener(e -> {
-                SoundManager.playExtraSound("tap.wav");
-                d.dispose();
-            });
-            Btn ok = new Btn(confirmLabel.toUpperCase(), danger ? Btn.RED_STYLE : Btn.GREEN_STYLE);
-            ok.setPreferredSize(new Dimension(s(260), s(76)));
-            ok.addActionListener(e -> {
-                SoundManager.playExtraSound("tap.wav");
-                confirmed[0] = true;
-                d.dispose();
-            });
-            buttons.add(cancel);
-            buttons.add(ok);
-        }
-        c.add(buttons, BorderLayout.SOUTH);
-
-        d.getRootPane().registerKeyboardAction(e -> d.dispose(),
-                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        d.setContentPane(c);
-        d.pack();
-        try {
-            d.setShape(new RoundRectangle2D.Float(0, 0, d.getWidth(), d.getHeight(), s(40), s(40)));
-        } catch (Exception ignored) {
-        }
-        d.setLocationRelativeTo(owner);
-        Runnable removeDim = dimBehind(owner);
-        d.setVisible(true);
-        removeDim.run();
-        if (confirmed[0] && onConfirm != null) onConfirm.run();
     }
 
     /**
@@ -1233,7 +1105,13 @@ final class AccountPopup {
 
         // --- actions
         // (EDIT PROFILE button removed -- the name/pencil does that now.)
-        JPanel actions = transparent(new GridLayout(1, 2, s(14), 0));
+        JPanel actions = transparent(new GridLayout(1, 3, s(12), 0));
+        Btn friends = new Btn("FRIENDS", Btn.WHITE_STYLE);
+        friends.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            setPage(friendsPage(null));
+        });
+        actions.add(friends);
         Btn board = new Btn("LEADERBOARD", Btn.WHITE_STYLE);
         board.addActionListener(e -> {
             SoundManager.playExtraSound("tap.wav");
@@ -1272,6 +1150,214 @@ final class AccountPopup {
         actions.add(signOut);
         p.add(full(actions, s(72)));
         return p;
+    }
+
+    /**
+     * Friends: add someone by @username, answer requests, and see who's online -- with a
+     * Challenge button that invites them to a game.
+     */
+    private JComponent friendsPage(String message) {
+        JPanel p = column();
+        JLabel heading = new JLabel("Friends");
+        heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
+        heading.setForeground(TEXT_DARK);
+        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(heading);
+        p.add(Box.createVerticalStrut(s(12)));
+
+        // add by username
+        JPanel addRow = transparent(new BorderLayout(s(12), 0));
+        addRow.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
+        Field who = new Field("@username", false);
+        addRow.add(who, BorderLayout.CENTER);
+        PlayerCard.CardButton add = new PlayerCard.CardButton("Add", true);
+        add.setPreferredSize(new Dimension(s(130), s(56)));
+        addRow.add(add, BorderLayout.EAST);
+        p.add(full(addRow, s(56)));
+        JLabel note = new JLabel(message == null ? " " : message);
+        note.setFont(UiFonts.subtext(sf(15f)));
+        note.setForeground(TEXT_MUTED);
+        note.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(Box.createVerticalStrut(s(6)));
+        p.add(note);
+        Runnable submit = () -> {
+            String name = who.getText().trim();
+            if (name.isEmpty()) return;
+            add.setEnabled(false);
+            new SwingWorker<String, Void>() {
+                @Override protected String doInBackground() {
+                    try { return Friends.addByUsername(name); }
+                    catch (Exception ex) { return FirebaseLink.friendlyError(ex); }
+                }
+                @Override protected void done() {
+                    String msg;
+                    try { msg = get(); } catch (Exception ex) { msg = "Something went wrong."; }
+                    if (page != p) return;
+                    setPage(friendsPage(msg));
+                }
+            }.execute();
+        };
+        add.addActionListener(e -> { SoundManager.playExtraSound("tap.wav"); submit.run(); });
+        who.addActionListener(e -> submit.run());
+        p.add(Box.createVerticalStrut(s(12)));
+
+        JPanel list = transparent();
+        list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
+        list.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
+        JLabel loading = new JLabel("Loading...");
+        loading.setFont(UiFonts.subtext(sf(17f)));
+        loading.setForeground(TEXT_MUTED);
+        list.add(loading);
+        JScrollPane scroll = new JScrollPane(list,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(s(24));
+        p.add(full(scroll, s(330)));
+        p.add(Box.createVerticalStrut(s(14)));
+
+        new SwingWorker<Object[], Void>() {
+            @Override protected Object[] doInBackground() throws Exception {
+                return new Object[] {Friends.requests(), Friends.list()};
+            }
+            @SuppressWarnings("unchecked")
+            @Override protected void done() {
+                list.removeAll();
+                try {
+                    Object[] r = get();
+                    java.util.List<Friends.Request> reqs = (java.util.List<Friends.Request>) r[0];
+                    java.util.List<Friends.Friend> fr = (java.util.List<Friends.Friend>) r[1];
+                    if (!reqs.isEmpty()) {
+                        list.add(listHeading("REQUESTS"));
+                        for (Friends.Request q : reqs) {
+                            PlayerCard.CardButton yes = new PlayerCard.CardButton("Accept", true);
+                            PlayerCard.CardButton no = new PlayerCard.CardButton("Decline", false);
+                            yes.addActionListener(e -> friendAction(() -> Friends.accept(q.uid), q.name + " is now your friend."));
+                            no.addActionListener(e -> friendAction(() -> Friends.decline(q.uid), null));
+                            list.add(friendRow(q.name, "@" + q.username, null, yes, no));
+                        }
+                        list.add(Box.createVerticalStrut(s(10)));
+                    }
+                    list.add(listHeading(fr.isEmpty() ? "NO FRIENDS YET" : "YOUR FRIENDS"));
+                    if (fr.isEmpty()) {
+                        JLabel hint = new JLabel("<html><div style='width:" + s(470) + "px'>Add a friend by their username above, "
+                                + "or with Add Friend on a player's card after an online game.</div></html>");
+                        hint.setFont(UiFonts.subtext(sf(16f)));
+                        hint.setForeground(TEXT_MUTED);
+                        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+                        list.add(hint);
+                    }
+                    for (Friends.Friend f : fr) {
+                        String status = f.playing ? "Playing" : f.online ? "Online" : "Offline";
+                        PlayerCard.CardButton ch = new PlayerCard.CardButton("Challenge", true);
+                        ch.setEnabled(f.online && !f.playing);
+                        ch.setToolTipText(f.online ? (f.playing ? "They're in a game" : "Invite them to a game")
+                                : "They need to have the game open");
+                        ch.addActionListener(e -> {
+                            SoundManager.playExtraSound("tap.wav");
+                            Window w = dialog;
+                            MainMenu mm = w != null && w.getOwner() instanceof MainMenu ? (MainMenu) w.getOwner() : null;
+                            if (mm == null) for (Frame fr2 : Frame.getFrames()) if (fr2 instanceof MainMenu) mm = (MainMenu) fr2;
+                            dialog.dispose();
+                            if (mm != null) mm.challengeFriend(f.uid, f.name);
+                        });
+                        PlayerCard.CardButton rm = new PlayerCard.CardButton("Remove", false);
+                        rm.addActionListener(e -> {
+                            if (PlayerCard.confirm(dialog, "Remove " + f.name + "?",
+                                    "You'll stop being friends. You can add each other again any time.", "Remove")) {
+                                friendAction(() -> Friends.remove(f.uid), null);
+                            }
+                        });
+                        String rating = f.rating == null ? "" : " · " + AccountApiClient.displayRating(f.rating);
+                        list.add(friendRow(f.name, "@" + f.username + rating + " · " + status,
+                                f.online ? (f.playing ? GOLD : GREEN) : null, ch, rm));
+                    }
+                } catch (Exception ex) {
+                    loading.setText("Couldn't load your friends. " + FirebaseLink.friendlyError(ex));
+                    list.add(loading);
+                }
+                list.revalidate();
+                list.repaint();
+            }
+        }.execute();
+
+        Btn back = new Btn("BACK", Btn.GREY_STYLE);
+        back.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            setPage(profilePage());
+        });
+        p.add(full(back, s(62)));
+        return p;
+    }
+
+    private interface FriendTask { void run() throws Exception; }
+
+    /** Runs a friends change in the background, then shows the page again (with a message). */
+    private void friendAction(FriendTask task, String doneMessage) {
+        SoundManager.playExtraSound("tap.wav");
+        new SwingWorker<String, Void>() {
+            @Override protected String doInBackground() {
+                try { task.run(); return doneMessage; }
+                catch (Exception ex) { return FirebaseLink.friendlyError(ex); }
+            }
+            @Override protected void done() {
+                String msg;
+                try { msg = get(); } catch (Exception ex) { msg = null; }
+                setPage(friendsPage(msg));
+            }
+        }.execute();
+    }
+
+    private static JLabel listHeading(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(MainMenu.variantDisplayFont(sf(15f)));
+        l.setForeground(TEXT_MUTED);
+        l.setBorder(new EmptyBorder(s(2), 0, s(6), 0));
+        l.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return l;
+    }
+
+    /** One line: an online dot, name, details, and two small buttons. */
+    private static JComponent friendRow(String name, String details, Color dot, JButton a, JButton b) {
+        JPanel row = new RoundPanel(UiTheme.c(255, 253, 248), CARD_BORDER, s(18));
+        row.setLayout(new BorderLayout(s(12), 0));
+        row.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
+        row.setBorder(new EmptyBorder(s(8), s(14), s(8), s(10)));
+        JComponent d = new JComponent() {
+            @Override protected void paintComponent(Graphics g0) {
+                Graphics2D g = quality(g0);
+                int sz = s(12);
+                g.setColor(dot != null ? dot : UiTheme.c(200, 192, 178));
+                g.fill(new Ellipse2D.Float((getWidth() - sz) / 2f, (getHeight() - sz) / 2f, sz, sz));
+                g.dispose();
+            }
+        };
+        d.setPreferredSize(new Dimension(s(16), s(16)));
+        row.add(d, BorderLayout.WEST);
+        JLabel text = new JLabel("<html><b>" + escape(name) + "</b><br><span style='color:#827562'>"
+                + escape(details) + "</span></html>");
+        text.setFont(UiFonts.subtext(sf(16f)));
+        text.setForeground(TEXT_DARK);
+        row.add(text, BorderLayout.CENTER);
+        JPanel btns = transparent(new GridLayout(1, 2, s(8), 0));
+        a.setPreferredSize(new Dimension(s(120), s(44)));
+        b.setPreferredSize(new Dimension(s(110), s(44)));
+        a.setFont(MainMenu.variantDisplayFont(sf(15f)));
+        b.setFont(MainMenu.variantDisplayFont(sf(15f)));
+        btns.add(a);
+        btns.add(b);
+        JPanel bw = transparent(new GridBagLayout());
+        bw.add(btns);
+        row.add(bw, BorderLayout.EAST);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(68)));
+        JPanel wrap = transparent(new BorderLayout());
+        wrap.setBorder(new EmptyBorder(0, 0, s(8), 0));
+        wrap.add(row);
+        wrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrap.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(76)));
+        return wrap;
     }
 
     /** The top 50 players by rating (Quick Match games between accounts). */
@@ -1759,11 +1845,6 @@ final class AccountPopup {
         return u.matches("[A-Za-z0-9_]{3,24}"); // same rule as the server
     }
 
-    private static String capitalize(String s) {
-        if (s == null || s.isEmpty()) return "Player";
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
-
     private static void clearErrorOnEdit(Btn button, JTextField... fields) {
         DocumentListener l = new DocumentListener() {
             @Override public void insertUpdate(DocumentEvent e) { button.clearError(); }
@@ -2067,27 +2148,6 @@ final class AccountPopup {
                     }
                 }
             }.execute();
-        }
-
-        // Dummy "talking to the server" moment: animated dots, then done.
-        void runBusy(String text, Runnable then) {
-            SoundManager.playExtraSound("tap.wav");
-            busy = true;
-            busyText = text;
-            busyStart = System.nanoTime();
-            hover.set(false);
-            setCursor(Cursor.getDefaultCursor());
-            busyTimer = AnimationTiming.createUiTimer(e -> repaint());
-            busyTimer.start();
-            Timer done = new Timer(750, e -> {
-                busyTimer.stop();
-                busy = false;
-                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                repaint();
-                then.run();
-            });
-            done.setRepeats(false);
-            done.start();
         }
 
         @Override

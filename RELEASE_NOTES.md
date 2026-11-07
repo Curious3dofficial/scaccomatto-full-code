@@ -1,6 +1,14 @@
-# Scaccomatto 1.0.0
+# Scaccomatto 1.1.0
 
-The first public release.
+**New in 1.1.0**
+- Friends: add each other by username or from a player's card, see who's online, and challenge a friend straight into a game.
+- Player cards: click your opponent's name for their picture, rating and your record against them.
+- Mute, block and report players. Blocked players are never matched with you again.
+- Both players' names and ratings now show above and below the board in online games.
+- Signing up now confirms your email address first, and the account screens keep one size.
+- Clearer messages when online play is busy or your internet is down.
+- Smaller download.
+
 
 **Play**
 - Eight variants: Classic, Chess960, King of the Hill, Three-check, Atomic, Fog of War and Duck Chess. Spell Chess is coming in a later update.
@@ -30,4 +38,4 @@ The first public release.
 
 **Install**
 - Windows: run the `.exe`. If Windows warns you, click *More info*, then *Run anyway*.
-- Linux: `sudo apt install ./scaccomatto_1.0.0_amd64.deb`
+- Linux: `sudo apt install ./scaccomatto_1.1.0_amd64.deb`

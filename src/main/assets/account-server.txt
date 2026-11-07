@@ -1,6 +1,0 @@
-# The account server this copy of Scaccomatto uses.
-# Put your server's https address on the first line that doesn't start with #,
-# for example:
-#   https://scaccomatto.duckdns.org
-# While this file has no address, the app uses a server on this computer
-# (http://127.0.0.1:8080) and shows the TEST / DEV buttons for development.

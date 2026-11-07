@@ -11,11 +11,4 @@ public class EngineAnalysis {
         this.mateIn = 0;
     }
     
-    public String getEvaluationString() {
-        if (isMate) {
-            return "M" + mateIn;
-        }
-        double pawns = evaluation / 100.0;
-        return String.format("%+.2f", pawns);
-    }
 }

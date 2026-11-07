@@ -116,8 +116,6 @@ public class MainMenuScreen extends JPanel {
     // changes far less often than it's painted (every frame of the intro
     // transition) -- recomputed lazily in ivoryGradient() below instead of
     // allocating a fresh GradientPaint on every single paintComponent() call.
-    private Paint cachedIvoryGradient;
-    private int cachedIvoryGradientH = -1;
 
     public MainMenuScreen() {
         setLayout(null);
@@ -537,15 +535,6 @@ public class MainMenuScreen extends JPanel {
 
     private java.awt.image.BufferedImage bgPicture, wordmarkPicture;
     private int bgTheme = -1;
-
-    /** Recomputed only when the panel's height actually changes, not on every paint. */
-    private Paint ivoryGradient(int h) {
-        if (cachedIvoryGradientH != h) {
-            cachedIvoryGradient = new GradientPaint(0, 0, BG_TOP, 0, h, BG_BOTTOM);
-            cachedIvoryGradientH = h;
-        }
-        return cachedIvoryGradient;
-    }
 
     @Override
     protected void paintComponent(Graphics g) {

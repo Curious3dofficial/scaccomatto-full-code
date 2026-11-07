@@ -81,7 +81,6 @@ public class SettingsScreen extends JPanel {
     private final Sidebar sidebar = new Sidebar();
     private final PageHost pageHost = new PageHost();
     private Category current = Category.GENERAL;
-    private final Runnable soundListener = this::refreshAudioPage;
 
     public SettingsScreen(MainMenu host, Runnable onBack) {
         this.host = host;
@@ -191,10 +190,6 @@ public class SettingsScreen extends JPanel {
             if (c instanceof SettingsScreen && c.isShowing()) ((SettingsScreen) c).rebuildCurrent();
             else if (c instanceof java.awt.Container) refreshShowing((java.awt.Container) c);
         }
-    }
-
-    private void refreshAudioPage() {
-        if (current == Category.AUDIO) SwingUtilities.invokeLater(this::rebuildCurrent);
     }
 
     static Graphics2D smooth(Graphics g) {
@@ -2280,6 +2275,7 @@ public class SettingsScreen extends JPanel {
             + "Playing a friend on another computer\n"
             + "• One player opens Multiplayer > Private Game > Host and sends the six-letter code; the other picks Join and types it in. It works over the internet, so you don't need to be in the same place.\n"
             + "• Join Game finds you a random opponent who picked the same variant and clock.\n"
+            + "• Signed in? Add friends from your profile (Friends) or from a player's card after a game. Friends who have the game open can be challenged straight from your friends list.\n"
             + "• On the same Wi-Fi, the game connects the two computers directly. If that fails, the player hosting may need to let Scaccomatto through their firewall.\n"
             + "\n"
             + "Analysis and review\n"
@@ -2315,6 +2311,9 @@ public class SettingsScreen extends JPanel {
             + "Deleting your account\n"
             + "Settings > Privacy > Delete account removes your profile, picture, settings, achievements and sign-in for good. The only thing left is an unlinked list of game codes already counted, so the same game can't be counted twice.\n"
             + "\n"
+            + "Friends\n"
+            + "If you add friends, we keep your friends list and any requests waiting for an answer. While the game is open, your friends can see that you're online (and whether you're in a game); set Online status to Nobody in Settings > Privacy to stop that. A challenge to a friend keeps the game's code, variant and clock until it's answered or two minutes pass. Profile visibility decides whether players who aren't your friends see your picture, join date and record, and whether you're on the leaderboard.\n"
+            + "\n"
             + "Blocking and reporting\n"
             + "Your block list stays on your computer (and in your account, if you have one). If you report someone, the report goes to us with the reason, your note, and the moves and chat from that game, so we can check what happened. Only we can read reports; the player you reported isn't told who reported them. We keep a report until we've dealt with it, and for up to a year after if the player was banned. A banned player can't play online, change their profile or be rated.\n"
             + "\n"
@@ -2345,6 +2344,7 @@ public class SettingsScreen extends JPanel {
             + "• Don't use a chess engine, another person or any outside help in games against someone else.\n"
             + "• Be decent in chat. No insults, harassment, threats or spam.\n"
             + "• Pick a name and picture that won't upset other players.\n"
+            + "• Players can report each other. If you break these rules, we can stop you from playing online and suspend your account, without warning.\n"
             + "\n"
             + "No warranty\n"
             + "Scaccomatto is provided as it is. As far as the law allows, we give no promises about it beyond what's written here, and we aren't responsible for indirect losses, such as lost games or lost time, from using it or being unable to use it. Nothing here takes away rights you have by law that can't be taken away.\n"

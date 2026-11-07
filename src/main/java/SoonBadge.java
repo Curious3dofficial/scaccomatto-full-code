@@ -58,10 +58,4 @@ final class SoonBadge {
         paintCentred(g, x + w / 2f, cy, h, ring);
         return Math.round(w);
     }
-
-    /** Draws the tag on the top-right corner of a box (half over its edge, like a sticker). */
-    static void paintTopRight(Graphics2D g, float boxX, float boxY, float boxW, float h, Color ring) {
-        float w = width(g, h);
-        paintCentred(g, boxX + boxW - w / 2f - h * 0.35f, boxY + h * 0.15f, h, ring);
-    }
 }

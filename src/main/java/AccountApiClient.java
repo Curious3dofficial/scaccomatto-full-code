@@ -466,14 +466,6 @@ public final class AccountApiClient {
         return readProfile(uid, lookupEmail());
     }
 
-    public OtpDelivery requestUsernameChange(String token, String newUsername) throws ApiException {
-        throw new ApiException(400, "Usernames can't be changed.");
-    }
-
-    public Profile verifyUsernameChange(String token, String code) throws ApiException {
-        throw new ApiException(400, "Usernames can't be changed.");
-    }
-
     /** The signed-in player's picture as image bytes, or null if none is set. */
     public byte[] getAvatar(String token) throws IOException, InterruptedException, ApiException {
         return avatarOf(FirebaseLink.uid());
@@ -641,22 +633,13 @@ public final class AccountApiClient {
         return "win".equals(r) ? "loss" : "loss".equals(r) ? "win" : "draw";
     }
 
-    /** A player's rating (for showing an online opponent), or null. */
-    static Double ratingOf(String uid) {
-        try {
-            Object v = FirebaseLink.get("players/" + uid + "/rating");
-            return v instanceof Number ? ((Number) v).doubleValue() : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     /** The top players: {name, username, rating, games}, best first. */
     static java.util.List<Map<String, Object>> leaderboard(int count) throws IOException {
         Object v = FirebaseLink.get("players", "&orderBy=" + enc("\"rating\"") + "&limitToLast=" + count);
         java.util.List<Map<String, Object>> list = new java.util.ArrayList<>();
         for (Map.Entry<String, Object> e : FirebaseLink.asMap(v).entrySet()) {
             Map<String, Object> m = new LinkedHashMap<>(FirebaseLink.asMap(e.getValue()));
+            if ("me".equals(m.get("vis"))) continue;       // Profile visibility: Only me
             m.put("uid", e.getKey());
             long games = FirebaseLink.num(m.get("w"), 0) + FirebaseLink.num(m.get("l"), 0) + FirebaseLink.num(m.get("d"), 0);
             m.put("games", games);

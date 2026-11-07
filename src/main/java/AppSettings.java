@@ -264,9 +264,9 @@ final class AppSettings {
     // ── Privacy ──────────────────────────────────────────────────────────────
 
     static String profileVisibility() { return str("profileVisibility", "Everyone"); }
-    static void setProfileVisibility(String v) { NODE.put("profileVisibility", v); syncBoardSettings(); }
+    static void setProfileVisibility(String v) { NODE.put("profileVisibility", v); syncBoardSettings(); Friends.saveProfileVisibility(); }
     static String onlineStatusVisibility() { return str("onlineStatusVisibility", "Everyone"); }
-    static void setOnlineStatusVisibility(String v) { NODE.put("onlineStatusVisibility", v); syncBoardSettings(); }
+    static void setOnlineStatusVisibility(String v) { NODE.put("onlineStatusVisibility", v); syncBoardSettings(); Friends.updatePresence(); }
 
     // ── helpers ──────────────────────────────────────────────────────────────
 

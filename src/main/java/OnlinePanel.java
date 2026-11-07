@@ -34,7 +34,6 @@ public class OnlinePanel extends JPanel {
     private static final Color CANCEL_FILL_HOVER = UiTheme.c(228, 224, 217);
     private static final Color TEXT_DARK = UiTheme.c(28, 22, 14);
     private static final Color TEXT_MUTED = UiTheme.c(130, 117, 98);
-    private static final Color TEXT_STAT = UiTheme.c(158, 112, 50);
     private static final Color GOLD = UiTheme.c(205, 150, 54);
 
     // Variant tile colors -- identical to createLocalVariantPanel()'s own
@@ -110,7 +109,6 @@ public class OnlinePanel extends JPanel {
 
     private JTextField ipField;
     private JTextField portField;
-    private JButton hostBtn;
     private JButton joinBtn;
     private JLabel statusLabel;
     // Accordion state for the right panel's new layout (collapsed picker
@@ -1323,17 +1321,6 @@ public class OnlinePanel extends JPanel {
         if (timeControlHeader != null) timeControlHeader.setTitle(selectedPreset.label);
     }
 
-    private Integer parsePort() {
-        try {
-            int port = Integer.parseInt(portField.getText().trim());
-            if (port < 1 || port > 65535) throw new NumberFormatException();
-            return port;
-        } catch (NumberFormatException exception) {
-            setStatus("Invalid port. Use 1-65535.");
-            return null;
-        }
-    }
-
     private void doHost() {
         doHost(true, randomLobbyCode());
     }
@@ -1599,10 +1586,12 @@ public class OnlinePanel extends JPanel {
             LocalLobbyDiscovery.Lobby lobby = null;
             String error = null;
             // Look on the internet at the same time as on this network.
+            final String[] onlineProblem = {null};
             java.util.concurrent.CompletableFuture<LocalLobbyDiscovery.Lobby> online =
                     OnlineRelay.available()
                             ? java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                                try { return OnlineRelay.findByCode(code); } catch (Exception e) { return null; }
+                                try { return OnlineRelay.findByCode(code); }
+                                catch (Exception e) { onlineProblem[0] = FirebaseLink.friendlyError(e); return null; }
                             })
                             : java.util.concurrent.CompletableFuture.completedFuture(null);
             try {
@@ -1617,6 +1606,8 @@ public class OnlinePanel extends JPanel {
                 } catch (Exception ignored) {
                 }
             }
+            // not found here, and the internet lookup failed: say why rather than "not found"
+            if (lobby == null && onlineProblem[0] != null) error = onlineProblem[0];
             final LocalLobbyDiscovery.Lobby found = lobby;
             final boolean lookupFailed = error != null;
             final String failure = found == null
@@ -1656,41 +1647,6 @@ public class OnlinePanel extends JPanel {
         }, "scaccomatto-code-lookup");
         lookup.setDaemon(true);
         lookup.start();
-        return true;
-    }
-
-    // The on-screen "Join Game"/"Private Game" UI now shows a 6-letter
-    // code instead of an IP + port (per "make the private game system
-    // like among us code generation"), but that's a UI-only change for
-    // now -- ipField/portField are no longer shown anywhere, but they
-    // still quietly hold the fixed "localhost"/"5000" values set in
-    // buildLobbyPanel(), so every code typed in still connects here, to
-    // that same dummy target, exactly like before. Swapping this for a
-    // real matchmaking lookup (code -> actual host/port) is future work.
-    // confirm=false skips the extra "Join Game" confirmation popup (the
-    // Private Game popup's JOIN GAME button is the confirmation). Returns
-    // true if a connection attempt actually started.
-    private boolean doJoin(boolean confirm) {
-        String ip = ipField.getText().trim();
-        if (ip.isEmpty()) {
-            setStatus("IP / Host cannot be empty.");
-            return false;
-        }
-        Integer port = parsePort();
-        if (port == null) return false;
-        boolean supported = isSupportedVariant();
-        if (confirm && !showLaunchDialog("Join Game", supported)) return false;
-        if (!supported) {
-            setStatus(selectedVariant + " is coming soon in multiplayer.");
-            return false;
-        }
-
-        closeCurrentConnection();
-        net = new NetworkManager();
-        final ChessGame[] gameRef = new ChessGame[1];
-        final List<Runnable> pendingEvents = new ArrayList<>();
-        setStatus("Connecting to " + ip + ":" + port + "...");
-        net.join(ip, port, createNetworkListener(gameRef, pendingEvents, false));
         return true;
     }
 
@@ -1799,117 +1755,6 @@ public class OnlinePanel extends JPanel {
                 || "Atomic".equals(selectedVariant)
                 || "Three-check".equals(selectedVariant)
                 || "Duck Chess".equals(selectedVariant);
-    }
-
-    private void showLocalLobbyDialog() {
-        Window owner = SwingUtilities.getWindowAncestor(this);
-        JDialog dialog = new JDialog(owner, "Join Local", Dialog.ModalityType.APPLICATION_MODAL);
-        dialog.setUndecorated(true);
-
-        CreamCard card = new CreamCard();
-        card.setLayout(new BorderLayout(0, 16));
-        card.setBorder(new EmptyBorder(24, 28, 24, 28));
-
-        JPanel header = transparent();
-        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
-        JLabel title = new JLabel("JOIN LOCAL");
-        title.setFont(MainMenu.variantDisplayFont(28f));
-        title.setForeground(TEXT_DARK);
-        title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JLabel subtitle = new JLabel("DISCOVER HOSTED GAMES ON YOUR NETWORK");
-        subtitle.setFont(UiFonts.subtext(13f));
-        subtitle.setForeground(TEXT_MUTED);
-        subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
-        header.add(title);
-        header.add(Box.createVerticalStrut(5));
-        header.add(subtitle);
-        card.add(header, BorderLayout.NORTH);
-
-        DefaultListModel<LocalLobbyDiscovery.Lobby> model = new DefaultListModel<>();
-        JList<LocalLobbyDiscovery.Lobby> list = new JList<>(model);
-        list.setOpaque(false);
-        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        list.setFixedCellHeight(68);
-        list.setCellRenderer(new LobbyCellRenderer());
-        JScrollPane scrollPane = new JScrollPane(list);
-        scrollPane.setPreferredSize(new Dimension(720, 300));
-        scrollPane.setBorder(BorderFactory.createLineBorder(CARD_BORDER, 1, true));
-        scrollPane.setOpaque(false);
-        scrollPane.getViewport().setOpaque(false);
-        MainMenu.styleThemedScrollPane(scrollPane);
-        card.add(scrollPane, BorderLayout.CENTER);
-
-        JLabel scanStatus = new JLabel("Scanning local network...", SwingConstants.LEFT);
-        scanStatus.setFont(UiFonts.uiRegular(13f));
-        scanStatus.setForeground(TEXT_MUTED);
-
-        JButton refresh = compactDialogButton("REFRESH");
-        JButton cancel = compactDialogButton("CANCEL");
-        JButton join = compactDialogButton("JOIN SELECTED");
-        join.setEnabled(false);
-        list.addListSelectionListener(event -> join.setEnabled(!list.isSelectionEmpty()));
-
-        Runnable scan = () -> {
-            refresh.setEnabled(false);
-            join.setEnabled(false);
-            scanStatus.setText("Scanning local network...");
-            model.clear();
-            new SwingWorker<List<LocalLobbyDiscovery.Lobby>, Void>() {
-                @Override
-                protected List<LocalLobbyDiscovery.Lobby> doInBackground() throws Exception {
-                    return LocalLobbyDiscovery.scan(2600);
-                }
-
-                @Override
-                protected void done() {
-                    try {
-                        List<LocalLobbyDiscovery.Lobby> lobbies = get();
-                        for (LocalLobbyDiscovery.Lobby lobby : lobbies) model.addElement(lobby);
-                        scanStatus.setText(lobbies.isEmpty()
-                                ? "No local games found. Ask the host to click Host Game."
-                                : lobbies.size() + " local game" + (lobbies.size() == 1 ? "" : "s") + " found.");
-                    } catch (Exception exception) {
-                        scanStatus.setText("Could not scan local games: " + exception.getMessage());
-                    } finally {
-                        refresh.setEnabled(true);
-                        join.setEnabled(!list.isSelectionEmpty());
-                    }
-                }
-            }.execute();
-        };
-
-        refresh.addActionListener(event -> scan.run());
-        cancel.addActionListener(event -> dialog.dispose());
-        join.addActionListener(event -> {
-            LocalLobbyDiscovery.Lobby lobby = list.getSelectedValue();
-            if (lobby == null) return;
-            applyLobbySelection(lobby);
-            dialog.dispose();
-            doJoin(true);
-        });
-        list.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent event) {
-                if (event.getClickCount() == 2 && !list.isSelectionEmpty()) {
-                    join.doClick();
-                }
-            }
-        });
-
-        JPanel actions = transparent(new BorderLayout(12, 0));
-        actions.add(scanStatus, BorderLayout.CENTER);
-        JPanel buttons = transparent(new GridLayout(1, 3, 10, 0));
-        buttons.add(refresh);
-        buttons.add(cancel);
-        buttons.add(join);
-        actions.add(buttons, BorderLayout.EAST);
-        card.add(actions, BorderLayout.SOUTH);
-
-        dialog.setContentPane(card);
-        dialog.setSize(790, 460);
-        dialog.setLocationRelativeTo(owner);
-        SwingUtilities.invokeLater(scan);
-        dialog.setVisible(true);
     }
 
     // New popup per "make this [row], Private game, (new popup)" -- a
@@ -2483,19 +2328,6 @@ public class OnlinePanel extends JPanel {
         label.setForeground(TEXT_DARK);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
         return label;
-    }
-
-    private void applyLobbySelection(LocalLobbyDiscovery.Lobby lobby) {
-        selectedVariant = lobby.variant();
-        selectedPreset = new TimePreset(
-                lobby.timeLabel(),
-                lobby.initialSeconds(),
-                lobby.incrementSeconds());
-        ipField.setText(lobby.hostAddress());
-        portField.setText(String.valueOf(lobby.port()));
-        updateVariantUI();
-        updateTimeUI();
-        setStatus("Selected local game: " + lobby.hostAddress() + ":" + lobby.port());
     }
 
     private void closeCurrentConnection() {
@@ -3193,24 +3025,6 @@ public class OnlinePanel extends JPanel {
         // square with a thin orange border. null = none.
         private java.awt.image.BufferedImage rightImage;
 
-        void setRightImage(java.awt.image.BufferedImage image) {
-            rightImage = image;
-            int right = Math.round(14 * scale);
-            if (image != null) right += imageBoxSize() + Math.round(12 * scale);
-            setBorder(new EmptyBorder(
-                    Math.round(8 * scale), Math.round(74 * scale),
-                    Math.round(8 * scale), right));
-            repaint();
-        }
-
-        boolean rightImageContains(Point p) {
-            if (rightImage == null) return false;
-            int box = imageBoxSize();
-            int bx = getWidth() - Math.round(12 * scale) - box;
-            int by = (getHeight() - box) / 2;
-            return p.x >= bx && p.x <= bx + box && p.y >= by && p.y <= by + box;
-        }
-
         private int imageBoxSize() {
             int h = getPreferredSize().height;
             if (getHeight() > 0) h = getHeight();
@@ -3313,6 +3127,118 @@ public class OnlinePanel extends JPanel {
     // "make the private game system like among us code generation ...
     // 6 letter code all caps". Used as the real game code: the host
     // announces it on the local network and joiners look it up.
+    // ── friends: challenging one, and joining a challenge ─────────────────────
+
+    /**
+     * Challenge a friend: hosts a private game (the variant and clock picked on this screen)
+     * and sends them its code. A small popup waits until they join, decline or it times out.
+     */
+    void challengeFriend(String friendUid, String friendName) {
+        if (!isSupportedVariant()) {
+            setStatus(selectedVariant + " can't be played online yet. Pick another variant first.");
+            return;
+        }
+        String code = randomLobbyCode();
+        final boolean[] connected = {false};
+        final JDialog[] waitRef = {null};
+        onHostConnected = () -> {
+            connected[0] = true;
+            if (waitRef[0] != null) waitRef[0].dispose();
+        };
+        onHostFailed = () -> { if (waitRef[0] != null) waitRef[0].dispose(); };
+        if (!doHost(false, code)) {
+            onHostConnected = null;
+            onHostFailed = null;
+            return;
+        }
+        final String variant = selectedVariant;
+        final TimePreset clock = selectedPreset;
+        Thread send = new Thread(() -> {
+            try {
+                Friends.sendChallenge(friendUid, code, variant, clock.label, clock.initialSeconds, clock.incrementSeconds);
+            } catch (Exception e) {
+                setStatus("Couldn't send the challenge: " + FirebaseLink.friendlyError(e));
+            }
+        }, "send-challenge");
+        send.setDaemon(true);
+        send.start();
+        setProgressStatus("Challenged " + friendName + " to " + variant + " " + clock.label + ". Waiting for them...");
+
+        // the waiting popup
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        JDialog wait = new JDialog(owner, "Challenge", Dialog.ModalityType.MODELESS);
+        waitRef[0] = wait;
+        wait.setUndecorated(true);
+        JPanel c = PlayerCard.roundPanel();
+        c.setLayout(new BorderLayout(0, 14));
+        c.setBorder(new EmptyBorder(24, 28, 22, 28));
+        JLabel t = new JLabel("Challenging " + friendName);
+        t.setFont(MainMenu.variantDisplayFont(26f));
+        t.setForeground(UiTheme.c(28, 22, 14));
+        c.add(t, BorderLayout.NORTH);
+        JLabel body = new JLabel("<html><div style='width:340px'>" + variant + " · " + clock.label
+                + "<br>Waiting for them to accept...<br><br><span style='font-size:90%'>To play a different variant or clock, "
+                + "cancel, pick them on this screen, then challenge again.</span></div></html>");
+        body.setFont(UiFonts.subtext(16f));
+        body.setForeground(UiTheme.c(130, 117, 98));
+        c.add(body, BorderLayout.CENTER);
+        PlayerCard.CardButton cancel = new PlayerCard.CardButton("Cancel", false);
+        c.add(cancel, BorderLayout.SOUTH);
+        wait.setContentPane(c);
+        wait.pack();
+        try { wait.setShape(new java.awt.geom.RoundRectangle2D.Float(0, 0, wait.getWidth(), wait.getHeight(), 22, 22)); } catch (Exception ignored) { }
+        wait.setLocationRelativeTo(owner);
+
+        final long started = System.currentTimeMillis();
+        final long[] goneSince = {0};
+        Timer poll = new Timer(3000, null);
+        Runnable giveUp = () -> {
+            poll.stop();
+            if (connected[0]) return;
+            onHostConnected = null;
+            onHostFailed = null;
+            closeCurrentConnection();
+            Thread w = new Thread(() -> Friends.withdrawChallenge(friendUid), "withdraw-challenge");
+            w.setDaemon(true);
+            w.start();
+            wait.dispose();
+        };
+        cancel.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            giveUp.run();
+            setProgressStatus("Challenge cancelled.");
+        });
+        poll.addActionListener(e -> {
+            if (connected[0] || !wait.isDisplayable()) { poll.stop(); return; }
+            new SwingWorker<Boolean, Void>() {
+                @Override protected Boolean doInBackground() { return Friends.challengeStillOpen(friendUid); }
+                @Override protected void done() {
+                    boolean open;
+                    try { open = get(); } catch (Exception ex) { open = true; }
+                    long now = System.currentTimeMillis();
+                    if (!open && goneSince[0] == 0) goneSince[0] = now;
+                    if (connected[0]) return;
+                    if (goneSince[0] != 0 && now - goneSince[0] > 15_000) {
+                        giveUp.run();
+                        setProgressStatus(friendName + " didn't join this time.");
+                    } else if (now - started > Friends.CHALLENGE_MAX_AGE_MS) {
+                        giveUp.run();
+                        setProgressStatus(friendName + " didn't answer the challenge.");
+                    }
+                }
+            }.execute();
+        });
+        poll.start();
+        wait.setVisible(true);
+    }
+
+    /** Accepted a friend's challenge: join their game by its code (variant and clock come with it). */
+    void joinChallenge(String code) {
+        onHostConnected = null;
+        onHostFailed = null;
+        doJoinByCode(false, code);
+    }
+
     private static String randomLobbyCode() {
         String letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         StringBuilder code = new StringBuilder(6);
@@ -3541,12 +3467,6 @@ public class OnlinePanel extends JPanel {
         g2.setColor(UiTheme.c(28, 22, 14));
         g2.drawString(titleCase(title), textX, titleY);
         return textX + tm.stringWidth(titleCase(title));
-    }
-
-    private static String sentenceCase(String value) {
-        if (value == null || value.isEmpty()) return value;
-        String lower = value.toLowerCase(Locale.ROOT);
-        return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
     }
 
     // Animated accordion body: wraps a section's content and grows its own

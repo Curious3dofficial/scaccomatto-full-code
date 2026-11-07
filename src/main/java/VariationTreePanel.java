@@ -35,7 +35,6 @@ public final class VariationTreePanel extends JPanel implements Scrollable {
     private static final Color VARIATION_TEXT = AnalysisTheme.TEXT_MUTED;
     private static final Color DEPTH_RULE     = AnalysisTheme.CARD_BORDER;
     private static final Color ROW_STRIPE     = AnalysisTheme.SOFT;
-    private static final Color CURRENT_BG     = AnalysisTheme.SELECTED_BG;
     private static final Color CURRENT_TEXT   = AnalysisTheme.TEXT_DARK;
     private static final Color HOVER_BG       = AnalysisTheme.SOFT_2;
 

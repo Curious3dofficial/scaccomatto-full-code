@@ -1,6 +1,0 @@
-CREATE TABLE IF NOT EXISTS remember_tokens (
-    token_hash VARCHAR(255) NOT NULL PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    expires_at TIMESTAMP NOT NULL
-);

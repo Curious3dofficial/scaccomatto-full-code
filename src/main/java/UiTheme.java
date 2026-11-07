@@ -405,12 +405,6 @@ final class UiTheme {
         return withAlpha(fromHsl(270f, l >= 0.55f ? 0.10f : 0.08f, nl), a);
     }
 
-    /** Re-colours a one-colour icon (black glyph on transparent) for the dark theme. */
-    static BufferedImage tintIcon(BufferedImage src) {
-        if (!DARK || src == null) return src;
-        return recolour(src, INK);
-    }
-
     /**
      * The app's own one-colour icons (assets/icons): the black glyphs turn light, the
      * gold stars turn purple. Anything else is returned untouched.

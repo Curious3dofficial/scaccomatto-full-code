@@ -382,6 +382,29 @@ final class FirebaseLink {
         return body == null || body.isBlank() ? null : Json.parse(body);
     }
 
+    /**
+     * A plain sentence for why talking to Firebase failed: no internet, or Firebase too busy
+     * (the free plan allows 100 players connected at once), or anything else.
+     */
+    static String friendlyError(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            if (t instanceof FirebaseException) {
+                int st = ((FirebaseException) t).status;
+                if (st == 429 || st == 503 || st == 509) {
+                    return "Online play is busy right now. Try again in a minute.";
+                }
+                if (((FirebaseException) t).permissionDenied()) return "That wasn't allowed.";
+            }
+            if (t instanceof java.net.ConnectException || t instanceof java.net.UnknownHostException
+                    || t instanceof java.net.http.HttpConnectTimeoutException || t instanceof java.net.http.HttpTimeoutException) {
+                return "Can't reach the internet. Check your connection and try again.";
+            }
+            t = t.getCause();
+        }
+        return "Online play isn't answering right now. Try again in a minute.";
+    }
+
     static String enc(String s) { return URLEncoder.encode(s, StandardCharsets.UTF_8); }
 
     @SuppressWarnings("unchecked")

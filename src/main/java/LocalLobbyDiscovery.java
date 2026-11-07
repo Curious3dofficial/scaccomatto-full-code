@@ -175,11 +175,6 @@ final class LocalLobbyDiscovery {
                     Instant.now().toEpochMilli());
         }
 
-        String displayName() {
-            return hostName + "  |  " + variant + "  |  " + timeLabel + "  |  "
-                    + hostAddress + ":" + port;
-        }
-
         private String encode() {
             return PREFIX
                     + "|2"

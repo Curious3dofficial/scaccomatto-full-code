@@ -4,7 +4,6 @@ import java.awt.*;
 public class EvaluationBar extends JPanel {
 
     private int evaluation = 0;
-    private static final int MAX_EVAL = 1000;            // ±10 pawns full-scale
 
     // animated fill
     private double currentPct = 0.5;

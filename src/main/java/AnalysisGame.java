@@ -49,12 +49,9 @@ public class AnalysisGame extends JFrame {
     private Runnable onBackToAnalysis;
     /** Empty until {@link #showReviewSummary} fills it in -- only meaningful when
      *  {@code embedSelf} is false. */
-    private JPanel reviewSummaryContainer;
     private Map<VariationTree.Node, Review.MoveClass> reviewClassifications = new IdentityHashMap<>();
 
     private static final String CARD_ANALYSIS       = "ANALYSIS";
-    private static final String CARD_REVIEW         = "REVIEW";
-    private static final String CARD_REVIEW_SUMMARY = "REVIEW_SUMMARY";
 
     /** The themed modal currently showing, if any. */
     private AnalysisTheme.Modal activeModal;
@@ -160,7 +157,6 @@ public class AnalysisGame extends JFrame {
     private JPanel             leftContentPanel;
     private JPanel             evalBarColumn;
     /** Width of the grey gutter between the board and the eval bar, in pixels. */
-    private static final int   EVAL_BAR_GAP = 10;
     private JPanel             topPanel;
     private JPanel             bottomPanel;
     private JPanel             historyColumn;
@@ -187,25 +183,14 @@ public class AnalysisGame extends JFrame {
     /** A hairline, not a bar: the divider is the line and nothing else. */
     private static final int SPLIT_DIVIDER_WIDTH = 3;
     /** Neutral greys. The screen used to be tinted purple, which nothing else here is. */
-    private static final Color SURFACE        = new Color(34, 34, 34);
-    private static final Color SURFACE_RAISED = new Color(44, 44, 44);
-    private static final Color SURFACE_EDGE   = new Color(72, 72, 72);
-    private static final Color DIVIDER_LINE   = new Color(80, 80, 80);
     private static final int BASE_LAYOUT_WIDTH =
             BASE_LEFT_WIDTH + BASE_CENTER_WIDTH + BASE_RIGHT_WIDTH;
     /** Width of the evaluation bar column beside the board, at base scale. */
     private static final int BOARD_SIDE_COMPARTMENT_WIDTH = 38;
     private JLabel             evaluationLabel;
-    private JTextArea          bestMoveArea;
-    private final List<JLabel> lineScoreLabels = new ArrayList<>();
-    private final List<JLabel> lineMoveLabels  = new ArrayList<>();
     /** The untrimmed line behind each row, so a widened column can show more of it. */
-    private final List<String> lineFullText    = new ArrayList<>();
     
     // Settings toggles
-    private JCheckBox          analysisCheckBox;
-    private JCheckBox          legalMovesCheckBox;
-    private JTextField         pgnTextField;
     private JLabel             depthLabel;
 
     /**
@@ -2051,25 +2036,6 @@ public class AnalysisGame extends JFrame {
         }
     }
 
-    /**
-     * Fills in the chess.com-style summary built into this (nested, {@code embedSelf =
-     * false}) instance's own right column, in the slot the live-engine-opinion panel
-     * normally occupies -- see {@link #initializeGame}'s {@code reviewSummaryContainer}
-     * branch. Called from outside, once, right after construction: the summary itself
-     * doesn't exist yet when this instance is built, only once {@code Review} has
-     * finished (see {@code showReviewScreen}).
-     */
-    public void showReviewSummary(Review.GameSummary summary, boolean deepTier) {
-        if (reviewSummaryContainer == null) return;
-        reviewSummaryContainer.removeAll();
-        // "Start Review" is a stub for now -- what it should do (drop into the board
-        // below, walk through key moments automatically, something else) is a decision
-        // for after this screen exists, not baked in while building it.
-        reviewSummaryContainer.add(new ReviewSummaryPanel(summary, deepTier, () -> { }), BorderLayout.CENTER);
-        reviewSummaryContainer.revalidate();
-        reviewSummaryContainer.repaint();
-    }
-
     public void loadReviewedMoves(List<String> uciMoves, boolean flipped, int viewedPly) {
         replaying = true;
         board.resetToStartPosition();
@@ -3040,17 +3006,6 @@ public class AnalysisGame extends JFrame {
         if (positionEvaluator != null) {
             positionEvaluator.close();
         }
-    }
-
-    // â”€â”€ formatters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    private String formatBestMove(String uciMove) {
-        if (uciMove == null || uciMove.length() < 4) return uciMove;
-        String move = "" + uciMove.charAt(0) + uciMove.charAt(1)
-                    + " -> " + uciMove.charAt(2) + uciMove.charAt(3);
-        if (uciMove.length() == 5) {
-            move += " =" + Character.toUpperCase(uciMove.charAt(4));
-        }
-        return move;
     }
 
     /**

@@ -105,12 +105,4 @@ public class MoveNotation {
         return baseNotation + "=" + promotionPiece;
     }
     
-    public static String addCheckNotation(String baseNotation, boolean isCheck, boolean isCheckmate) {
-        if (isCheckmate) {
-            return baseNotation + "#";
-        } else if (isCheck) {
-            return baseNotation + "+";
-        }
-        return baseNotation;
-    }
 }

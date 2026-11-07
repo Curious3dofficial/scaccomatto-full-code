@@ -348,7 +348,6 @@ final class SpectateScreen extends JComponent {
     private String backdropKey;
     private final java.awt.image.BufferedImage[] cardImg = new java.awt.image.BufferedImage[2];
     private final String[] cardKey = new String[2];
-    private final float[][] cardOrigin = new float[2][];
 
     /** Copies a cached picture whose top-left lands on a whole screen pixel. */
     private static void blit(Graphics2D g, java.awt.image.BufferedImage img, float x, float y, double pxPerUnit) {

@@ -199,7 +199,6 @@ public class ModeSelectScreen extends JPanel {
     private int boardRoomAreaW;
     private int boardRoomAreaH;
 
-    private static final Font BOARD_ROOM_FONT = loadFont("/assets/fonts/Baloo2-ExtraBold.ttf", Font.BOLD, 10);
 
     private Listener listener;
 

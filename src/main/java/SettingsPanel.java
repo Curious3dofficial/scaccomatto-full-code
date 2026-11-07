@@ -49,7 +49,6 @@ public class SettingsPanel extends JPanel {
     private static final Color BODY = AnalysisTheme.TEXT_MUTED;
     private static final Color FAINT = AnalysisTheme.TEXT_FAINT;
     private static final Color ACCENT = AnalysisTheme.GOLD;               // purple
-    private static final Color ACCENT_TEXT = AnalysisTheme.GOLD_TEXT;
     private static final Color TRACK_OFF = new Color(60, 58, 70);
 
     private final Preferences preferences = Preferences.userNodeForPackage(SettingsPanel.class);
@@ -1339,14 +1338,6 @@ public class SettingsPanel extends JPanel {
         }.execute();
     }
 
-    public void reloadPreferences() {
-        if (AccountSession.isSignedIn()) {
-            loadAccountPreferencesAsync();
-        } else {
-            loadLocalPreferences();
-        }
-    }
-
     private void applyLoadedSettings(Map<String, String> settings) {
         if (settings == null) return;
         quietly(soundsToggle, SoundManager.isSoundEnabled());
@@ -1427,15 +1418,5 @@ public class SettingsPanel extends JPanel {
     public void scrollToTop() {
         JScrollPane sp = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, body);
         if (sp != null) sp.getVerticalScrollBar().setValue(0);
-    }
-
-    public void expandDropdown() {
-        JScrollPane sp = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, body);
-        if (sp != null) sp.getVerticalScrollBar().setValue(0);
-        playEntrance();
-    }
-
-    /** Nothing to fold away any more -- the sidebar switches back to the game itself. */
-    public void collapseDropdown() {
     }
 }

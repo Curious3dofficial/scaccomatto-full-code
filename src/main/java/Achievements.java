@@ -78,22 +78,22 @@ final class Achievements {
 
         // Everything counts from online games only -- except the bot ladder. Reviews only
         // count for games that really were played online (see onReviewFinished).
-        def("games", G, "Games Played", "Finish {n} online game{s}.", "games", 1, 10, 50, "icon:friend.png");
-        def("wins", G, "Victories", "Win {n} online game{s}.", "wins", 1, 10, 25, "trophy");
+        def("games", G, "Games Played", "Finish {n} multiplayer game{s}.", "games", 1, 10, 50, "icon:friend.png");
+        def("wins", G, "Victories", "Win {n} multiplayer game{s}.", "wins", 1, 10, 25, "trophy");
         def("bots", G, "Bot Ladder", "Beat {n} different bot{s}.", "botsBeaten", 1, 2, 4, "icon:bot.png");
-        def("streak", G, "On a Roll", "Win {n} online games in a row.", "bestStreak", 2, 3, 5, "trophy");
-        def("quick", G, "Blitzkrieg", "Win {n} online game{s} in 20 moves or fewer.", "quickWins", 1, 5, 10, "trophy");
-        def("marathon", G, "Marathon", "Finish {n} online game{s} lasting 80+ moves.", "longGames", 1, 3, 10, "icon:online.png");
-        def("mate_types", G, "Checkmate Artist", "Checkmate with {n} different piece{s} online.", "mateTypes", 1, 3, 5, "piece:K");
-        def("mate_queen", G, "Her Majesty", "Checkmate with the queen {n} time{s} online.", "mateQ", 1, 5, 15, "piece:Q");
-        def("mate_knight", G, "Horse Power", "Checkmate with a knight {n} time{s} online.", "mateN", 1, 3, 5, "piece:N");
-        def("mate_pawn", G, "Humble Hero", "Checkmate with a pawn {n} time{s} online.", "mateP", 1, 2, 3, "piece:P");
+        def("streak", G, "On a Roll", "Win {n} multiplayer games in a row.", "bestStreak", 2, 3, 5, "trophy");
+        def("quick", G, "Blitzkrieg", "Win {n} multiplayer game{s} in 20 moves or fewer.", "quickWins", 1, 5, 10, "trophy");
+        def("marathon", G, "Marathon", "Finish {n} multiplayer game{s} lasting 80+ moves.", "longGames", 1, 3, 10, "icon:online.png");
+        def("mate_types", G, "Checkmate Artist", "Checkmate with {n} different piece{s} in multiplayer.", "mateTypes", 1, 3, 5, "piece:K");
+        def("mate_queen", G, "Her Majesty", "Checkmate with the queen {n} time{s} in multiplayer.", "mateQ", 1, 5, 15, "piece:Q");
+        def("mate_knight", G, "Horse Power", "Checkmate with a knight {n} time{s} in multiplayer.", "mateN", 1, 3, 5, "piece:N");
+        def("mate_pawn", G, "Humble Hero", "Checkmate with a pawn {n} time{s} in multiplayer.", "mateP", 1, 2, 3, "piece:P");
 
-        def("reviews", R, "Self-Reflection", "Review {n} of your online game{s}.", "reviews", 1, 10, 25, "icon:analysis.png");
-        def("accuracy", R, "Sharp Eye", "Reach {n}% accuracy in a reviewed online game.", "bestAccuracy", 80, 90, 98, "move:BEST");
-        def("clean", R, "Clean Sheet", "Play {n} online game{s} with no mistakes (10+ moves).", "cleanGames", 1, 3, 10, "move:EXCELLENT");
-        def("brilliant", R, "Brilliant!", "Play {n} Brilliant move{s} in online games.", "brilliants", 1, 3, 10, "move:BRILLIANT");
-        def("great", R, "Great Find", "Play {n} Great move{s} in online games.", "greats", 1, 5, 15, "move:GREAT");
+        def("reviews", R, "Self-Reflection", "Review {n} of your multiplayer game{s}.", "reviews", 1, 10, 25, "icon:analysis.png");
+        def("accuracy", R, "Sharp Eye", "Reach {n}% accuracy in a reviewed multiplayer game.", "bestAccuracy", 80, 90, 98, "move:BEST");
+        def("clean", R, "Clean Sheet", "Play {n} multiplayer game{s} with no mistakes (10+ moves).", "cleanGames", 1, 3, 10, "move:EXCELLENT");
+        def("brilliant", R, "Brilliant!", "Play {n} Brilliant move{s} in multiplayer games.", "brilliants", 1, 3, 10, "move:BRILLIANT");
+        def("great", R, "Great Find", "Play {n} Great move{s} in multiplayer games.", "greats", 1, 5, 15, "move:GREAT");
 
         def("puzzles", P, "Puzzle Solver", "Solve {n} puzzle{s}.", "puzzles", 1, 25, 100, "icon:puzzles.png");
         def("puzzle_streak", P, "Hot Streak", "Solve {n} puzzles in a row.", "bestPuzzleStreak", 3, 10, 25, "icon:puzzles.png");
@@ -102,18 +102,18 @@ final class Achievements {
         def("lessons", L, "Student", "Finish {n} lesson{s}.", "lessons", 1, 10, 30, "icon:lessons.png");
         def("lesson_perfect", L, "Top of the Class", "Finish {n} lesson{s} without a mistake.", "lessonsPerfect", 1, 5, 15, "icon:lessons.png");
 
-        def("variety", V, "Variety Pack", "Finish online games in {n} different variant{s}.", "variantsPlayed", 1, 4, 7, "trophy");
-        def("v_960", V, "Shuffled", "Finish {n} online game{s} of Chess960.", "v.960", 1, 5, 15, "piece:K");
-        def("v_koth", V, "Hilltop", "Finish {n} online game{s} of King of the Hill.", "v.koth", 1, 5, 15, "piece:K");
-        def("v_3check", V, "Three Strikes", "Finish {n} online game{s} of Three-check.", "v.3check", 1, 5, 15, "piece:Q");
-        def("v_atomic", V, "Kaboom", "Finish {n} online game{s} of Atomic.", "v.atomic", 1, 5, 15, "piece:B");
-        def("v_spell", V, "Spellbound", "Finish {n} online game{s} of Spell Chess.", "v.spell", 1, 5, 15, "icon:star-filled.png");
-        def("v_fog", V, "Into the Fog", "Finish {n} online game{s} of Fog of War.", "v.fog", 1, 5, 15, "icon:eye.png");
-        def("v_duck", V, "Quack", "Finish {n} online game{s} of Duck Chess.", "v.duck", 1, 5, 15, "piece:N");
-        def("en_passant", V, "Holy Hell", "Capture en passant {n} time{s} online.", "enPassant", 1, 5, 15, "piece:P");
-        def("promote", V, "Coronation", "Promote to a queen {n} time{s} online.", "promoQ", 1, 5, 20, "piece:Q");
-        def("underpromote", V, "Knighted", "Promote to a knight {n} time{s} online.", "promoN", 1, 3, 10, "piece:N");
-        def("castle_long", V, "Long Way Round", "Castle queenside {n} time{s} online.", "castleLong", 1, 10, 25, "piece:R");
+        def("variety", V, "Variety Pack", "Finish multiplayer games in {n} different variant{s}.", "variantsPlayed", 1, 4, 7, "trophy");
+        def("v_960", V, "Shuffled", "Finish {n} multiplayer game{s} of Chess960.", "v.960", 1, 5, 15, "piece:K");
+        def("v_koth", V, "Hilltop", "Finish {n} multiplayer game{s} of King of the Hill.", "v.koth", 1, 5, 15, "piece:K");
+        def("v_3check", V, "Three Strikes", "Finish {n} multiplayer game{s} of Three-check.", "v.3check", 1, 5, 15, "piece:Q");
+        def("v_atomic", V, "Kaboom", "Finish {n} multiplayer game{s} of Atomic.", "v.atomic", 1, 5, 15, "piece:B");
+        def("v_spell", V, "Spellbound", "Finish {n} multiplayer game{s} of Spell Chess.", "v.spell", 1, 5, 15, "icon:star-filled.png");
+        def("v_fog", V, "Into the Fog", "Finish {n} multiplayer game{s} of Fog of War.", "v.fog", 1, 5, 15, "icon:eye.png");
+        def("v_duck", V, "Quack", "Finish {n} multiplayer game{s} of Duck Chess.", "v.duck", 1, 5, 15, "piece:N");
+        def("en_passant", V, "Holy Hell", "Capture en passant {n} time{s} in multiplayer.", "enPassant", 1, 5, 15, "piece:P");
+        def("promote", V, "Coronation", "Promote to a queen {n} time{s} in multiplayer.", "promoQ", 1, 5, 20, "piece:Q");
+        def("underpromote", V, "Knighted", "Promote to a knight {n} time{s} in multiplayer.", "promoN", 1, 3, 10, "piece:N");
+        def("castle_long", V, "Long Way Round", "Castle queenside {n} time{s} in multiplayer.", "castleLong", 1, 10, 25, "piece:R");
     }
 
     static List<Def> all() { return Collections.unmodifiableList(ALL); }

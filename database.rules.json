@@ -103,6 +103,9 @@
         },
         "$other": {
           ".validate": false
+        },
+        "vis": {
+          ".validate": "newData.isString() && newData.val().matches(/^(everyone|friends|me)$/)"
         }
       }
     },
@@ -175,6 +178,88 @@
     "banned": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid"
+      }
+    },
+    "friendRequests": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$from": {
+          ".read": "auth != null && (auth.uid === $from || auth.uid === $to)",
+          ".write": "auth != null && (newData.exists() ? (auth.uid === $from && $from !== $to && !root.child('banned/' + auth.uid).exists() && (auth.token.email_verified === true || auth.token.firebase.sign_in_provider === 'google.com') && root.child('players/' + $to).exists() && !root.child('friends/' + $to + '/' + $from).exists()) : (auth.uid === $to || auth.uid === $from))",
+          ".validate": "newData.hasChildren(['name', 'username', 'at']) && newData.child('at').val() === now",
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 30"
+          },
+          "username": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          },
+          "at": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "friends": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$other": {
+          ".read": "auth != null && (auth.uid === $uid || auth.uid === $other)",
+          ".write": "auth != null && (newData.exists() ? (!root.child('banned/' + auth.uid).exists() && ((auth.uid === $uid && root.child('friendRequests/' + $uid + '/' + $other).exists()) || (auth.uid === $other && root.child('friendRequests/' + $other + '/' + $uid).exists()))) : (auth.uid === $uid || auth.uid === $other))",
+          ".validate": "newData.val() === true"
+        }
+      }
+    },
+    "online": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('friends/' + $uid + '/' + auth.uid).exists())",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['at']) && newData.child('at').val() === now",
+        "at": {
+          ".validate": true
+        },
+        "playing": {
+          ".validate": "newData.isBoolean()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "challenges": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$from": {
+          ".read": "auth != null && (auth.uid === $to || auth.uid === $from)",
+          ".write": "auth != null && (newData.exists() ? (auth.uid === $from && !root.child('banned/' + auth.uid).exists() && root.child('friends/' + $to + '/' + $from).exists()) : (auth.uid === $to || auth.uid === $from))",
+          ".validate": "newData.hasChildren(['name', 'code', 'variant', 'time', 'init', 'inc', 'at']) && newData.child('at').val() === now && newData.child('code').isString() && newData.child('code').val().matches(/^[A-Z]{6}$/)",
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 30"
+          },
+          "variant": {
+            ".validate": "newData.isString() && newData.val().length <= 30"
+          },
+          "time": {
+            ".validate": "newData.isString() && newData.val().length <= 30"
+          },
+          "init": {
+            ".validate": "newData.isNumber()"
+          },
+          "inc": {
+            ".validate": "newData.isNumber()"
+          },
+          "code": {
+            ".validate": true
+          },
+          "at": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
       }
     }
   }

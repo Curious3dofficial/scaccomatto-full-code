@@ -62,3 +62,8 @@ installers/
 _to_delete/
 _to_delete_java/
 .claude-scratch/
+
+# Firebase + Google sign-in settings: on this computer only (the Windows build gets them
+# from the FIREBASE_PROPERTIES secret on GitHub)
+firebase.properties
+src/main/assets/firebase.properties

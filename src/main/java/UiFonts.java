@@ -17,18 +17,6 @@ public final class UiFonts {
         return derive(CINZEL, size, TextAttribute.WEIGHT_BOLD);
     }
 
-    public static Font titleSemiBold(float size) {
-        return derive(CINZEL, size, TextAttribute.WEIGHT_SEMIBOLD);
-    }
-
-    public static Font trackedTitle(float size, float tracking) {
-        Map<TextAttribute, Object> attributes = new HashMap<>();
-        attributes.put(TextAttribute.SIZE, size);
-        attributes.put(TextAttribute.WEIGHT, TextAttribute.WEIGHT_BOLD);
-        attributes.put(TextAttribute.TRACKING, tracking);
-        return CINZEL.deriveFont(attributes);
-    }
-
     public static Font subtext(float size) {
         return derive(INTER, size, TextAttribute.WEIGHT_MEDIUM);
     }

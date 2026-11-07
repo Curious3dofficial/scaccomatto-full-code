@@ -46,11 +46,6 @@ final class Chess960 {
         return rank;
     }
 
-    /** "RNBQKBNR"-style string of {@link #backRank}. */
-    static String describe(int n) {
-        return new String(backRank(n));
-    }
-
     private static void place(char[] rank, int emptyIndex, char piece) {
         int seen = 0;
         for (int i = 0; i < 8; i++) {

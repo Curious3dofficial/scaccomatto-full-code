@@ -61,24 +61,12 @@ public class ChessBot {
         return elo;
     }
 
-    /** Thinking time in milliseconds, used to keep bot moves from feeling instant. */
-    public int getMoveTime() {
-        return moveTime;
-    }
-
     /**
      * Can the engine honestly play at this rating? A locked bot is shown but cannot be
      * selected.
      */
     public boolean isLocked() {
         return !Strength.canPlayAt(elo);
-    }
-
-    /** Why it is locked, for the card. Empty when it isn't. */
-    public String getLockReason() {
-        return isLocked()
-                ? "Locked - the engine tops out at " + Strength.FULL_STRENGTH_ELO
-                : "";
     }
 
     /**

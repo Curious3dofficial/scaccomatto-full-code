@@ -53,7 +53,6 @@ public class MoveHistoryPanel extends JPanel {
     private JComponent variantPreview;
     
     private final Color BACKGROUND_COLOR = AnalysisTheme.CARD;
-    private final Color HEADER_COLOR = AnalysisTheme.SOFT;
     private final Color TABLE_BG = AnalysisTheme.CARD;
     private final Color TABLE_ALT_BG = AnalysisTheme.SOFT;
     private final Color TABLE_FG = AnalysisTheme.TEXT_DARK;
@@ -973,9 +972,6 @@ public class MoveHistoryPanel extends JPanel {
         return whiteMoves.size() + blackMoves.size();
     }
     
-    public int getCurrentMoveIndex() {
-        return currentMoveIndex;
-    }
 
     public void setCurrentMoveIndexExternal(int moveIndex) {
         currentMoveIndex = moveIndex;

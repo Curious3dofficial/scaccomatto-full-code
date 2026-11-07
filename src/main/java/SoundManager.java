@@ -358,26 +358,6 @@ public class SoundManager {
         }
     }
 
-    /** Launch a video from assets/extras with the OS default app (non-blocking). */
-    public static void playExtraVideo(String fileName) {
-        if (!soundEnabled || fileName == null || fileName.trim().isEmpty()) return;
-        File videoFile = resolveFileFromExtra(fileName.trim());
-        if (videoFile == null) return;
-        try {
-            String abs = videoFile.getAbsolutePath().replace("'", "''");
-            String os = System.getProperty("os.name", "").toLowerCase();
-            if (os.contains("win")) {
-                new ProcessBuilder("powershell", "-Command",
-                        "Start-Process -FilePath '" + abs + "'").start();
-                return;
-            }
-            if (java.awt.Desktop.isDesktopSupported()) {
-                java.awt.Desktop.getDesktop().open(videoFile);
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
     /** Convenience stop — null-safe. */
     public static void stopSound(SoundHandle handle) {
         if (handle != null) handle.stop();

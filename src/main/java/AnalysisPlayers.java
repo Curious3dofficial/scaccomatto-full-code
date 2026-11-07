@@ -40,8 +40,6 @@ final class AnalysisPlayers {
         setGamePlayers(null, null);
     }
 
-    static boolean hasGamePlayers() { return override[0] != null || override[1] != null; }
-
     static String name(boolean white) {
         int i = idx(white);
         if (override[i] != null) return override[i];

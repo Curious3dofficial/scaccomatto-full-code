@@ -25,6 +25,7 @@ public final class AccountSession {
         current = null;
         FirebaseLink.useGuest();   // internet games go back to the anonymous guest
         Achievements.useProfile(null);   // and achievements back to the guest's
+        FriendsUi.signedOut();           // stop showing as online to friends
     }
 
     public static synchronized boolean isSignedIn() {

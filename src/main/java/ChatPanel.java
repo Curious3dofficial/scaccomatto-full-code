@@ -459,26 +459,6 @@ final class ChatPanel extends JPanel {
             return Math.max(0f, Math.min(1f, (System.currentTimeMillis() - t0) / APPEAR_MS));
         }
 
-        Row rowOf(ChatLog.Entry e) {
-            layoutRows(getWidth());
-            for (Row r : rows) if (r.e == e) return r;
-            return null;
-        }
-
-        /** Where a message's bubble (or big emojis) sits, in this list's coordinates. */
-        java.awt.geom.Rectangle2D.Float bubbleBounds(Row r) {
-            int W = getWidth(), side = 18;
-            boolean mine = r.e.kind == ChatLog.Kind.MINE;
-            if (r.big > 0) {
-                float s = bigEmoji(), total = r.big * (s + 4);
-                return new java.awt.geom.Rectangle2D.Float(mine ? W - side - total : side, r.y, total, s);
-            }
-            FontMetrics fm = getFontMetrics(bodyFont());
-            float bw = r.textW + 2 * padX();
-            float bh = r.lines.size() * lineH(fm) + 2 * padY();
-            return new java.awt.geom.Rectangle2D.Float(mine ? W - side - bw : side, r.y, bw, bh);
-        }
-
         /** Draws one message (bubble + text, or big emojis); {@code fill} fades the bubble itself. Returns its height. */
         float paintMessage(Graphics2D g2, Row r, int W, FontMetrics fm, float emoji, float fill) {
             int side = 18;

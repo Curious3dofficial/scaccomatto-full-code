@@ -14,6 +14,8 @@ public class Main {
         CrashLog.install();
         AppSettings.resetAudioForLaunch();     // all themes in turn, volume at 100%, every launch
         PopupCentring.install();
+        // closing the app: stop showing as online to friends straight away
+        Runtime.getRuntime().addShutdownHook(new Thread(Friends::clearPresence, "presence-off"));
         PopupSound.install();
         installGlobalMuteShortcut();
         installInterfaceSizeShortcut();

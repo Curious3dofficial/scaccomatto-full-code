@@ -13,6 +13,7 @@ A free chess game for Windows and Linux by Alekhine Studios Private Limited.</p>
 - **Bots with a story.** Each one plays its own way, from Gary, who grabs anything you leave hanging, up to Margot.
 - **Analysis and Game Review.** Load a game, step through it, and see which moves were good and which ones lost it.
 - **Play anyone, anywhere.** Send a friend a six-letter code, or let Join Game find you an opponent online.
+- **Friends.** Add friends, see who's online and challenge them to a game.
 - **Optional accounts.** Sign in with email or Google for a rating, a leaderboard spot, and achievements that follow you between computers.
 - **Achievements**, three piece sets, board themes, and light and dark mode.
 
@@ -40,6 +41,8 @@ java -jar target/scaccomatto-<version>.jar
 bash build-installer.sh     # Linux .deb, in installers/
 ```
 
+The game reads its Firebase settings from `src/main/assets/firebase.properties`, which stays on your computer (it's in `.gitignore`). The Windows build on GitHub gets the same file from a repository secret; set it once (and again whenever the file changes) with `gh secret set FIREBASE_PROPERTIES < src/main/assets/firebase.properties`.
+
 The Windows installer is built by GitHub Actions (`.github/workflows/windows-installer.yml`): run it from the Actions tab, or push a tag like `v1.0.1` to build it and attach it to a release. Before each release, raise the version in `pom.xml` and `AppVersion.java`, otherwise Windows treats the new installer as the same version.
 
 ## Project layout
@@ -49,8 +52,6 @@ The Windows installer is built by GitHub Actions (`.github/workflows/windows-ins
 | `src/main/java` | The game (Swing). `Main.java` starts it. |
 | `src/main/java/argus` | Argus, the chess engine |
 | `src/main/assets` | Pictures, sounds, music, fonts, the opening book |
-| `src/test/java` | Unit tests (`mvn test`) |
-| `server` | An old account server, no longer used (accounts now run on Firebase) |
 | `database.rules.json` | The Firebase database rules: paste into Realtime Database > Rules after changing them |
 | `docs` | The download website (GitHub Pages) |
 | `packaging` | Installer icon and the Windows build workflow |

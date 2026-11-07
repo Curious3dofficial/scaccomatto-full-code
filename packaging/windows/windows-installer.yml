@@ -38,6 +38,14 @@ jobs:
             echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           }
 
+      - name: Put in the Firebase settings (kept as a secret, not in the code)
+        shell: pwsh
+        env:
+          FIREBASE_PROPERTIES: ${{ secrets.FIREBASE_PROPERTIES }}
+        run: |
+          if (-not $env:FIREBASE_PROPERTIES) { Write-Error "The FIREBASE_PROPERTIES secret is missing (see README)."; exit 1 }
+          Set-Content -Path src/main/assets/firebase.properties -Value $env:FIREBASE_PROPERTIES -Encoding utf8
+
       - name: Build the game
         shell: pwsh
         run: mvn -B -q clean package -DskipTests

@@ -297,11 +297,11 @@ public class NetworkManager {
                 if (closing) return;
                 if (listener != null) listener.onError(e.permissionDenied()
                         ? "That game has already started."
-                        : "Couldn't reach that game: " + e.getMessage());
+                        : FirebaseLink.friendlyError(e));
                 return;
             } catch (Exception e) {
                 if (closing) return;
-                if (listener != null) listener.onError("Couldn't reach that game: " + e.getMessage());
+                if (listener != null) listener.onError(FirebaseLink.friendlyError(e));
                 return;
             }
             relay = r;
@@ -414,11 +414,6 @@ public class NetworkManager {
                 if (listener != null) listener.onError("Couldn't reach that game: " + e.getMessage());
             }
         }, "scaccomatto-join").start();
-    }
-
-    private void setupStreams() throws IOException {
-        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(socket.getOutputStream())), true);
     }
 
     private void startListenLoop() {
@@ -737,8 +732,6 @@ public class NetworkManager {
 
     /** On while a game is in progress: a dropped link is then retried instead of ending the game. */
     public void setResumeEnabled(boolean enabled) { resumeEnabled = enabled; }
-
-    public boolean isReconnecting() { return reconnecting; }
 
     /** Stops trying to get the connection back, and closes everything. */
     public void stopReconnecting() {

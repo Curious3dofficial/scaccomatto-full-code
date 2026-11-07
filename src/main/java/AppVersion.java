@@ -3,13 +3,13 @@
  * and compared with the newest version the account server knows about.
  *
  * <p>Bump this for every release you hand out (1.0.0 -> 1.0.1 for fixes, 1.1.0 for new
- * features), and set the same number as ACCOUNT_LATEST_VERSION on the server once the new
- * download is up.
+ * features) here AND in pom.xml. Once the new download is up, set meta/latest in the Firebase
+ * database to the same number so older copies show the "new version" note.
  */
 final class AppVersion {
     private AppVersion() { }
 
-    static final String CURRENT = "1.0.0";
+    static final String CURRENT = "1.1.0";
 
     /** Whether {@code other} ("1.2.3") is a later version than this one. Junk counts as not newer. */
     static boolean isNewer(String other) {

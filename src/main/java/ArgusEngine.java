@@ -90,11 +90,6 @@ public class ArgusEngine {
         }
     }
 
-    /** True when an opening book was found and loaded. */
-    public boolean hasOpeningBook() {
-        return engine.hasBook();
-    }
-
     // ---- Strength ----------------------------------------------------------
 
     /**
@@ -104,22 +99,6 @@ public class ArgusEngine {
      */
     public synchronized void setTargetElo(int elo) {
         this.targetElo = Strength.clampElo(elo);
-    }
-
-    public int getTargetElo() {
-        return targetElo;
-    }
-
-    /**
-     * A 0 to 20 skill dial, mapped onto a rating. New code should call
-     * {@link #setTargetElo(int)}.
-     */
-    public synchronized void setSkillLevel(int level) throws IOException {
-        int clamped = Math.max(0, Math.min(20, level));
-        // 0 lands at the bottom of the ladder, 20 at full strength.
-        int elo = Strength.MIN_ELO
-                + (clamped * (Strength.FULL_STRENGTH_ELO - Strength.MIN_ELO)) / 20;
-        setTargetElo(elo);
     }
 
     // ---- Playing -----------------------------------------------------------
@@ -173,19 +152,6 @@ public class ArgusEngine {
         analysis.isMate = evaluation.isMate;
         analysis.mateIn = Math.abs(evaluation.mateIn);
         return analysis;
-    }
-
-    /**
-     * The evaluation from White's point of view, which is what an evaluation bar wants.
-     *
-     * <p>Engines score from the mover's side — a position is "+1.2" for whoever is to
-     * move. Drawn straight onto a bar that swings wildly every ply, so the sign has to be
-     * flipped on Black's turn.
-     */
-    public synchronized int evaluateWhitePerspective(String fen, int depth) throws IOException {
-        EngineAnalysis analysis = analyzePosition(fen, depth);
-        boolean blackToMove = fen != null && fen.contains(" b ");
-        return blackToMove ? -analysis.evaluation : analysis.evaluation;
     }
 
     /**
@@ -250,11 +216,6 @@ public class ArgusEngine {
         return label;
     }
 
-    /** Ask a running search to finish early. Safe from another thread. */
-    public void stopThinking() {
-        engine.stop();
-    }
-
     /** Clear everything learned from the previous game. */
     public synchronized void newGame() {
         engine.newGame();
@@ -262,23 +223,5 @@ public class ArgusEngine {
 
     public void close() throws IOException {
         engine.close();
-    }
-
-    /**
-     * Argus needs no external file, so this reports where the standalone jar lives if it
-     * happens to be present, and null otherwise. Nothing in the app depends on it; it
-     * exists so code shaped around a process-backed engine still has something to call.
-     */
-    public static String resolveEnginePath() {
-        for (String candidate : new String[]{
-                "Scaccomatto/engines/argus.jar",
-                "engines/argus.jar"
-        }) {
-            java.io.File file = new java.io.File(candidate);
-            if (file.isFile()) {
-                return file.getPath();
-            }
-        }
-        return null;
     }
 }
