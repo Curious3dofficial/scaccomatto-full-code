@@ -131,8 +131,10 @@ final class OnlineRelay {
 
     /** A game waiting on the internet. */
     static LocalLobbyDiscovery.Lobby lobby(String code, Map<String, Object> m) {
+        // (hostName carries the host's player id, so blocked players can be skipped)
+        Object host = m.get("host");
         return new LocalLobbyDiscovery.Lobby(
-                "online:" + code, code, "Online", ONLINE_ADDRESS, -1,
+                "online:" + code, code, host == null ? "Online" : String.valueOf(host), ONLINE_ADDRESS, -1,
                 String.valueOf(m.getOrDefault("variant", "Classic")),
                 String.valueOf(m.getOrDefault("time", "10 MIN")),
                 (int) FirebaseLink.num(m.get("init"), 600),

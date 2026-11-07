@@ -774,6 +774,11 @@ public final class AccountApiClient {
     private static Session session(Map<String, Object> r, String email)
             throws IOException, ApiException {
         String uid = FirebaseLink.str(r.get("localId"));
+        if (Moderation.amIBanned()) {
+            FirebaseLink.useGuest();
+            throw new ApiException(403, "This account has been suspended for breaking the rules. "
+                    + "If you think that's a mistake, email alekhinestudios@gmail.com.");
+        }
         long secs = FirebaseLink.num(r.get("expiresIn"), 3600);
         String expires = java.time.Instant.now().plusSeconds(secs).toString();
         return new Session(FirebaseLink.token(), expires, readProfile(uid, email),

@@ -23,6 +23,7 @@ final class CloudSave {
             try {
                 String uid = FirebaseLink.uid();
                 Achievements.useProfile(uid);      // this account's own progress, not the guest's
+                Moderation.loadBlockListFromAccount();
                 Map<String, Object> saved = new LinkedHashMap<>();
                 for (Map.Entry<String, Object> e : FirebaseLink.asMap(FirebaseLink.get("saves/" + uid + "/ach")).entrySet()) {
                     saved.put(decode(e.getKey()), e.getValue());

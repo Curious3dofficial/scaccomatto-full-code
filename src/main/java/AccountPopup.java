@@ -589,7 +589,7 @@ final class AccountPopup {
             signedIn = toProfile(AccountSession.get().profile(), null);
         }
         if (!AccountSession.isSignedIn()) signedIn = null;
-        setPage(signedIn == null ? signInPage() : profilePage());
+        setPage(signedIn == null ? keptSignInPage() : profilePage());
         if (signedIn != null) refreshProfileAsync();
 
         dialog.getRootPane().registerKeyboardAction(e -> dialog.dispose(),
@@ -725,7 +725,7 @@ final class AccountPopup {
      * when you go from page to page (or when an error line appears). Pages shorter than this
      * sit in the middle; every page is laid out to fit inside it.
      */
-    private static final int PAGE_H = s(660);
+    private static final int PAGE_H = s(676);
     private JComponent pageFrame;
 
     private void setPage(JComponent next) {
@@ -770,6 +770,7 @@ final class AccountPopup {
         p.add(Box.createVerticalStrut(s(18)));
 
         Field login = new Field("you@example.com", false);
+        signInEmail = login;
         Field password = new Field("Password", true);
         p.add(fieldBlock("EMAIL", login));
         p.add(Box.createVerticalStrut(s(16)));
@@ -958,23 +959,47 @@ final class AccountPopup {
         return fix == null ? null : email.substring(0, at + 1) + fix;
     }
 
+    // Switching between the Sign in and Create account tabs keeps what you've typed on each,
+    // and the email you typed on one is filled in on the other.
+    private JComponent keptSignIn, keptCreate;
+    private Field signInEmail, createEmail;
+
+    private JComponent keptSignInPage() {
+        if (keptSignIn == null) keptSignIn = signInPage();
+        copyEmail(createEmail, signInEmail);
+        return keptSignIn;
+    }
+
+    private JComponent keptCreatePage() {
+        if (keptCreate == null) keptCreate = createPage();
+        copyEmail(signInEmail, createEmail);
+        return keptCreate;
+    }
+
+    private static void copyEmail(Field from, Field to) {
+        if (from == null || to == null) return;
+        String typed = from.getText().trim();
+        if (!typed.isEmpty() && to.getText().trim().isEmpty()) to.setText(typed);
+    }
+
     private JComponent createPage() {
         JPanel p = column();
         p.add(tabs(false));
-        p.add(Box.createVerticalStrut(s(18)));
+        p.add(Box.createVerticalStrut(s(12)));
 
         Field name = new Field("What should we call you?", false);
         Field username = new Field("Letters, numbers, _ (unchangeable)", false);
         Field email = new Field("you@example.com", false);
+        createEmail = email;
         Field password = new Field("At least 10 characters", true);
         p.add(fieldBlock("PROFILE NAME", name));
-        p.add(Box.createVerticalStrut(s(10)));
+        p.add(Box.createVerticalStrut(s(8)));
         p.add(fieldBlock("USERNAME", username));
-        p.add(Box.createVerticalStrut(s(10)));
+        p.add(Box.createVerticalStrut(s(8)));
         p.add(fieldBlock("EMAIL", email));
-        p.add(Box.createVerticalStrut(s(10)));
+        p.add(Box.createVerticalStrut(s(8)));
         p.add(fieldBlock("PASSWORD", password));
-        p.add(Box.createVerticalStrut(s(10)));
+        p.add(Box.createVerticalStrut(s(8)));
         JLabel terms = new JLabel("<html><div style='width:" + s(470) + "px'>By creating an account you confirm you're 13 or older"
                 + " and agree to the Terms and Privacy Policy (Settings > About).</div></html>");
         terms.setFont(UiFonts.subtext(sf(15f)));
@@ -1097,7 +1122,7 @@ final class AccountPopup {
             Thread t = new Thread(API::cancelSignup, "cancel-signup");
             t.setDaemon(true);
             t.start();
-            setPage(createPage());
+            setPage(keptCreatePage());      // the form as you filled it in, to fix the email
         });
         row.add(resend);
         row.add(back);
@@ -1141,6 +1166,11 @@ final class AccountPopup {
     }
 
     private JComponent profilePage() {
+        // signed in: forget the sign-in forms (and the password typed into them)
+        keptSignIn = null;
+        keptCreate = null;
+        signInEmail = null;
+        createEmail = null;
         Profile me = signedIn;
         JPanel p = column();
         p.putClientProperty("profilePage", Boolean.TRUE);
@@ -1625,13 +1655,13 @@ final class AccountPopup {
         signIn.addActionListener(e -> {
             if (!signInSelected) {
                 SoundManager.playExtraSound("tap.wav");
-                setPage(signInPage());
+                setPage(keptSignInPage());
             }
         });
         create.addActionListener(e -> {
             if (signInSelected) {
                 SoundManager.playExtraSound("tap.wav");
-                setPage(createPage());
+                setPage(keptCreatePage());
             }
         });
         row.add(signIn);
@@ -1975,7 +2005,9 @@ final class AccountPopup {
 
         private void showNote(String text) {
             JLabel n = note();
-            n.setText(text);
+            // wraps onto more lines instead of widening the page (the popup keeps one size)
+            String safe = text == null ? "" : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+            n.setText("<html><div style='width:" + s(470) + "px'>" + safe + "</div></html>");
             if (!n.isVisible()) {
                 n.setVisible(true);
                 refit();

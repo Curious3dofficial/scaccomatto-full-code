@@ -30,6 +30,8 @@ public class NetworkManager {
         default void onSyncReceived(String uciMoves, int whiteSeconds, int blackSeconds) { }
         /** A chat message from the other player. */
         default void onChatReceived(String text) { }
+        /** The other player's name, rating or account arrived (or changed). */
+        default void onPlayerInfo() { }
         /** The other player is typing a chat message (sent every few seconds while they type). */
         default void onOpponentTyping() { }
     }
@@ -77,6 +79,20 @@ public class NetworkManager {
     /** The opponent's account id, or null if they're playing as a guest. */
     public String opponentUid() { return opponentUid; }
 
+    // The opponent's player id online: their account id, or their guest id (internet games only).
+    private volatile String opponentPlayerId;
+    /** Chat from the opponent is hidden (Mute chat on their card); lasts through rematches. */
+    private volatile boolean chatMuted;
+
+    /** Who the opponent is online (account or guest id), for blocking and reporting; null on the local network. */
+    public String opponentPlayerId() { return opponentUid != null ? opponentUid : opponentPlayerId; }
+
+    public boolean isChatMuted() { return chatMuted || Moderation.isBlocked(opponentPlayerId()); }
+    public void setChatMuted(boolean muted) { chatMuted = muted; }
+
+    /** Still connected to the opponent right now. */
+    public boolean isConnectedNow() { return !closing && !reconnecting && out != null; }
+
     /**
      * Whether this game counts for rating: a Quick Match game over the internet, with both
      * players signed in to accounts. Private games with a code never count.
@@ -93,6 +109,8 @@ public class NetworkManager {
         try { if (FirebaseLink.signedInToAccount()) uid = FirebaseLink.uid(); } catch (Exception ignored) {}
         myUidOnline = uid;
         sendLine("ACCOUNT " + (uid == null ? "-" : uid));
+        // the id we play under either way (a guest's too), so we can be blocked or reported
+        try { sendLine("PLAYERID " + FirebaseLink.uid()); } catch (Exception ignored) {}
     }
 
     // Handshake so a "connection" only counts when there's a real
@@ -230,6 +248,20 @@ public class NetworkManager {
                     if (!line.startsWith(HELLO)) continue;
                     String theirCode = line.substring(HELLO.length()).trim();
                     if (!code.equalsIgnoreCase(theirCode)) { r.send(WRONG_CODE); continue; }
+                    String guestId = null;
+                    try { guestId = FirebaseLink.str(FirebaseLink.get("rooms/" + code + "/guest")); } catch (Exception ignored) {}
+                    if (Moderation.isBlocked(guestId)) {
+                        // a player we blocked: turn them away; this code's seat is used up, so
+                        // the game has to be hosted again (Quick Match does that by itself)
+                        r.send(WRONG_CODE);
+                        relay = null;
+                        r.close();
+                        if (!claimed.get() && listener != null && !closing) {
+                            listener.onError(code.startsWith("*") ? "Matched with a blocked player."
+                                    : "A player you blocked tried to join. Host again for a new code.");
+                        }
+                        return;
+                    }
                     if (!claimed.compareAndSet(false, true)) return;
                     r.unlist();
                     r.send(WELCOME);
@@ -571,10 +603,14 @@ public class NetworkManager {
             }
         } else if (line.equals("TYPING")) {
             if (listener != null) listener.onOpponentTyping();
+        } else if (line.startsWith("PLAYERID ")) {
+            String id = line.substring(9).trim();
+            opponentPlayerId = Moderation.validId(id) ? id : null;
         } else if (line.startsWith("ACCOUNT ")) {
             // FORMAT: ACCOUNT <account id or ->
             String id = line.substring(8).trim();
             opponentUid = id.isEmpty() || "-".equals(id) || !id.matches("[A-Za-z0-9_-]{1,128}") ? null : id;
+            if (listener != null) listener.onPlayerInfo();
         } else if (line.startsWith("PLAYER ")) {
             // FORMAT: PLAYER <rating or -> <base64 name>
             String[] parts = line.split(" ");
@@ -582,6 +618,8 @@ public class NetworkManager {
                 opponentRating = parts.length > 1 && !"-".equals(parts[1]) ? Double.valueOf(parts[1]) : null;
                 opponentName = parts.length > 2 ? decode(parts[2]) : null;
                 if (opponentName != null && opponentName.isBlank()) opponentName = null;
+                if (opponentName != null && opponentName.length() > 40) opponentName = opponentName.substring(0, 40);
+                if (listener != null) listener.onPlayerInfo();
             } catch (Exception ignored) {
             }
         }

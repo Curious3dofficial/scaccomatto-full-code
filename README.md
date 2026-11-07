@@ -12,7 +12,8 @@ A free chess game for Windows and Linux by Alekhine Studios Private Limited.</p>
 - **Eight variants.** Classic, Chess960, King of the Hill, Three-check, Atomic, Fog of War and Duck Chess, with Spell Chess coming later.
 - **Bots with a story.** Each one plays its own way, from Gary, who grabs anything you leave hanging, up to Margot.
 - **Analysis and Game Review.** Load a game, step through it, and see which moves were good and which ones lost it.
-- **Play a friend.** On the same computer, or on the same Wi-Fi with a six-letter join code.
+- **Play anyone, anywhere.** Send a friend a six-letter code, or let Join Game find you an opponent online.
+- **Optional accounts.** Sign in with email or Google for a rating, a leaderboard spot, and achievements that follow you between computers.
 - **Achievements**, three piece sets, board themes, and light and dark mode.
 
 The engine, **Argus**, was written from scratch for Scaccomatto. It plays every bot and runs the analysis.
@@ -49,13 +50,14 @@ The Windows installer is built by GitHub Actions (`.github/workflows/windows-ins
 | `src/main/java/argus` | Argus, the chess engine |
 | `src/main/assets` | Pictures, sounds, music, fonts, the opening book |
 | `src/test/java` | Unit tests (`mvn test`) |
-| `server` | The account server, for a future version with accounts |
+| `server` | An old account server, no longer used (accounts now run on Firebase) |
+| `database.rules.json` | The Firebase database rules: paste into Realtime Database > Rules after changing them |
 | `docs` | The download website (GitHub Pages) |
 | `packaging` | Installer icon and the Windows build workflow |
 
 ## Privacy and credits
 
-Scaccomatto doesn't collect anything; see [docs/privacy.html](docs/privacy.html). Music, sounds, piece sets and fonts by other people are listed in [docs/credits.html](docs/credits.html) and in the app under Settings → About.
+Without an account, nothing about you is kept anywhere but your own computer. Accounts and internet games run on Google Firebase; [docs/privacy.html](docs/privacy.html) lists exactly what's stored. Music, sounds, piece sets and fonts by other people are listed in [docs/credits.html](docs/credits.html) and in the app under Settings → About.
 
 ## Contact
 

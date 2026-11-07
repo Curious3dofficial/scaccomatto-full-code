@@ -1792,6 +1792,13 @@ public class SettingsScreen extends JPanel {
                             i -> AppSettings.setOnlineStatusVisibility(who2[i]));
                     rows.add(new Row("Online status visibility", "Who can see when you're online", status, !signedIn));
                 }
+                int blockedCount = Moderation.blockedPlayers().size();
+                rows.add(new Row("Blocked players", blockedCount == 0 ? "Nobody blocked"
+                        : blockedCount + (blockedCount == 1 ? " player" : " players") + " you won't be matched with",
+                        new PillButton("Manage", PillButton.Kind.SECONDARY, () -> {
+                            PlayerCard.showBlockedList(SwingUtilities.getWindowAncestor(this));
+                            rebuildCurrent();
+                        }), false));
                 String dataText = accounts ? DATA_TEXT : LOCAL_DATA_TEXT;
                 rows.add(new Row(accounts ? "Account data and privacy" : "Your data and privacy", "What's stored, and where",
                         new PillButton("Read", PillButton.Kind.SECONDARY, () -> info("Your data", dataText)), false));
@@ -2307,6 +2314,9 @@ public class SettingsScreen extends JPanel {
             + "\n"
             + "Deleting your account\n"
             + "Settings > Privacy > Delete account removes your profile, picture, settings, achievements and sign-in for good. The only thing left is an unlinked list of game codes already counted, so the same game can't be counted twice.\n"
+            + "\n"
+            + "Blocking and reporting\n"
+            + "Your block list stays on your computer (and in your account, if you have one). If you report someone, the report goes to us with the reason, your note, and the moves and chat from that game, so we can check what happened. Only we can read reports; the player you reported isn't told who reported them. We keep a report until we've dealt with it, and for up to a year after if the player was banned. A banned player can't play online, change their profile or be rated.\n"
             + "\n"
             + "Who can make an account\n"
             + "You need to be at least 13, or the age your country sets for agreeing to this yourself, if that's higher.\n"

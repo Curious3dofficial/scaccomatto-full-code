@@ -848,6 +848,10 @@ public class ChessGame extends JFrame {
             // a local game's mate counts for whoever won; a bot/online one only if it was you
             if (humanWon != null && !humanWon) matePiece = 0;
             if (onlineMode && board != null) Achievements.recordOnlineGame(board.getUciMoveHistoryFromStates());
+            // your record against this opponent, for their player card ("1 / 0 / 2 vs you")
+            if (onlineMode && networkManager != null) {
+                Moderation.recordGame(networkManager.opponentPlayerId(), whiteWins == null ? null : humanWon);
+            }
             Achievements.onGameFinished(humanWon, whiteWins != null,
                     isBotGame && selectedBot != null ? selectedBot.getName() : null,
                     onlineMode, gameVariant, (plies + 1) / 2, matePiece);
@@ -1166,6 +1170,21 @@ public class ChessGame extends JFrame {
         textStack.add(capturedStrip);
         row.add(textStack);
 
+        // online: your opponent's name or picture opens their player card
+        if (onlineMode && !spectateMode && bottomRow != localIsWhite) {
+            java.awt.event.MouseAdapter openCard = new java.awt.event.MouseAdapter() {
+                @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (!SwingUtilities.isLeftMouseButton(e)) return;
+                    PlayerCard.show(row, opponentCardInfo());
+                }
+            };
+            for (JComponent c : new JComponent[]{avatar, nameLabel}) {
+                c.addMouseListener(openCard);
+                c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                c.setToolTipText("Player card");
+            }
+        }
+
         if (editable) {
             Color normal = nameLabel.getForeground();
             java.awt.event.MouseAdapter edit = new java.awt.event.MouseAdapter() {
@@ -1361,6 +1380,14 @@ public class ChessGame extends JFrame {
                     }
                     @Override public void onChatReceived(String text) {
                         SwingUtilities.invokeLater(() -> onRemoteChat(text));
+                    }
+                    @Override public void onPlayerInfo() {
+                        SwingUtilities.invokeLater(() -> {
+                            if (bottomPlayerLabel == null || topPlayerLabel == null) return;
+                            setupPlayerLabels();
+                            if (topPanel != null) topPanel.repaint();
+                            if (bottomPanel != null) bottomPanel.repaint();
+                        });
                     }
                     @Override public void onOpponentTyping() {
                         SwingUtilities.invokeLater(() -> { if (chatPanel != null) chatPanel.opponentTyping(); });
@@ -2967,6 +2994,8 @@ public class ChessGame extends JFrame {
 
         private void onRemoteChat(String text) {
             if (chatPanel == null) return;
+            // muted from their player card, or someone you've blocked: their chat isn't shown
+            if (networkManager != null && networkManager.isChatMuted()) return;
             chatPanel.setOpponentName(opponentChatName());
             chatPanel.receive(text);
         }
@@ -3946,6 +3975,26 @@ public class ChessGame extends JFrame {
 
     // ── bot portraits, for the player rows (loaded once each) ──
     private static final java.util.Map<ChessBot, java.awt.image.BufferedImage> BOT_PORTRAITS = new java.util.HashMap<>();
+
+    /** What the opponent's player card shows (and reports send). */
+    private PlayerCard.Info opponentCardInfo() {
+        captureOpponentInfo();
+        PlayerCard.Info i = new PlayerCard.Info();
+        NetworkManager net = networkManager;
+        i.net = net;
+        i.playerId = net == null ? null : net.opponentPlayerId();
+        i.accountId = net == null ? null : net.opponentUid();
+        i.name = knownOpponentName != null ? knownOpponentName : "Opponent";
+        i.rating = knownOpponentRating;
+        i.picture = this::opponentPicture;
+        i.connected = () -> net != null && net.isConnectedNow();
+        i.gameOver = () -> gameOver;
+        i.gameCode = net == null ? null : net.onlineCode();
+        i.variant = gameVariant;
+        i.moves = () -> board == null ? java.util.List.of() : board.getUciMoveHistoryFromStates();
+        i.chat = () -> net == null ? java.util.List.of() : net.chatLog.entries();
+        return i;
+    }
 
     private volatile java.awt.image.BufferedImage opponentPicture;
     private volatile boolean opponentPictureAsked;
@@ -6789,15 +6838,19 @@ public class ChessGame extends JFrame {
         return;
     }
 
-    // Online
-    if (youAreWhite) {
-        bottomPlayerLabel.setText("White");
-        topPlayerLabel.setText("Black");
-    } else {
-        // the rows trade places on screen when the board flips; the names stay with their colour
-        bottomPlayerLabel.setText("White");
-        topPlayerLabel.setText("Black");
+    // Online: both players' names, with the rating for anyone signed in. The bottom row
+    // is White's (the rows trade places on screen when the board flips).
+    String me = onlineName();
+    AccountApiClient.Session session = AccountSession.get();
+    if (session != null && session.profile() != null) {
+        me += " (" + AccountApiClient.displayRating(session.profile().rating()) + ")";
     }
+    String them = opponentNameOr(localIsWhite ? "Black" : "White");
+    if (knownOpponentRating != null && !AppSettings.focusMode()) {
+        them += " (" + AccountApiClient.displayRating(knownOpponentRating) + ")";
+    }
+    bottomPlayerLabel.setText(localIsWhite ? me : them);
+    topPlayerLabel.setText(localIsWhite ? them : me);
     refreshCapturedMaterialUI();
 }
 

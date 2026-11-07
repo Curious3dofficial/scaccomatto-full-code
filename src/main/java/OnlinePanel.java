@@ -1470,6 +1470,7 @@ public class OnlinePanel extends JPanel {
     private boolean matchesUs(LocalLobbyDiscovery.Lobby lobby, String variant, TimePreset clock) {
         return lobby.code() != null && lobby.code().startsWith("*")
                 && !lobby.code().equals(myPublicCode)
+                && !(OnlineRelay.isOnline(lobby) && Moderation.isBlocked(lobby.hostName()))
                 && lobby.variant().equalsIgnoreCase(variant)
                 && lobby.initialSeconds() == clock.initialSeconds
                 && lobby.incrementSeconds() == clock.incrementSeconds;
@@ -1641,7 +1642,11 @@ public class OnlinePanel extends JPanel {
                 final List<Runnable> pendingEvents = new ArrayList<>();
                 setProgressStatus("Found " + code + " (" + found.variant() + ", " + found.timeLabel()
                         + "). Connecting...");
-                if (OnlineRelay.isOnline(found)) {
+                if (OnlineRelay.isOnline(found) && Moderation.isBlocked(found.hostName())) {
+                    net = null;
+                    setProgressStatus("That game is hosted by a player you blocked.");
+                    runHostHook(onHostFailed);
+                } else if (OnlineRelay.isOnline(found)) {
                     net.joinOnline(code, createNetworkListener(gameRef, pendingEvents, false));
                 } else {
                     net.join(found.hostAddress(), found.port(), code,
