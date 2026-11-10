@@ -314,18 +314,6 @@ final class LoadingScreen {
     // Moving parts
     // ------------------------------------------------------------------
 
-    // CSS keyframes are eased per segment with ease-in-out (cubic-bezier
-    // .42,0,.58,1); value = keyframe interpolation at time t (0..1).
-    private static float keyframes(float t, float[] stops, float[] values) {
-        for (int i = 0; i < stops.length - 1; i++) {
-            if (t <= stops[i + 1]) {
-                float local = (t - stops[i]) / (stops[i + 1] - stops[i]);
-                return values[i] + (values[i + 1] - values[i]) * cssEaseInOut(local);
-            }
-        }
-        return values[values.length - 1];
-    }
-
     private static float cssEaseInOut(float x) {
         // Solve cubic-bezier(0.42, 0, 0.58, 1) for y at x.
         x = Math.max(0f, Math.min(1f, x));
@@ -350,15 +338,15 @@ final class LoadingScreen {
         return 3f * u * u * p1 + 6f * u * t * (p2 - p1) + 3f * t * t * (1f - p2);
     }
 
-    private static final float[] BAR_STOPS = {0f, 0.45f, 0.70f, 1f};
-    private static final float[] FILL_PCT = {0.08f, 0.72f, 0.58f, 0.92f};
-    private static final float[] KNIGHT_PCT = {0.02f, 0.68f, 0.54f, 0.88f};
 
     private static void paintBarFill(Graphics2D g, long ms, long completeFromMs, float completeT) {
         boolean completing = completeFromMs >= 0;
-        float t = ((completing ? completeFromMs : ms) % 3200L) / 3200f;
-        float fillPct = keyframes(t, BAR_STOPS, FILL_PCT);
-        float knightPct = keyframes(t, BAR_STOPS, KNIGHT_PCT);
+        // Only ever moves forward: eases towards 90% while the game is set up, then
+        // fills the rest once it's ready. (It used to loop, slipping back and jumping
+        // to the start every few seconds, which looked like a glitch.)
+        long at = Math.max(0L, completing ? completeFromMs : ms);
+        float fillPct = 0.06f + 0.84f * (1f - (float) Math.exp(-at / 1100.0));
+        float knightPct = Math.max(0.02f, fillPct - 0.04f);
         if (completing) {
             float e = cssEaseInOut(Math.max(0f, Math.min(1f, completeT)));
             fillPct += (1f - fillPct) * e;

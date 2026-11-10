@@ -480,6 +480,7 @@ public class MainMenu extends JFrame implements ActionListener {
 
     protected MainMenu(boolean playStartupIntro, boolean showImmediately) {
         setTitle("Scaccomatto");
+        OpeningDetector.warmUp();     // ready before the first game, so its loading screen never stalls
         Rectangle screenBounds = GraphicsEnvironment
                 .getLocalGraphicsEnvironment()
                 .getDefaultScreenDevice()

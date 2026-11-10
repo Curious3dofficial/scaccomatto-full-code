@@ -3,12 +3,44 @@ import java.util.HashMap;
 public class OpeningDetector {
     private HashMap<String, String> openings;
     private HashMap<String, OpeningEntry> openingBook;
-    
+
+    /**
+     * The opening book is worked out once (it means playing through every opening on a
+     * board, which took a second or two) and then shared by every game and Analysis.
+     * Doing it again on each launch is what froze the loading screen.
+     */
+    private static volatile HashMap<String, OpeningEntry> sharedBook;
+
+    private static HashMap<String, OpeningEntry> book() {
+        HashMap<String, OpeningEntry> b = sharedBook;
+        if (b != null) return b;
+        synchronized (OpeningDetector.class) {
+            if (sharedBook == null) {
+                HashMap<String, OpeningEntry> built = new HashMap<>();
+                try {
+                    loadEmbeddedOpeningBook(built);
+                } catch (RuntimeException e) {
+                    built = new HashMap<>();      // no book: openings just aren't named
+                }
+                sharedBook = built;
+            }
+            return sharedBook;
+        }
+    }
+
+    /** Starts working out the opening book in the background while the menu is up. */
+    static void warmUp() {
+        if (sharedBook != null) return;
+        Thread t = new Thread(OpeningDetector::book, "opening-book");
+        t.setDaemon(true);
+        t.setPriority(Thread.MIN_PRIORITY);
+        t.start();
+    }
+
     public OpeningDetector() {
         openings = new HashMap<>();
-        openingBook = new HashMap<>();
         loadOpenings();
-        loadEmbeddedOpeningBook();
+        openingBook = book();
     }
     
     private void loadOpenings() {
@@ -110,7 +142,7 @@ public class OpeningDetector {
         return "";
     }
     
-    private String simplifyFen(String fen) {
+    private static String simplifyFen(String fen) {
         // FEN format: position turn castling enpassant halfmove fullmove
         // We only need the position part for opening detection
         String[] parts = fen.split(" ");
@@ -120,7 +152,7 @@ public class OpeningDetector {
         return fen;
     }
 
-    private void loadEmbeddedOpeningBook() {
+    private static void loadEmbeddedOpeningBook(HashMap<String, OpeningEntry> openingBook) {
         if (OpeningBookData.LINES == null || OpeningBookData.LINES.length == 0) return;
         Board board = new Board(null);
         for (String line : OpeningBookData.LINES) {
@@ -154,13 +186,13 @@ public class OpeningDetector {
                 depth++;
                 if (depth == totalPlies) {
                     String key = simplifyFen(board.generateFEN());
-                    updateBookEntry(key, name, depth, eco);
+                    updateBookEntry(openingBook, key, name, depth, eco);
                 }
             }
         }
     }
 
-    private void updateBookEntry(String key, String name, int depth, String eco) {
+    private static void updateBookEntry(HashMap<String, OpeningEntry> openingBook, String key, String name, int depth, String eco) {
         if (key == null || key.isEmpty()) return;
         OpeningEntry existing = openingBook.get(key);
         if (existing == null || depth > existing.depth) {
@@ -168,7 +200,7 @@ public class OpeningDetector {
         }
     }
 
-    private int countPlies(String[] tokens) {
+    private static int countPlies(String[] tokens) {
         int plies = 0;
         for (String token : tokens) {
             if (token == null || token.isEmpty()) continue;
