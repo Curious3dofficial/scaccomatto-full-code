@@ -8,6 +8,7 @@
 - Signing up now confirms your email address first, and the account screens keep one size.
 - Clearer messages when online play is busy or your internet is down.
 - Smaller download.
+- Argus, the chess engine, now keeps itself up to date. New versions download quietly and take over the next time you open the game.
 
 
 **Play**

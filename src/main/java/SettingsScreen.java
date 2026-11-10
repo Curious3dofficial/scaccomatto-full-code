@@ -2214,7 +2214,7 @@ public class SettingsScreen extends JPanel {
     // ── about texts ──────────────────────────────────────────────────────────
 
     private static final String CREDITS_TEXT =
-            "Scaccomatto is designed and built by Alekhine Studios Private Limited.\n"
+            "Scaccomatto is designed and built by Alekhine Studios.\n"
             + "\n"
             + "The chess engine, Argus, was written from scratch for Scaccomatto. It plays every bot, runs the analysis and powers Game Review.\n"
             + "\n"
@@ -2292,7 +2292,7 @@ public class SettingsScreen extends JPanel {
     private static final String PRIVACY_TEXT =
             "Last updated: November 2026\n"
             + "\n"
-            + "Scaccomatto is made by Alekhine Studios Private Limited (\"we\", \"us\"). This explains what it keeps about you. The short version: you can play without an account, and then everything stays on your computer except what an internet game needs to pass between the two players. If you make an account, we keep only what the account needs, and you can delete it any time.\n"
+            + "Scaccomatto is made by Alekhine Studios (\"we\", \"us\"). This explains what it keeps about you. The short version: you can play without an account, and then everything stays on your computer except what an internet game needs to pass between the two players. If you make an account, we keep only what the account needs, and you can delete it any time.\n"
             + "\n"
             + "What stays on your computer\n"
             + "• Your settings, achievements and the guest name you play under online (something like \"Guest482913\")\n"
@@ -2320,6 +2320,9 @@ public class SettingsScreen extends JPanel {
             + "Who can make an account\n"
             + "You need to be at least 13, or the age your country sets for agreeing to this yourself, if that's higher.\n"
             + "\n"
+            + "Engine updates\n"
+            + "Every few hours, the game checks GitHub for a newer version of Argus, its chess engine, and downloads it if there is one. That request carries nothing about you. GitHub sees your IP address, as with any download.\n"
+            + "\n"
             + "What we don't do\n"
             + "No ads, no analytics, no tracking. Nothing about you is sold or shared.\n"
             + "\n"
@@ -2335,7 +2338,7 @@ public class SettingsScreen extends JPanel {
     private static final String TERMS_TEXT =
             "Last updated: November 2026\n"
             + "\n"
-            + "These terms are the agreement between you and Alekhine Studios Private Limited (\"we\", \"us\"), the maker of Scaccomatto. By using Scaccomatto you accept them.\n"
+            + "These terms are the agreement between you and Alekhine Studios (\"we\", \"us\"), the maker of Scaccomatto. By using Scaccomatto you accept them.\n"
             + "\n"
             + "Using Scaccomatto\n"
             + "Your copy is for your own play. Please don't resell it, share copies of it, or pass it off as your own.\n"

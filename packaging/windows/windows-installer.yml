@@ -59,7 +59,7 @@ jobs:
           Copy-Item "target/scaccomatto-$version.jar" dist/
           jpackage --type exe `
             --name Scaccomatto --app-version $version `
-            --vendor "Alekhine Studios Private Limited" `
+            --vendor "Alekhine Studios" `
             --description "Chess, with personality" `
             --input dist --main-jar "scaccomatto-$version.jar" --main-class Main `
             --icon packaging/windows/scaccomatto.ico `

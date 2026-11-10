@@ -12,7 +12,7 @@ rm -f "installers/scaccomatto_${VERSION}_amd64.deb"
 echo "== Packing the installer (takes a minute)"
 jpackage --type deb \
   --name Scaccomatto --app-version "$VERSION" \
-  --vendor "Alekhine Studios Private Limited" \
+  --vendor "Alekhine Studios" \
   --description "Chess, with personality" \
   --input dist --main-jar "scaccomatto-$VERSION.jar" --main-class Main \
   --icon src/main/assets/icon.png \
