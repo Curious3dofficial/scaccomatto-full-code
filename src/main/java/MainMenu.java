@@ -4685,11 +4685,6 @@ public class MainMenu extends JFrame implements ActionListener {
         }
     }
     
-    // Public method used by embedded panels to return to the main menu.
-    public void showMenu() {
-        showCard("MENU", false);
-    }
-
     public void openSection(String command) {
         actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, command));
     }

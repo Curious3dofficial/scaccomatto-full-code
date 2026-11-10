@@ -897,27 +897,6 @@ final class SpectateScreen extends JComponent {
         for (int i = 0; i < lines.size(); i++) drawCentred(g, lines.get(i), cx, top + i * lh);
     }
 
-    private static void star(Graphics2D g, float cx, float cy, float r, boolean full) {
-        Path2D s = new Path2D.Float();
-        for (int k = 0; k < 10; k++) {
-            double a = -Math.PI / 2 + k * Math.PI / 5;
-            float rr = k % 2 == 0 ? r : r * 0.45f;
-            float px = cx + (float) Math.cos(a) * rr, py = cy + (float) Math.sin(a) * rr;
-            if (k == 0) s.moveTo(px, py); else s.lineTo(px, py);
-        }
-        s.closePath();
-        g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        if (full) {
-            g.setColor(accent());
-            g.fill(s);
-            g.setColor(accentDeep());
-            g.draw(s);
-        } else {
-            g.setColor(UiTheme.c(208, 198, 180));
-            g.draw(s);
-        }
-    }
-
     private static void shadowRound(Graphics2D g, float x, float y, float w, float h, float arc) {
         int[] alphas = {10, 16, 22};
         float[] grow = {14, 7, 2};

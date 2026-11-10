@@ -353,18 +353,6 @@ public class SettingsPanel extends JPanel {
 
     // ── the panel opening ────────────────────────────────────────────────────
 
-    /** Plays the rows easing in, one after another (each time the panel opens). */
-    private void playEntrance() {
-        revealStart = System.nanoTime();
-        if (revealTimer == null) {
-            revealTimer = AnimationTiming.createUiTimer(e -> {
-                body.repaint();
-                if (revealT(revealItems.size() - 1) >= 1f) revealTimer.stop();
-            });
-        }
-        revealTimer.restart();
-    }
-
     private float revealT(int index) {
         float t = ((System.nanoTime() - revealStart) / 1e6f - index * 40f) / 300f;
         return Math.max(0f, Math.min(1f, t));
