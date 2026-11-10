@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/img/wordmark.png" alt="Scaccomatto" width="520"></p>
 
 <p align="center"><b>Chess, with personality.</b><br>
-A free chess game for Windows and Linux by Alekhine Studios Private Limited.</p>
+A free chess game for Windows and Linux by Alekhine Studios.</p>
 
 <p align="center"><a href="../../releases/latest"><b>Download the latest version</b></a></p>
 
@@ -45,6 +45,18 @@ The game reads its Firebase settings from `src/main/assets/firebase.properties`,
 
 The Windows installer is built by GitHub Actions (`.github/workflows/windows-installer.yml`): run it from the Actions tab, or push a tag like `v1.0.1` to build it and attach it to a release. Before each release, raise the version in `pom.xml` and `AppVersion.java`, otherwise Windows treats the new installer as the same version.
 
+## Engine updates (full version only)
+
+The full game keeps Argus up to date by itself. When you change the engine, run:
+
+```bash
+bash publish-argus.sh
+```
+
+It builds Argus, checks it can find a move, signs it and uploads it to the `engine` release of scaccomatto-download. Every copy of the game checks for it in the background, tries it out (everything the game uses in Argus must still be there), and switches to it the next time it opens. If a new engine ever fails, the game goes back to the Argus it was built with. Scaccomatto Free never changes its engine.
+
+One-time setup: `java tools/ArgusPublish.java keygen` makes the signing key in `~/.scaccomatto-signing/` (keep a backup, never commit it) and puts its public half in `ArgusBoot.java`. After each publish, commit `src/main/assets/engine/argus.version`.
+
 ## Project layout
 
 | Folder | What's in it |
@@ -64,4 +76,4 @@ Without an account, nothing about you is kept anywhere but your own computer. Ac
 
 alekhinestudios@gmail.com
 
-© 2026 Alekhine Studios Private Limited
+© 2026 Alekhine Studios

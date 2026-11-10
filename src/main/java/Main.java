@@ -6,6 +6,8 @@ import java.awt.event.KeyEvent;
 
 public class Main {
     public static void main(String[] args) {
+        // a newer Argus downloaded earlier: start the game again with it (see ArgusBoot)
+        if (ArgusBoot.relaunch(args)) return;
         // Used to boot the old standalone Intro.java splash screen; that
         // sequence has since been ported into MainMenu's own StartupIntroPane
         // (installStartupIntro()/startStartupIntro()), so launching MainMenu
@@ -22,6 +24,7 @@ public class Main {
         SmoothFade.installFrameSync();
         SmoothScroll.install();
         SwingUtilities.invokeLater(MainMenu::new);
+        ArgusUpdater.start();                  // keeps Argus up to date, quietly
     }
 
     // "M" toggles mute/unmute from anywhere in the app -- main menu, a

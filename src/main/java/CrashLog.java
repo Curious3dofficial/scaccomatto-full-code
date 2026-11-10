@@ -54,6 +54,7 @@ final class CrashLog {
 
     /** Writes one uncaught error to today's crash file. */
     static synchronized void record(Thread thread, Throwable error) {
+        try { ArgusUpdater.noticeCrash(error); } catch (Throwable ignored) { }
         try {
             StringWriter trace = new StringWriter();
             error.printStackTrace(new PrintWriter(trace));
