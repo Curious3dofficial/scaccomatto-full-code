@@ -315,6 +315,8 @@ public class ChessGame extends JFrame {
         private boolean spectateMode = false;
         private boolean playerIsWhite = true;
         private volatile boolean botMoveInProgress = false;
+        /** Goes up on every reset, so a bot move still being thought about is thrown away. */
+        private volatile int botGeneration = 0;
         private String gameVariant = "Classic";
         private String lastOpeningTitle = "";
         private boolean openingNamesEnabled = true;
@@ -1002,6 +1004,8 @@ public class ChessGame extends JFrame {
             String[] names = playerNames();
             r.whiteName = names[0];
             r.blackName = names[1];
+            r.whiteAvatar = resultAvatar(true);
+            r.blackAvatar = resultAvatar(false);
             if (r.whiteWon != null) {
                 String winner = r.whiteWon ? r.whiteName : r.blackName;
                 boolean meWon = (isBotGame || onlineMode) && !spectateMode
@@ -1500,11 +1504,12 @@ public class ChessGame extends JFrame {
             board.setFogOfWarEnabled("Fog of War".equalsIgnoreCase(gameVariant));
 
             // In local games, we wait for the user to choose a time control and press Start Game
-            // In bot games, the board is immediately playable
+            // In bot games, the board is immediately playable -- except bot vs bot, which
+            // waits for Start Game just like a local game
             if (!onlineMode && !isBotGame) {
                 board.setInputEnabled(false);
             } else {
-                gameStarted = true;
+                gameStarted = !spectateMode;
                 board.setInputEnabled(!spectateMode);
                 if (shouldShowMoveHistory()) {
                     showMoveHistoryPanel();
@@ -2014,9 +2019,7 @@ public class ChessGame extends JFrame {
             refreshSpellUI();
             refreshCapturedMaterialUI();
             updateEvaluationBar();
-            if (isBotGame && spectateMode) {
-                SwingUtilities.invokeLater(this::makeBotMove);
-            }
+            // bot vs bot: the bots start once Start Game is pressed (startBotMatch)
 	    }
 	    
         private void installAltF4Hotkey() {
@@ -2659,7 +2662,8 @@ public class ChessGame extends JFrame {
         }
 
         private void makeBotMove() {
-        if (chessEngine == null || gameOver) return;
+        if (chessEngine == null || gameOver || !gameStarted) return;
+        final int gen = botGeneration;
         if (!spectateMode && !isBotTurnToMove()) return;
         synchronized (this) {
             if (botMoveInProgress) return;
@@ -2716,7 +2720,7 @@ public class ChessGame extends JFrame {
                 // Note: The move will be added to uciMoves by onLocalMove() 
                 // when commitMove() is called from applyBotMove()
                 SwingUtilities.invokeLater(() -> {
-                    if (gameOver) return;
+                    if (gameOver || gen != botGeneration) return;     // the board was reset meanwhile
                     if (!spectateMode && !isBotTurnToMove()) return;
                     board.applyBotMove(
                         move[0], move[1], move[2], move[3]
@@ -2729,7 +2733,7 @@ public class ChessGame extends JFrame {
                     GameDialogs.info((java.awt.Component) null, "Engine Error", String.valueOf("Bot error: " + e.getMessage()));
                 });
             } finally {
-                botMoveInProgress = false;
+                if (gen == botGeneration) botMoveInProgress = false;
             }
         }).start();
     }
@@ -2972,7 +2976,8 @@ public class ChessGame extends JFrame {
                 });
                 themedGameHistoryPanel.setOnExplorerMove(this::playGameExplorerMove);
             }
-            if (gameStarted && timeControlPanel != null && timeControlPanel.getParent() == centerColumnPanel) {
+            // bot vs bot has no time to pick, so its time panel goes even before Start
+            if ((gameStarted || spectateMode) && timeControlPanel != null && timeControlPanel.getParent() == centerColumnPanel) {
                 collapseTimeControlPanel();     // folds away smoothly, then removes itself
             }
             if (centerSpellFiller != null && centerSpellFiller.getParent() == centerColumnPanel) {
@@ -3042,7 +3047,7 @@ public class ChessGame extends JFrame {
                                 exitToMenuWithCurtain();
                             }
                         },
-                        "Start Game", () -> { if (startGameBtn != null) startGameBtn.doClick(); }, true, true);
+                        "Start Game", this::onStartGamePressed, true, true);
             } else {
                 themedGameHistoryPanel.setFooterActions("Reset", this::confirmResetBoard,
                         "Game Review", this::onReviewButton, true, canReviewGame());
@@ -3866,6 +3871,23 @@ public class ChessGame extends JFrame {
             t.start();
         }
         return opponentPicture;
+    }
+
+    /** The picture shown for one side in the result window -- the same one its player card shows. */
+    private java.awt.image.BufferedImage resultAvatar(boolean white) {
+        try {
+            if (spectateMode) {
+                ChessBot bot = white
+                        ? (spectateWhiteBot != null ? spectateWhiteBot : selectedBot)
+                        : (spectateBlackBot != null ? spectateBlackBot : selectedBot);
+                return botPortrait(bot);
+            }
+            if (isBotGame) return white == playerIsWhite ? LocalPlayers.avatar(white) : botPortrait(selectedBot);
+            if (onlineMode) return white == localIsWhite ? AccountPopup.currentAvatar() : opponentPicture();
+            return offlinePlayersEditable() ? LocalPlayers.avatar(white) : null;
+        } catch (RuntimeException e) {
+            return null;                // no picture: the initial is drawn instead
+        }
     }
 
     private static java.awt.image.BufferedImage botPortrait(ChessBot bot) {
@@ -5466,6 +5488,7 @@ public class ChessGame extends JFrame {
         am.put("startGameHotkey", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (spectateMode && !gameStarted) { startBotMatch(); return; }
                 if (confirmSelectedSpellByHotkey()) return;
                 if (startGameBtn != null && startGameBtn.isVisible() && startGameBtn.isEnabled()) {
                     startGameBtn.doClick();
@@ -6415,6 +6438,22 @@ public class ChessGame extends JFrame {
         }
     }
 
+    private void onStartGamePressed() {
+        if (spectateMode) startBotMatch();
+        else if (startGameBtn != null) startGameBtn.doClick();
+    }
+
+    /** Bot vs bot: the bots only start playing once Start Game is pressed. */
+    private void startBotMatch() {
+        if (!spectateMode || gameStarted || gameOver) return;
+        clearGameOverState();
+        gameStarted = true;
+        syncBoardEnterHotkeyMode();
+        updateEvaluationBar();
+        syncThemedGameHistory();      // the footer turns into Reset / Game Review
+        makeBotMove();
+    }
+
     private void startLocalGame() {
         if (gameStarted) return;
         finishTimePanelGhost();     // a Reset unfold still running: settle it first
@@ -6616,6 +6655,7 @@ public class ChessGame extends JFrame {
     }
 
     public void resetBoard() {
+        botGeneration++;
         stopTimer();
         SoundManager.stopAllSounds();
         clearGameOverState();
@@ -6690,8 +6730,13 @@ public class ChessGame extends JFrame {
             applySpellChessPreStartLayout();
         }
 
-        // Bot/online games restart immediately
-        if (isBotGame || onlineMode) {
+        if (spectateMode) {
+            // bot vs bot goes back to waiting for Start Game
+            gameStarted = false;
+            syncBoardEnterHotkeyMode();
+            if (board != null) board.setInputEnabled(false);
+            if (shouldShowMoveHistory()) showMoveHistoryPanel();
+        } else if (isBotGame || onlineMode) {   // bot/online games restart immediately
             gameStarted = true;
             syncBoardEnterHotkeyMode();
             if (board != null) board.setInputEnabled(true);
