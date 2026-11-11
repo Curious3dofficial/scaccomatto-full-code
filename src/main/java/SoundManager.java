@@ -209,17 +209,27 @@ public class SoundManager {
         }
     }
 
+    /** Every ordinary button press. */
+    static final String TAP = "tap.wav";
+    /** Back buttons (and Esc going back). */
+    static final String BACK = "back.wav";
+    /** A screen sliding down into view (Settings, Bot Battle...). */
+    static final String SCROLL_DOWN = "scroll_down.wav";
+    /** A screen lifting back up out of view. */
+    static final String SCROLL_UP = "scroll_up.wav";
+
     /** Play a sound from src/assets/extras (or /assets/extras on classpath). */
     public static SoundHandle playExtraSound(String fileName) {
         if (!soundEnabled || fileName == null || fileName.trim().isEmpty()) return null;
-        if ("tap.wav".equals(fileName.trim()) && javax.swing.SwingUtilities.isEventDispatchThread()) {
+        String name = fileName.trim();
+        if ((TAP.equals(name) || BACK.equals(name)) && javax.swing.SwingUtilities.isEventDispatchThread()) {
             // The button click waits a moment: if that same click opens a popup, the popup
             // plays its own sound instead and the click is dropped (see PopupSound).
             java.util.Set<java.awt.Window> before = PopupSound.showingDialogs();
             javax.swing.SwingUtilities.invokeLater(() -> {
                 if (PopupSound.newDialogSince(before)) return;
-                File f = resolveFileFromExtra("tap.wav");
-                if (f != null && soundEnabled) playResolvedFile("tap.wav", f);
+                File f = resolveFileFromExtra(name);
+                if (f != null && soundEnabled) playResolvedFile(name, f);
             });
             return null;
         }

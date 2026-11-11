@@ -250,7 +250,7 @@ public class AchievementsScreen extends JPanel {
                     press = false;
                     repaint();
                     if (fire) {
-                        SoundManager.playExtraSound("tap.wav");
+                        SoundManager.playExtraSound(SoundManager.BACK);
                         if (onBack != null) onBack.run();
                     }
                 }

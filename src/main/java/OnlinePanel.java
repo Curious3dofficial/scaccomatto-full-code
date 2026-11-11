@@ -512,7 +512,10 @@ public class OnlinePanel extends JPanel {
         JButton back = parent.createIconRoundButton(false, UiTheme.c(Color.WHITE), TEXT_DARK, headerCircleD);
         backButton = back;
         // Plays the exit animation first, then goes back.
-        back.addActionListener(event -> playExitThenBack());
+        back.addActionListener(event -> {
+            SoundManager.playExtraSound(SoundManager.BACK);
+            playExitThenBack();
+        });
         // Esc goes back the same way, exit animation included (see MainMenu.ESCAPE_BACK)
         putClientProperty(MainMenu.ESCAPE_BACK, (Runnable) back::doClick);
         // Up / Down arrows pick the variant above / below, wrapping round at the ends

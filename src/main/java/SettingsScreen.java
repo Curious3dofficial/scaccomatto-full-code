@@ -119,7 +119,7 @@ public class SettingsScreen extends JPanel {
     }
 
     private void goBack() {
-        SoundManager.playExtraSound("tap.wav");
+        SoundManager.playExtraSound(SoundManager.BACK);
         if (onBack != null) onBack.run();
     }
 

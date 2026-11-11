@@ -266,7 +266,10 @@ public class ModeSelectScreen extends JPanel {
         backButton = new BackButton();
         backButton.setFadeAlpha(0f);
         backButton.setEnabled(false);
-        backButton.addActionListener(e -> startBackTransition());
+        backButton.addActionListener(e -> {
+            SoundManager.playExtraSound(SoundManager.BACK);
+            startBackTransition();
+        });
         // Esc goes back the same way, fade-out included (see MainMenu.ESCAPE_BACK)
         putClientProperty(MainMenu.ESCAPE_BACK, (Runnable) () -> {
             if (backButton.isEnabled()) backButton.doClick();

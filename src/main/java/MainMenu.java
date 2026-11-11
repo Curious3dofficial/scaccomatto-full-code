@@ -3182,6 +3182,7 @@ public class MainMenu extends JFrame implements ActionListener {
      */
     private void runScreenSlide(java.awt.image.BufferedImage under, java.awt.image.BufferedImage over,
                                 boolean dropping, Runnable done) {
+        SoundManager.playExtraSound(dropping ? SoundManager.SCROLL_DOWN : SoundManager.SCROLL_UP);
         JLayeredPane layers = getLayeredPane();
         Rectangle area = SwingUtilities.convertRectangle(mainPanel.getParent(), mainPanel.getBounds(), layers);
         final float[] pos = {dropping ? 0f : 1f};     // 1 = fully covering
@@ -3432,7 +3433,10 @@ public class MainMenu extends JFrame implements ActionListener {
         int circleD = Math.round(matchCircleD * 0.6f);
 
         JButton back = createIconRoundButton(false, UiTheme.c(Color.WHITE), UiTheme.c(28, 22, 14), circleD); // back arrow, plain circle
-        back.addActionListener(e -> playChessVariantsExitThenClose()); // fades the wordmark + buttons + slides the 8 cards back out, then runs the existing close transition -- see that method's comment
+        back.addActionListener(e -> {
+            SoundManager.playExtraSound(SoundManager.BACK);
+            playChessVariantsExitThenClose();
+        }); // fades the wordmark + buttons + slides the 8 cards back out, then runs the existing close transition -- see that method's comment
         cvBackButton = back;
 
         JButton play = createIconRoundButton(true, UiTheme.c(214, 160, 58), Color.WHITE, circleD); // forward arrow (mirrored), gold circle -- stays the visually primary action, same accent as the old "Play Classic >" pill
@@ -4081,8 +4085,11 @@ public class MainMenu extends JFrame implements ActionListener {
         // doesn't treat as "effectively final" even though only one of
         // those two assignments ever actually runs.
         final AnimatedWordmarkLabel heroWordmarkForExit = heroWordmark;
-        headerBack.addActionListener(ev -> playBotSelectExit(mainContainer, heading, stageHolder,
-                leftSlot, rightCard, botPanel, heroWordmarkForExit, headerBack, headerSpectate, headerStart));
+        headerBack.addActionListener(ev -> {
+            SoundManager.playExtraSound(SoundManager.BACK);
+            playBotSelectExit(mainContainer, heading, stageHolder,
+                leftSlot, rightCard, botPanel, heroWordmarkForExit, headerBack, headerSpectate, headerStart);
+        });
         mainContainer.putClientProperty(ESCAPE_BACK, (Runnable) headerBack::doClick);
 
         showEmbeddedScreen(mainContainer, null);

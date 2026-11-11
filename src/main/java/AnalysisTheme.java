@@ -495,7 +495,9 @@ final class AnalysisTheme {
                 @Override public void mouseEntered(MouseEvent e) { if (isEnabled()) hover.set(true); }
                 @Override public void mouseExited(MouseEvent e)  { hover.set(false); }
             });
-            addActionListener(e -> { if (clickSound) SoundManager.playExtraSound("tap.wav"); });
+            addActionListener(e -> {
+                if (clickSound) SoundManager.playExtraSound(glyph == Glyph.BACK ? SoundManager.BACK : SoundManager.TAP);
+            });
             if (action != null) addActionListener(e -> action.run());
         }
 
