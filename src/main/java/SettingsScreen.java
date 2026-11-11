@@ -2240,6 +2240,7 @@ public class SettingsScreen extends JPanel {
             + "Code\n"
             + "• TwelveMonkeys ImageIO (BSD 3-Clause License)\n"
             + "• Apache Batik (Apache License 2.0)\n"
+            + "• JOrbis, by JCraft (GNU LGPL 2.1), plays the music\n"
             + "\n"
             + "Fonts (SIL Open Font License 1.1)\n"
             + "• Baloo 2, by the Baloo 2 Project Authors\n"

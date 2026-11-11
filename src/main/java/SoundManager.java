@@ -318,10 +318,9 @@ public class SoundManager {
     }
 
     /**
-     * Loops a WAV track seamlessly via javax.sound.sampled's Clip API (MP3 files
-     * here go through the process-based player instead, which can't loop
-     * gaplessly -- convert any music track to WAV before dropping it in
-     * assets/music). Returns a SoundHandle whose stop() ends the loop.
+     * Loops a track seamlessly via javax.sound.sampled's Clip API. Tracks in
+     * assets/music are .ogg (see OggMusic) or plain .wav. Returns a SoundHandle
+     * whose stop() ends the loop.
      */
     public static SoundHandle playMusic(String fileName, float volume, int fadeInMs) {
         return playMusic(fileName, volume, fadeInMs, null);
@@ -338,7 +337,9 @@ public class SoundManager {
 
     private static SoundHandle playMusic(String fileName, float volume, int fadeInMs, Runnable onEndOrLoop) {
         if (!soundEnabled || fileName == null || fileName.trim().isEmpty()) return null;
-        File musicFile = resolveFileFromMusic(fileName.trim());
+        String name = fileName.trim();
+        // the bundled themes are .ogg: played from the .wav made of them in the background
+        File musicFile = name.toLowerCase().endsWith(".ogg") ? OggMusic.ready(name) : resolveFileFromMusic(name);
         if (musicFile == null) return null;
 
         try {
@@ -486,26 +487,34 @@ public class SoundManager {
             "src/assets/music", "assets/music"
         };
         for (String d : dirs) {
-            File[] files = new File(d).listFiles((dir, n) -> n.toLowerCase().endsWith(".wav"));
+            File[] files = new File(d).listFiles((dir, n) -> isTrack(n));
             if (files != null) for (File f : files) out.add(f.getName());
         }
         try {
             URL res = SoundManager.class.getResource("/assets/music/");
             if (res != null && "file".equals(res.getProtocol())) {
-                File[] files = new File(res.toURI()).listFiles((dir, n) -> n.toLowerCase().endsWith(".wav"));
+                File[] files = new File(res.toURI()).listFiles((dir, n) -> isTrack(n));
                 if (files != null) for (File f : files) out.add(f.getName());
             }
         } catch (Exception ignored) {
         }
         // Inside the installed app the tracks are packed in the .jar, where there's no folder to
-        // list, so look for "Theme 1.wav", "Theme 2.wav", ... by name until one is missing.
+        // list, so look for "Theme 1.ogg", "Theme 2.ogg", ... by name until one is missing.
         for (int n = 1; n <= 50; n++) {
-            String name = "Theme " + n + ".wav";
-            if (SoundManager.class.getResource("/assets/music/" + name) == null) break;
+            String name = "Theme " + n + ".ogg";
+            if (SoundManager.class.getResource("/assets/music/" + name) == null) {
+                name = "Theme " + n + ".wav";
+                if (SoundManager.class.getResource("/assets/music/" + name) == null) break;
+            }
             out.add(name);
         }
-        if (out.isEmpty()) out.add("Theme 1.wav");
+        if (out.isEmpty()) out.add("Theme 1.ogg");
         return new java.util.ArrayList<>(out);
+    }
+
+    private static boolean isTrack(String fileName) {
+        String n = fileName.toLowerCase();
+        return n.endsWith(".ogg") || n.endsWith(".wav");
     }
 
     private static File resolveFileFromMusic(String fileName) {

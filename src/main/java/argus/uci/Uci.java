@@ -9,7 +9,6 @@ import argus.move.MoveList;
 import argus.search.Search;
 import argus.search.SearchLimits;
 import argus.search.TranspositionTable;
-import argus.tools.Perft;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -126,12 +125,6 @@ public final class Uci {
                 out.println("static eval: " + Evaluator.evaluate(board)
                         + " cp (from " + (board.sideToMove == 0 ? "White" : "Black") + "'s side)");
                 out.flush();
-                return true;
-
-            case "perft":
-                if (words.length > 1) {
-                    Perft.divide(board, Integer.parseInt(words[1]));
-                }
                 return true;
 
             case "moves":

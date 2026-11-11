@@ -59,6 +59,12 @@
             <artifactId>batik-codec</artifactId>
             <version>1.17</version>
         </dependency>
+        <!-- Plays the menu music, which ships as small .ogg files (JOrbis, LGPL 2.1) -->
+        <dependency>
+            <groupId>com.googlecode.soundlibs</groupId>
+            <artifactId>jorbis</artifactId>
+            <version>0.0.17.4</version>
+        </dependency>
 
         <!-- JUnit for testing -->
         <dependency>

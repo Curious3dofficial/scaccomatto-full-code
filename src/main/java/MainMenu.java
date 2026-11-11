@@ -245,7 +245,7 @@ public class MainMenu extends JFrame implements ActionListener {
     // already running, so calling it from every "back on a menu screen"
     // spot (including ones where it was never stopped, like Puzzles or the
     // bot-select screen) never restarts/doubles the track.
-    private static final String MENU_MUSIC_FILE = "Theme 1.wav";
+    private static final String MENU_MUSIC_FILE = "Theme 1.ogg";
     private static final float MENU_MUSIC_VOLUME = 0.5f;
     private static final int MENU_MUSIC_FADE_IN_MS = 900;
     private static final int COLD_LAUNCH_MUSIC_DELAY_MS = 4000;
@@ -481,6 +481,7 @@ public class MainMenu extends JFrame implements ActionListener {
     protected MainMenu(boolean playStartupIntro, boolean showImmediately) {
         setTitle("Scaccomatto");
         OpeningDetector.warmUp();     // ready before the first game, so its loading screen never stalls
+        OggMusic.prepareAll(SoundManager.musicTracks());   // the themes, ready long before the music starts
         Rectangle screenBounds = GraphicsEnvironment
                 .getLocalGraphicsEnvironment()
                 .getDefaultScreenDevice()
