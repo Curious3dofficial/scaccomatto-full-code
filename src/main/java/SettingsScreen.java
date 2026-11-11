@@ -2238,8 +2238,6 @@ public class SettingsScreen extends JPanel {
             "Scaccomatto is built with these open-source projects. Thank you to everyone who made them.\n"
             + "\n"
             + "Code\n"
-            + "• H2 Database Engine (MPL 2.0 / EPL 1.0)\n"
-            + "• Gson, Guava, and the Google API, HTTP and OAuth clients for Java (Apache License 2.0)\n"
             + "• TwelveMonkeys ImageIO (BSD 3-Clause License)\n"
             + "• Apache Batik (Apache License 2.0)\n"
             + "\n"

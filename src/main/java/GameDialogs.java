@@ -317,6 +317,7 @@ final class GameDialogs {
         String detail = "";              // "White wins", "by stalemate"...
         Boolean whiteWon;                // null = draw / no winner
         String whiteName = "White", blackName = "Black";
+        java.awt.image.BufferedImage whiteAvatar, blackAvatar;   // pictures for the two sides (null = initial)
         boolean canReview;
         boolean canNewGame = true;
         String newGameLabel = "NEW GAME";
@@ -551,8 +552,8 @@ final class GameDialogs {
             int w = getWidth();
             int av = 126, ay = 6;
             int lx = 60, rx = w - 60 - av;
-            side(g2, lx, ay, av, true, r.whiteName, Boolean.TRUE.equals(r.whiteWon));
-            side(g2, rx, ay, av, false, r.blackName, Boolean.FALSE.equals(r.whiteWon));
+            side(g2, lx, ay, av, true, r.whiteName, r.whiteAvatar, Boolean.TRUE.equals(r.whiteWon));
+            side(g2, rx, ay, av, false, r.blackName, r.blackAvatar, Boolean.FALSE.equals(r.whiteWon));
 
             String score = formatScore(r.whiteScore) + " - " + formatScore(r.blackScore);
             g2.setFont(AnalysisTheme.display(56f));
@@ -566,7 +567,8 @@ final class GameDialogs {
             return String.format(java.util.Locale.ROOT, "%.1f", score);
         }
 
-        private void side(Graphics2D g2, int x, int y, int av, boolean white, String name, boolean won) {
+        private void side(Graphics2D g2, int x, int y, int av, boolean white, String name,
+                java.awt.image.BufferedImage avatar, boolean won) {
             if (won) {
                 g2.setColor(AnalysisTheme.accent(this).base);
                 g2.setStroke(new BasicStroke(5f));
@@ -574,7 +576,7 @@ final class GameDialogs {
                 g2.draw(new RoundRectangle2D.Float(x - pad, y - pad + 6, av + 2 * pad, av + 2 * pad,
                         (av + 2 * pad) * 0.34f, (av + 2 * pad) * 0.34f));
             }
-            AnalysisPlayers.paint(g2, x, y + 6, av, white, null, name);
+            AnalysisPlayers.paint(g2, x, y + 6, av, white, avatar, name);
             g2.setFont(AnalysisTheme.bold(26f));
             g2.setColor(won ? AnalysisTheme.TEXT_DARK : AnalysisTheme.TEXT_BODY);
             FontMetrics fm = g2.getFontMetrics();
