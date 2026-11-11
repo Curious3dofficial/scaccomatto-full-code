@@ -1504,13 +1504,13 @@ public class ChessGame extends JFrame {
             board.setFogOfWarEnabled("Fog of War".equalsIgnoreCase(gameVariant));
 
             // In local games, we wait for the user to choose a time control and press Start Game
-            // In bot games, the board is immediately playable -- except bot vs bot, which
-            // waits for Start Game just like a local game
+            // Bot games -- you against a bot, or two bots -- wait for Start Game just like a
+            // local game (the board is washed pale and locked until then)
             if (!onlineMode && !isBotGame) {
                 board.setInputEnabled(false);
             } else {
-                gameStarted = !spectateMode;
-                board.setInputEnabled(!spectateMode);
+                gameStarted = !isBotGame;
+                board.setInputEnabled(!isBotGame);
                 if (shouldShowMoveHistory()) {
                     showMoveHistoryPanel();
                 }
@@ -2019,7 +2019,7 @@ public class ChessGame extends JFrame {
             refreshSpellUI();
             refreshCapturedMaterialUI();
             updateEvaluationBar();
-            // bot vs bot: the bots start once Start Game is pressed (startBotMatch)
+            // bot games start once Start Game is pressed (startBotMatch)
 	    }
 	    
         private void installAltF4Hotkey() {
@@ -2977,7 +2977,7 @@ public class ChessGame extends JFrame {
                 themedGameHistoryPanel.setOnExplorerMove(this::playGameExplorerMove);
             }
             // bot vs bot has no time to pick, so its time panel goes even before Start
-            if ((gameStarted || spectateMode) && timeControlPanel != null && timeControlPanel.getParent() == centerColumnPanel) {
+            if ((gameStarted || isBotGame) && timeControlPanel != null && timeControlPanel.getParent() == centerColumnPanel) {
                 collapseTimeControlPanel();     // folds away smoothly, then removes itself
             }
             if (centerSpellFiller != null && centerSpellFiller.getParent() == centerColumnPanel) {
@@ -5488,7 +5488,7 @@ public class ChessGame extends JFrame {
         am.put("startGameHotkey", new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (spectateMode && !gameStarted) { startBotMatch(); return; }
+                if (isBotGame && !gameStarted) { startBotMatch(); return; }
                 if (confirmSelectedSpellByHotkey()) return;
                 if (startGameBtn != null && startGameBtn.isVisible() && startGameBtn.isEnabled()) {
                     startGameBtn.doClick();
@@ -6439,19 +6439,21 @@ public class ChessGame extends JFrame {
     }
 
     private void onStartGamePressed() {
-        if (spectateMode) startBotMatch();
+        if (isBotGame) startBotMatch();
         else if (startGameBtn != null) startGameBtn.doClick();
     }
 
-    /** Bot vs bot: the bots only start playing once Start Game is pressed. */
+    /** A bot game (you against a bot, or two bots) only starts once Start Game is pressed. */
     private void startBotMatch() {
-        if (!spectateMode || gameStarted || gameOver) return;
+        if (!isBotGame || gameStarted || gameOver) return;
         clearGameOverState();
         gameStarted = true;
         syncBoardEnterHotkeyMode();
+        // the pale wash lifts; watching two bots, the board still takes no moves
+        if (board != null) board.setInputEnabled(!spectateMode, false);
         updateEvaluationBar();
         syncThemedGameHistory();      // the footer turns into Reset / Game Review
-        makeBotMove();
+        makeBotMove();                // the bot's move, if it's the bot's turn
     }
 
     private void startLocalGame() {
@@ -6730,13 +6732,13 @@ public class ChessGame extends JFrame {
             applySpellChessPreStartLayout();
         }
 
-        if (spectateMode) {
-            // bot vs bot goes back to waiting for Start Game
+        if (isBotGame) {
+            // a bot game goes back to waiting for Start Game
             gameStarted = false;
             syncBoardEnterHotkeyMode();
             if (board != null) board.setInputEnabled(false);
             if (shouldShowMoveHistory()) showMoveHistoryPanel();
-        } else if (isBotGame || onlineMode) {   // bot/online games restart immediately
+        } else if (onlineMode) {   // online games restart immediately
             gameStarted = true;
             syncBoardEnterHotkeyMode();
             if (board != null) board.setInputEnabled(true);

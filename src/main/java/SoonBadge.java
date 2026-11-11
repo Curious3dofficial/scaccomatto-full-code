@@ -15,6 +15,8 @@ final class SoonBadge {
     private SoonBadge() { }
 
     static final Color GOLD = new Color(214, 160, 52);
+    /** The tag in dark mode: deep purple (white words, same as on gold). */
+    static final Color DEEP_PURPLE = new Color(88, 28, 160);
     static final String TEXT = "SOON";
 
     /** Width of a tag of this height. */
@@ -40,7 +42,7 @@ final class SoonBadge {
         FontMetrics fm = g.getFontMetrics();
         float w = fm.stringWidth(TEXT) + h * 0.9f;
         RoundRectangle2D.Float pill = new RoundRectangle2D.Float(cx - w / 2f, cy - h / 2f, w, h, h, h);
-        g.setColor(GOLD);
+        g.setColor(UiTheme.DARK ? DEEP_PURPLE : GOLD);
         g.fill(pill);
         if (ring != null) {
             g.setStroke(new BasicStroke(Math.max(1.5f, h * 0.09f)));

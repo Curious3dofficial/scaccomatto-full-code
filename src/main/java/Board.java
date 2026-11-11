@@ -1590,34 +1590,55 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         repaint();
     }
 
+    /** How long the board takes to change colour when a new theme is picked. */
+    private static final int THEME_FADE_MS = 320;
+    private javax.swing.Timer themeFade;
+
     public void setBoardTheme(String theme) {
-        if ("Green".equals(theme)) {
-            lightSquare = new Color(238, 238, 210);
-            darkSquare = new Color(118, 150, 86);
-        } else if ("Gray".equals(theme)) {
-            lightSquare = new Color(216, 220, 222);
-            darkSquare = new Color(120, 130, 138);
-        } else if ("Purple".equals(theme)) {
-            lightSquare = new Color(226, 216, 238);
-            darkSquare = new Color(121, 86, 156);
-        } else if ("Red".equals(theme)) {
-            lightSquare = new Color(238, 218, 214);
-            darkSquare = new Color(166, 76, 72);
-        } else if ("Orange".equals(theme)) {
-            lightSquare = new Color(236, 206, 158);
-            darkSquare = new Color(171, 111, 57);
-        } else if ("Yellow".equals(theme)) {
-            lightSquare = new Color(255, 246, 153);
-            darkSquare = new Color(226, 170, 22);
-        } else if ("Pink".equals(theme)) {
-            lightSquare = new Color(242, 218, 231);
-            darkSquare = new Color(181, 91, 139);
-        } else {
-            lightSquare = new Color(222, 230, 242);
-            darkSquare = new Color(82, 121, 169);
-        }
+        Color[] to = themeSquares(theme);
         if (gameController != null) gameController.setUiTheme(theme);
-        repaint();
+        fadeSquaresTo(to[0], to[1]);
+    }
+
+    private static Color[] themeSquares(String theme) {
+        switch (theme == null ? "" : theme) {
+            case "Green":  return new Color[]{new Color(238, 238, 210), new Color(118, 150, 86)};
+            case "Gray":   return new Color[]{new Color(216, 220, 222), new Color(120, 130, 138)};
+            case "Purple": return new Color[]{new Color(226, 216, 238), new Color(121, 86, 156)};
+            case "Red":    return new Color[]{new Color(238, 218, 214), new Color(166, 76, 72)};
+            case "Orange": return new Color[]{new Color(236, 206, 158), new Color(171, 111, 57)};
+            case "Yellow": return new Color[]{new Color(255, 246, 153), new Color(226, 170, 22)};
+            case "Pink":   return new Color[]{new Color(242, 218, 231), new Color(181, 91, 139)};
+            default:       return new Color[]{new Color(222, 230, 242), new Color(82, 121, 169)};
+        }
+    }
+
+    /** The squares blend smoothly into their new colours (straight away if the board isn't on screen). */
+    private void fadeSquaresTo(Color light, Color dark) {
+        if (themeFade != null) themeFade.stop();
+        themeFade = null;
+        if (!isShowing() || (light.equals(lightSquare) && dark.equals(darkSquare))) {
+            lightSquare = light;
+            darkSquare = dark;
+            repaint();
+            return;
+        }
+        Color fromLight = lightSquare, fromDark = darkSquare;
+        long start = System.nanoTime();
+        javax.swing.Timer t = AnimationTiming.createUiTimer(null);
+        t.addActionListener(e -> {
+            float p = AnimationTiming.progress(start, THEME_FADE_MS);
+            float k = (float) (0.5 - 0.5 * Math.cos(Math.PI * p));
+            lightSquare = TimeControlPicker.mix(fromLight, light, k);
+            darkSquare = TimeControlPicker.mix(fromDark, dark, k);
+            repaint();
+            if (p >= 1f) {
+                t.stop();
+                if (themeFade == t) themeFade = null;
+            }
+        });
+        themeFade = t;
+        t.start();
     }
     
     // History navigation speed (Analysis): one step takes navStepMs; a multi-step

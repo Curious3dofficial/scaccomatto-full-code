@@ -43,7 +43,9 @@ public class SoundManager {
 
     // ── Handle returned by playSound() so callers can stop playback ───────
     public static class SoundHandle {
-        private final Clip    clip;    // non-null for WAV
+        private Clip          clip;    // non-null for WAV (music swaps it when the output device changes)
+        /** Music only: plays it on again from the same spot on the current output device. */
+        private Runnable      reopen;
         private final Process proc;    // non-null for MP3
         // Target gain for a Clip, captured when it was started, so the "M"
         // mute toggle can restore it exactly after silencing it in place
@@ -192,7 +194,7 @@ public class SoundManager {
             // WAV: open the Clip, start it, return the handle
             try {
                 AudioInputStream ain = AudioSystem.getAudioInputStream(soundFile.toURI().toURL());
-                Clip clip = AudioSystem.getClip();
+                Clip clip = newClip();
                 clip.open(ain);
                 setClipVolume(clip, fx);
                 clip.start();
@@ -285,7 +287,7 @@ public class SoundManager {
         } else {
             try {
                 AudioInputStream ain = AudioSystem.getAudioInputStream(soundFile.toURI().toURL());
-                Clip clip = AudioSystem.getClip();
+                Clip clip = newClip();
                 clip.open(ain);
                 if (fadeInMs > 0) {
                     fadeClipIn(clip, vol, fadeInMs);
@@ -344,7 +346,7 @@ public class SoundManager {
 
         try {
             AudioInputStream ain = AudioSystem.getAudioInputStream(musicFile.toURI().toURL());
-            Clip clip = AudioSystem.getClip();
+            Clip clip = newClip();
             clip.open(ain);
             float base = volume;
             volume = Math.max(0f, Math.min(1f, base * musicGain()));
@@ -359,17 +361,10 @@ public class SoundManager {
             if (loop) {
                 clip.loop(Clip.LOOP_CONTINUOUSLY);
             } else {
-                clip.addLineListener(ev -> {
-                    if (ev.getType() != LineEvent.Type.STOP || handle.stopped || handle.silencedByGlobalMute) return;
-                    if (clip.getFramePosition() < clip.getFrameLength() - 1) return;   // not at the end
-                    javax.swing.SwingUtilities.invokeLater(() -> {
-                        if (handle.stopped) return;
-                        handle.stop();
-                        onEndOrLoop.run();
-                    });
-                });
+                watchForEnd(clip, handle, onEndOrLoop);
                 clip.start();
             }
+            handle.reopen = () -> moveMusic(handle, musicFile, onEndOrLoop);
             handle.setLooping(loop);
             handle.setTargetVolume(volume);
             handle.baseVolume = base;
@@ -380,16 +375,123 @@ public class SoundManager {
         }
     }
 
+    /** A track played once: when it reaches its end by itself, the next one starts. */
+    private static void watchForEnd(Clip clip, SoundHandle handle, Runnable onEnd) {
+        clip.addLineListener(ev -> {
+            if (ev.getType() != LineEvent.Type.STOP || handle.stopped || handle.silencedByGlobalMute) return;
+            if (handle.clip != clip) return;                                    // moved to another device
+            if (clip.getFramePosition() < clip.getFrameLength() - 1) return;   // not at the end
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                if (handle.stopped) return;
+                handle.stop();
+                onEnd.run();
+            });
+        });
+    }
+
+    /** Plays a music track on, from the same spot, on the output device chosen now. */
+    private static void moveMusic(SoundHandle h, File musicFile, Runnable onEndOrLoop) {
+        Clip old = h.clip;
+        if (old == null || h.stopped) return;
+        try {
+            Clip clip = newClip();
+            try (AudioInputStream ain = AudioSystem.getAudioInputStream(musicFile.toURI().toURL())) {
+                clip.open(ain);
+            }
+            int at = h.silencedByGlobalMute ? h.pausedFrame : old.getFramePosition();
+            setClipVolume(clip, h.targetVolume);
+            clip.setFramePosition(Math.max(0, Math.min(at, clip.getFrameLength() - 1)));
+            h.clip = clip;
+            try { old.stop(); old.close(); } catch (Exception ignored) { }
+            if (!h.looping) watchForEnd(clip, h, onEndOrLoop);
+            if (!h.silencedByGlobalMute) {
+                if (h.looping) clip.loop(Clip.LOOP_CONTINUOUSLY);
+                else clip.start();
+            }
+        } catch (Exception e) {
+            // the new device wouldn't open: the music stays where it was
+        }
+    }
+
+    // ── output device (Settings > Audio) ─────────────────────────────────────
+
+    static final String SYSTEM_DEFAULT = "System default";
+
+    /** The output devices sound can go to, "System default" first. */
+    static java.util.List<String> outputDevices() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        out.add(SYSTEM_DEFAULT);
+        for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
+            try {
+                if (mi.getName().startsWith("Port ")) continue;      // volume controls, not outputs
+                if (!AudioSystem.getMixer(mi).isLineSupported(new Line.Info(Clip.class))) continue;
+                if (!out.contains(mi.getName())) out.add(mi.getName());
+            } catch (Exception ignored) {
+            }
+        }
+        return out;
+    }
+
+    /** The device picked in Settings (System default if it's gone). */
+    static String outputDevice() {
+        String name = AppSettings.str("audioOutput", SYSTEM_DEFAULT);
+        return mixerNamed(name) == null ? SYSTEM_DEFAULT : name;
+    }
+
+    /** Sends all sound to {@code name} from now on; the music moves over straight away. */
+    static void setOutputDevice(String name) {
+        AppSettings.setStr("audioOutput", name == null ? SYSTEM_DEFAULT : name);
+        reconnectOutput();
+    }
+
+    /** Opens the music again on the chosen device -- e.g. after connecting earphones. */
+    static void reconnectOutput() {
+        for (SoundHandle h : musicHandles.toArray(new SoundHandle[0])) {
+            if (h.reopen != null) h.reopen.run();
+        }
+    }
+
+    private static Mixer.Info mixerNamed(String name) {
+        if (name == null || SYSTEM_DEFAULT.equals(name)) return null;
+        for (Mixer.Info mi : AudioSystem.getMixerInfo()) if (mi.getName().equals(name)) return mi;
+        return null;
+    }
+
+    /**
+     * A Clip on the chosen output device. "System default" means whatever the computer
+     * is using right now: on Linux that's the "default" device (the sound server), which
+     * follows Bluetooth earphones; Java's own pick there can be the speakers' hardware.
+     */
+    private static Clip newClip() throws LineUnavailableException {
+        String name = AppSettings.str("audioOutput", SYSTEM_DEFAULT);
+        Mixer.Info chosen = mixerNamed(name);
+        if (chosen == null) {
+            for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
+                if (mi.getName().startsWith("default")) { chosen = mi; break; }
+            }
+        }
+        if (chosen != null) {
+            try {
+                return AudioSystem.getClip(chosen);
+            } catch (Exception ignored) {
+                // that device won't open: fall back to Java's own choice
+            }
+        }
+        return AudioSystem.getClip();
+    }
+
     /** Convenience stop — null-safe. */
     public static void stopSound(SoundHandle handle) {
         if (handle != null) handle.stop();
     }
 
+    /** Stops every sound effect that's playing (the background music carries on). */
     public static void stopAllSounds() {
         for (SoundHandle handle : activeSounds.toArray(new SoundHandle[0])) {
+            if (musicHandles.contains(handle)) continue;
             handle.stop();
         }
-        activeSounds.clear();
+        activeSounds.removeIf(h -> !musicHandles.contains(h));
     }
 
     // ── sounds per piece set ───────────────────────────────────────────────

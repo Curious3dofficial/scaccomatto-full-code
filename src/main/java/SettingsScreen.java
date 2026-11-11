@@ -37,17 +37,21 @@ public class SettingsScreen extends JPanel {
     static final Color DANGER = UiTheme.c(196, 72, 58);
 
     /** Sizes are designed at 1080p and shrink on smaller screens. */
-    private static final float S = computeScale();
+    private static volatile float S = computeScale();
 
     private static float computeScale() {
         try {
             int h = Toolkit.getDefaultToolkit().getScreenSize().height;
-            // a size up from the first version (everything ~18% bigger)
-            return 1.18f * Math.max(0.68f, Math.min(1f, h / 1080f));
+            // a size up from the first version (everything ~18% bigger), then
+            // Settings > General > Interface size (Small / Normal / Big) on top
+            return 1.18f * Math.max(0.68f, Math.min(1f, h / 1080f)) * AppSettings.interfaceScale() / 100f;
         } catch (Exception e) {
             return 1f;
         }
     }
+
+    /** Picks up a new Interface size (the open Settings screen is rebuilt with it). */
+    static void refreshScale() { S = computeScale(); }
 
     static int s(int v) { return Math.max(1, Math.round(v * S)); }
     static float s(float v) { return v * S; }
@@ -78,8 +82,8 @@ public class SettingsScreen extends JPanel {
 
     private final MainMenu host;
     private final Runnable onBack;
-    private final Sidebar sidebar = new Sidebar();
-    private final PageHost pageHost = new PageHost();
+    private Sidebar sidebar = new Sidebar();
+    private PageHost pageHost = new PageHost();
     private Category current = Category.GENERAL;
 
     public SettingsScreen(MainMenu host, Runnable onBack) {
@@ -88,15 +92,7 @@ public class SettingsScreen extends JPanel {
         setLayout(new BorderLayout());
         setOpaque(true);
         putClientProperty(ProportionalUiScaler.SKIP_SUBTREE_PROPERTY, Boolean.TRUE);
-
-        add(new Header(), BorderLayout.NORTH);
-
-        JPanel body = new JPanel(new BorderLayout(s(26), 0));
-        body.setOpaque(false);
-        body.setBorder(BorderFactory.createEmptyBorder(s(6), s(44), s(36), s(44)));
-        body.add(sidebar, BorderLayout.WEST);
-        body.add(pageHost, BorderLayout.CENTER);
-        add(body, BorderLayout.CENTER);
+        assemble();
 
         // Esc goes back, Up/Down walk the categories
         InputMap im = getInputMap(WHEN_IN_FOCUSED_WINDOW);
@@ -107,6 +103,29 @@ public class SettingsScreen extends JPanel {
         });
 
         showCategory(Category.GENERAL, false);
+    }
+
+    /** Header, sidebar and page, at the current size. */
+    private void assemble() {
+        add(new Header(), BorderLayout.NORTH);
+        JPanel body = new JPanel(new BorderLayout(s(26), 0));
+        body.setOpaque(false);
+        body.setBorder(BorderFactory.createEmptyBorder(s(6), s(44), s(36), s(44)));
+        body.add(sidebar, BorderLayout.WEST);
+        body.add(pageHost, BorderLayout.CENTER);
+        add(body, BorderLayout.CENTER);
+    }
+
+    /** The Interface size changed: the whole screen is made again at the new size, on the same page. */
+    private void rebuildAll() {
+        removeAll();
+        pictures.clear();
+        sidebar = new Sidebar();
+        pageHost = new PageHost();
+        assemble();
+        showCategory(current, false);
+        revalidate();
+        repaint();
     }
 
     // The ivory backdrop (the warm cream gradient the other menu screens use).
@@ -184,10 +203,10 @@ public class SettingsScreen extends JPanel {
         pageHost.show(buildPage(current), false);
     }
 
-    /** A setting changed from outside (the Ctrl +/- size keys): redraw any Settings page showing in {@code root}. */
+    /** The Interface size changed (here or with the Ctrl +/- keys): remake any Settings screen showing in {@code root}. */
     static void refreshShowing(java.awt.Container root) {
         for (java.awt.Component c : root.getComponents()) {
-            if (c instanceof SettingsScreen && c.isShowing()) ((SettingsScreen) c).rebuildCurrent();
+            if (c instanceof SettingsScreen && c.isShowing()) ((SettingsScreen) c).rebuildAll();
             else if (c instanceof java.awt.Container) refreshShowing((java.awt.Container) c);
         }
     }
@@ -314,10 +333,11 @@ public class SettingsScreen extends JPanel {
     private final class Sidebar extends JComponent {
         private final int pad = s(14);
 
-        /** Rows share the card's full height (no empty space under the list). */
+        /** Rows share the card's full height (no empty space under the list), and get closer
+         *  together when the card is short (a big Interface size) so the whole list still fits. */
         private int rowH() {
             int avail = getHeight() - s(10) - pad * 2 - s(20);
-            return Math.max(s(60), Math.min(s(96), avail / Category.values().length));
+            return Math.max(s(40), Math.min(s(96), avail / Category.values().length));
         }
         private int hoverIndex = -1;
         private float indicatorY = -1, fromY, toY;
@@ -381,7 +401,7 @@ public class SettingsScreen extends JPanel {
 
         @Override
         public Dimension getPreferredSize() {
-            return new Dimension(s(400), pad * 2 + s(20) + s(60) * Category.values().length);
+            return new Dimension(s(400), pad * 2 + s(20) + s(40) * Category.values().length);
         }
 
         @Override
@@ -391,6 +411,7 @@ public class SettingsScreen extends JPanel {
             // the card runs the full height, level with the page card beside it
             int h = getHeight() - s(12);
             paintClassicCard(g2, s(4), s(3), w - s(10), h, s(30));
+            g2.clip(new RoundRectangle2D.Float(s(4), s(3), w - s(10), h, s(30), s(30)));   // nothing spills out of the card
             // the gold pill gliding to the selected row
             if (indicatorY >= 0) {
                 g2.setColor(GOLD_SOFT);
@@ -780,14 +801,18 @@ public class SettingsScreen extends JPanel {
         private float hover;
         private final Timer fade;
         private boolean hovering;
+        /** The control on the right, in its holder (null for a row without one). */
+        private JPanel east;
+        /** No room for the text and the control side by side (a big Interface size): the control goes on its own line, centred. */
+        private boolean stacked;
 
         Row(String label, String desc, JComponent control, boolean soon) {
             this.label = label;
             this.desc = desc;
             this.soon = soon;
             setOpaque(false);
-            setLayout(new BorderLayout());
-            int h = s(desc == null || desc.isEmpty() ? 86 : 108);
+            setLayout(null);                       // laid out by hand: side by side, or stacked (see doLayout)
+            int h = textHeight();
             setPreferredSize(new Dimension(10, h));
             setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
             setMinimumSize(new Dimension(10, h));
@@ -801,10 +826,10 @@ public class SettingsScreen extends JPanel {
                 repaint();
             });
             if (control != null) {
-                JPanel east = new JPanel(new GridBagLayout());
+                east = new JPanel(new GridBagLayout());
                 east.setOpaque(false);
                 east.add(control);
-                add(east, BorderLayout.EAST);
+                add(east);
                 if (soon) setEnabledDeep(control, false);
             }
             MouseAdapter m = new MouseAdapter() {
@@ -818,6 +843,53 @@ public class SettingsScreen extends JPanel {
             };
             addMouseListener(m);
             if (control != null) addListenerDeep(control, m);
+        }
+
+        /** The height of the label + description part. */
+        private int textHeight() {
+            return s(desc == null || desc.isEmpty() ? 86 : 108);
+        }
+
+        /** How wide the label (with its SOON / PAID tag) and the description want to be. */
+        private int textWidth() {
+            FontMetrics lm = getFontMetrics(display(22f));
+            int w = lm.stringWidth(label) + (soon ? s(90) : 0);
+            if (desc != null && !desc.isEmpty()) w = Math.max(w, getFontMetrics(body(16.5f)).stringWidth(desc));
+            return w;
+        }
+
+        @Override
+        public void doLayout() {
+            if (east == null) return;
+            Insets in = getInsets();
+            int w = getWidth() - in.left - in.right;
+            Dimension c = east.getPreferredSize();
+            boolean stack = textWidth() + s(28) + c.width > w;
+            if (stack != stacked) {
+                stacked = stack;
+                int h = stacked ? textHeight() - s(14) + c.height + s(22) : textHeight();
+                setPreferredSize(new Dimension(10, h));
+                setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
+                setMinimumSize(new Dimension(10, h));
+                SwingUtilities.invokeLater(() -> {
+                    if (getParent() != null) { getParent().revalidate(); getParent().repaint(); }
+                });
+            }
+            if (stacked) {
+                // on its own line the control stretches across the row (a switch keeps its size)
+                Component control = east.getComponentCount() > 0 ? east.getComponent(0) : null;
+                boolean stretch = control != null && !(control instanceof Toggle);
+                GridBagConstraints gc = new GridBagConstraints();
+                gc.fill = stretch ? GridBagConstraints.HORIZONTAL : GridBagConstraints.NONE;
+                gc.weightx = stretch ? 1 : 0;
+                gc.anchor = GridBagConstraints.WEST;
+                if (control != null) ((GridBagLayout) east.getLayout()).setConstraints(control, gc);
+                east.setBounds(in.left, textHeight() - s(14), w, c.height);
+            } else {
+                Component control = east.getComponentCount() > 0 ? east.getComponent(0) : null;
+                if (control != null) ((GridBagLayout) east.getLayout()).setConstraints(control, new GridBagConstraints());
+                east.setBounds(getWidth() - in.right - c.width, 0, c.width, getHeight());
+            }
         }
 
         private static void addListenerDeep(Component c, MouseAdapter m) {
@@ -845,7 +917,8 @@ public class SettingsScreen extends JPanel {
             FontMetrics fm = g2.getFontMetrics();
             int x = s(14);
             boolean hasDesc = desc != null && !desc.isEmpty();
-            int base = hasDesc ? h / 2 - s(5) : h / 2 + (fm.getAscent() - fm.getDescent()) / 2;
+            int th = stacked ? textHeight() - s(10) : h;      // the label + description sit in this band
+            int base = hasDesc ? th / 2 - s(5) : th / 2 + (fm.getAscent() - fm.getDescent()) / 2;
             g2.setColor(soon ? FAINT : INK);
             g2.drawString(label, x, base);
             if (soon) SoonTag.paint(g2, x + fm.stringWidth(label) + s(12), base - (fm.getAscent() - fm.getDescent()) / 2);
@@ -854,7 +927,7 @@ public class SettingsScreen extends JPanel {
                 g2.setColor(soon ? FAINT : MUTED);
                 FontMetrics dm = g2.getFontMetrics();
                 String d = desc;
-                int max = Math.max(s(120), w - s(40) - controlWidth());
+                int max = Math.max(s(120), w - s(40) - (stacked ? 0 : controlWidth()));
                 while (d.length() > 4 && dm.stringWidth(d) > max) d = d.substring(0, d.length() - 2);
                 if (!d.equals(desc)) d = d.trim() + "…";
                 g2.drawString(d, x, base + s(31));
@@ -863,7 +936,6 @@ public class SettingsScreen extends JPanel {
         }
 
         private int controlWidth() {
-            Component east = ((BorderLayout) getLayout()).getLayoutComponent(BorderLayout.EAST);
             return east == null ? 0 : east.getPreferredSize().width;
         }
     }
@@ -1570,7 +1642,11 @@ public class SettingsScreen extends JPanel {
                 int sizeIndex = AppSettings.interfaceScale() == 75 ? 0 : AppSettings.interfaceScale() == 125 ? 2 : 1;
                 rows.add(new Row("Interface size", null,
                         new Segmented(new String[]{"Small", "Normal", "Big"}, sizeIndex, null,
-                                i -> AppSettings.setInterfaceScale(sizes[i])), false));
+                                i -> {
+                                    AppSettings.setInterfaceScale(sizes[i]);
+                                    // after the click has finished: the screen is remade at the new size
+                                    SwingUtilities.invokeLater(() -> refreshShowing(SwingUtilities.getWindowAncestor(this)));
+                                }), false));
                 rows.add(toggleRow("Confirm before quitting", "Ask before the app closes",
                         AppSettings.confirmQuit(), v -> AppSettings.setBool("confirmQuit", v)));
                 rows.add(section("Reset"));
@@ -1583,7 +1659,7 @@ public class SettingsScreen extends JPanel {
                         new Slider(0, 100, 5, AppSettings.masterVolume(), "%",
                                 v -> { AppSettings.setInteger("masterVolume", v); SoundManager.refreshVolumes(); },
                                 v -> SoundManager.playExtraSound("tap.wav")), false));
-                rows.add(new Row("Music volume", "Background music on the menus",
+                rows.add(new Row("Music volume", "Background music, all through the app",
                         new Slider(0, 100, 5, AppSettings.musicVolume(), "%",
                                 v -> { AppSettings.setInteger("musicVolume", v); SoundManager.refreshVolumes(); }, null), false));
                 List<String> tracks = new java.util.ArrayList<>();
@@ -1593,7 +1669,7 @@ public class SettingsScreen extends JPanel {
                 for (int i = 0; i < tracks.size(); i++) {
                     trackNames[i] = i == 0 ? "All themes, in turn" : prettyTrack(tracks.get(i));
                 }
-                rows.add(new Row("Background music track", "What plays on the menus",
+                rows.add(new Row("Background music track", "What plays in the background",
                         new Dropdown(trackNames, Math.max(0, tracks.indexOf(AppSettings.musicTrack())), null, i -> {
                             AppSettings.setStr("musicTrack", tracks.get(i));
                             if (host != null) host.restartMenuMusic();
@@ -1604,6 +1680,15 @@ public class SettingsScreen extends JPanel {
                                 v -> SoundManager.playSound(SoundManager.SoundType.MOVE_SELF)), false));
                 rows.add(toggleRow("Mute music and sound effects", "Same as pressing M anywhere",
                         SoundManager.isMuted(), v -> SoundManager.setSoundEnabled(!v)));
+                List<String> devices = SoundManager.outputDevices();
+                rows.add(new Row("Output device", "Speakers, headphones or earphones",
+                        new Dropdown(devices.toArray(new String[0]), Math.max(0, devices.indexOf(SoundManager.outputDevice())), null,
+                                i -> SoundManager.setOutputDevice(devices.get(i))), false));
+                rows.add(new Row("Reconnect sound", "Just plugged in or connected earphones? Moves the sound over",
+                        new PillButton("Reconnect", PillButton.Kind.SECONDARY, () -> {
+                            SoundManager.reconnectOutput();
+                            rebuildCurrent();         // newly connected devices show up in the list
+                        }), false));
                 rows.add(new Row("Test sound", "Plays a move, a capture and a check",
                         new PillButton("Play test", PillButton.Kind.SECONDARY, SettingsScreen::playTestSounds), false));
                 break;
@@ -1614,7 +1699,7 @@ public class SettingsScreen extends JPanel {
                 String[] themes = {"Blue", "Green", "Gray", "Purple", "Red", "Orange", "Yellow", "Pink"};
                 Dropdown themeDd = new Dropdown(themes, indexOf(themes, AppSettings.boardTheme()), null, i -> {
                     AppSettings.setBoardTheme(themes[i]);
-                    preview.repaint();
+                    preview.fadeTo(boardColors(themes[i]));
                 });
                 for (int i = 0; i < themes.length; i++) {
                     Color[] sq = boardColors(themes[i]);
@@ -1843,16 +1928,17 @@ public class SettingsScreen extends JPanel {
         return n.replaceAll("([a-z])([A-Z])", "$1 $2");
     }
 
+    /** A theme's two square colours -- the board's own, never changed by light / dark mode. */
     static Color[] boardColors(String theme) {
         switch (theme) {
-            case "Green":  return new Color[]{UiTheme.c(238, 238, 210), UiTheme.c(118, 150, 86)};
-            case "Gray":   return new Color[]{UiTheme.c(216, 220, 222), UiTheme.c(120, 130, 138)};
-            case "Purple": return new Color[]{UiTheme.c(226, 216, 238), UiTheme.c(121, 86, 156)};
-            case "Red":    return new Color[]{UiTheme.c(238, 218, 214), UiTheme.c(166, 76, 72)};
-            case "Orange": return new Color[]{UiTheme.c(236, 206, 158), UiTheme.c(171, 111, 57)};
-            case "Yellow": return new Color[]{UiTheme.c(255, 246, 153), UiTheme.c(226, 170, 22)};
-            case "Pink":   return new Color[]{UiTheme.c(242, 218, 231), UiTheme.c(181, 91, 139)};
-            default:       return new Color[]{UiTheme.c(222, 230, 242), UiTheme.c(82, 121, 169)};
+            case "Green":  return new Color[]{UiTheme.raw(238, 238, 210), UiTheme.raw(118, 150, 86)};
+            case "Gray":   return new Color[]{UiTheme.raw(216, 220, 222), UiTheme.raw(120, 130, 138)};
+            case "Purple": return new Color[]{UiTheme.raw(226, 216, 238), UiTheme.raw(121, 86, 156)};
+            case "Red":    return new Color[]{UiTheme.raw(238, 218, 214), UiTheme.raw(166, 76, 72)};
+            case "Orange": return new Color[]{UiTheme.raw(236, 206, 158), UiTheme.raw(171, 111, 57)};
+            case "Yellow": return new Color[]{UiTheme.raw(255, 246, 153), UiTheme.raw(226, 170, 22)};
+            case "Pink":   return new Color[]{UiTheme.raw(242, 218, 231), UiTheme.raw(181, 91, 139)};
+            default:       return new Color[]{UiTheme.raw(222, 230, 242), UiTheme.raw(82, 121, 169)};
         }
     }
 
@@ -1873,6 +1959,26 @@ public class SettingsScreen extends JPanel {
 
     /** A few squares of board showing the current theme, coordinates, hints and last-move tint. */
     private static final class BoardPreview extends JComponent {
+        /** The two square colours on show (they blend into a new theme's over a moment). */
+        private Color[] shown = boardColors(AppSettings.boardTheme());
+        private Timer fade;
+
+        void fadeTo(Color[] target) {
+            if (fade != null) fade.stop();
+            Color[] from = shown.clone();
+            long start = System.nanoTime();
+            fade = AnimationTiming.createUiTimer(null);
+            Timer t = fade;
+            t.addActionListener(e -> {
+                float p = AnimationTiming.progress(start, 320f);
+                float k = (float) (0.5 - 0.5 * Math.cos(Math.PI * p));
+                shown = new Color[]{TimeControlPicker.mix(from[0], target[0], k), TimeControlPicker.mix(from[1], target[1], k)};
+                repaint();
+                if (p >= 1f) t.stop();
+            });
+            t.start();
+        }
+
         BoardPreview() {
             setPreferredSize(new Dimension(10, s(132)));
             setMaximumSize(new Dimension(Integer.MAX_VALUE, s(132)));
@@ -1884,7 +1990,7 @@ public class SettingsScreen extends JPanel {
             int h = getHeight() - s(12), sq = h / 2;
             int cols = Math.min(8, Math.max(4, (getWidth() - s(8)) / sq));
             int x0 = s(2), y0 = s(4);
-            Color[] c = boardColors(AppSettings.boardTheme());
+            Color[] c = shown;
             Shape clip = new RoundRectangle2D.Float(x0, y0, cols * sq, 2 * sq, s(14), s(14));
             Graphics2D b = (Graphics2D) g2.create();
             b.clip(clip);
@@ -1895,12 +2001,12 @@ public class SettingsScreen extends JPanel {
                 }
             }
             if (AppSettings.lastMoveHighlight()) {
-                b.setColor(UiTheme.c(255, 214, 64, 120));
+                b.setColor(UiTheme.raw(255, 214, 64, 120));
                 b.fillRect(x0 + 2 * sq, y0 + sq, sq, sq);
                 b.fillRect(x0 + 3 * sq, y0, sq, sq);
             }
             if (AppSettings.showLegalMoves()) {
-                b.setColor(UiTheme.c(0, 0, 0, 42));
+                b.setColor(UiTheme.raw(0, 0, 0, 42));
                 for (int col : new int[]{5, 6}) {
                     if (col < cols) b.fill(new Ellipse2D.Float(x0 + col * sq + sq * 0.36f, y0 + sq * 0.36f, sq * 0.28f, sq * 0.28f));
                 }

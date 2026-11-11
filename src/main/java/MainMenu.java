@@ -628,12 +628,9 @@ public class MainMenu extends JFrame implements ActionListener {
         // "Remember me": sign back in to the account server quietly in the
         // background (also loads the profile picture for the account button).
         AccountPopup.restoreSessionAsync();
-        // If the app was opened muted, the menu music never started --
-        // start it when sound is turned back on (only while on the menus,
-        // not during a game).
-        SoundManager.setOnUnmuted(() -> SwingUtilities.invokeLater(() -> {
-            if (activeScreen == null) ensureMenuMusicPlaying();
-        }));
+        // If the app was opened muted, the music never started -- start it when
+        // sound is turned back on (it plays everywhere, games included).
+        SoundManager.setOnUnmuted(() -> SwingUtilities.invokeLater(this::ensureMenuMusicPlaying));
         installGlobalEscapeBackKey();
         installAccountHotkey();
         installAltF4Hotkey();
@@ -1818,9 +1815,7 @@ public class MainMenu extends JFrame implements ActionListener {
             SwingUtilities.invokeLater(() -> launchGameWithOverlay(launchAction, fadeIn));
             return;
         }
-        // Every real board launch (local variant, bot, bot-vs-bot, online)
-        // funnels through here -- single stop point for the menu theme.
-        stopMenuMusic();
+        // The music keeps playing into the game (it runs through the whole app).
         beginGameLaunchOverlay(fadeIn, false, () ->
                 // Let Swing paint the covered frame before game construction occupies the EDT.
                 SwingUtilities.invokeLater(() -> {
@@ -4675,10 +4670,7 @@ public class MainMenu extends JFrame implements ActionListener {
                 break;
                 
             case "START_ANALYSIS":
-                // AnalysisGame shows its own board -- doesn't route through
-                // launchGameWithOverlay, so it needs its own stop here.
-                stopMenuMusic();
-                new AnalysisGame(this);
+                new AnalysisGame(this);       // the music keeps playing here too
                 break;
                 
             case "QUIT":

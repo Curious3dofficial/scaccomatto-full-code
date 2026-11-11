@@ -401,7 +401,12 @@ final class AnalysisTheme {
             float cx = w / 2f, cy = h / 2f;
             float plate = d * (1f - 0.08f * p);
             Color fill, rim, ink;
-            if (light) {
+            boolean darkLook = light && UiTheme.DARK;      // the light X on a dark-mode screen
+            if (darkLook) {
+                fill = blend(new Color(44, 40, 54), new Color(58, 52, 72), t);
+                rim = blend(new Color(74, 66, 90), new Color(120, 92, 160), t);
+                ink = blend(new Color(196, 190, 208), new Color(250, 248, 255), t);
+            } else if (light) {
                 fill = blend(new Color(237, 234, 229), new Color(226, 221, 212), t);
                 rim = blend(new Color(224, 217, 203), new Color(196, 186, 168), t);
                 ink = blend(new Color(92, 80, 64), new Color(28, 22, 14), t);
@@ -410,14 +415,14 @@ final class AnalysisTheme {
                 rim = blend(CARD_BORDER, hoverEdge(this), t);
                 ink = blend(TEXT_BODY, TEXT_DARK, t);
             }
-            if (!isEnabled()) { ink = light ? new Color(190, 182, 170) : TEXT_FAINT; }
+            if (!isEnabled()) { ink = darkLook ? new Color(110, 104, 122) : light ? new Color(190, 182, 170) : TEXT_FAINT; }
             g2.setColor(fill);
             g2.fill(new java.awt.geom.Ellipse2D.Float(cx - plate / 2, cy - plate / 2, plate, plate));
             g2.setColor(rim);
             g2.setStroke(new BasicStroke(1.2f));
             g2.draw(new java.awt.geom.Ellipse2D.Float(cx - plate / 2 + 0.5f, cy - plate / 2 + 0.5f, plate - 1, plate - 1));
             if (isFocusOwner()) {
-                g2.setColor(light ? new Color(196, 148, 52) : accent(this).base);
+                g2.setColor(darkLook ? new Color(163, 0, 251) : light ? new Color(196, 148, 52) : accent(this).base);
                 g2.setStroke(new BasicStroke(2f));
                 g2.draw(new java.awt.geom.Ellipse2D.Float(cx - d / 2 - 1, cy - d / 2 - 1, d + 2, d + 2));
             }

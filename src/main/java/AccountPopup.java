@@ -45,6 +45,9 @@ final class AccountPopup {
     private static final Color GREY_HOVER = UiTheme.c(228, 224, 217);
     private static final Color RED = UiTheme.c(206, 72, 62);
     private static final Color RED_EDGE = UiTheme.c(165, 50, 42);
+    /** Green and red for text (wins, losses, notes): brighter in dark mode so they stand out. */
+    private static Color winGreen() { return UiTheme.DARK ? UiTheme.raw(74, 222, 128) : GREEN_EDGE; }
+    private static Color lossRed() { return UiTheme.DARK ? UiTheme.raw(248, 113, 113) : RED_EDGE; }
 
     // Everything in the popup is drawn at S x its base size: 1.5x as asked,
     // but capped so the tallest page (Create Account, ~840px at 1x) still
@@ -752,7 +755,7 @@ final class AccountPopup {
                 API.sendPasswordReset(who);
                 return new Object[0];
             }, result -> {
-                forgot.note().setForeground(GREEN_EDGE);
+                forgot.note().setForeground(winGreen());
                 forgot.showNote("If there's an account for " + who + ", a link to pick a new password is on its way.");
             });
         });
@@ -984,7 +987,7 @@ final class AccountPopup {
                 API.resendConfirmation();
                 return new Object[0];
             }, result -> {
-                resend.note().setForeground(GREEN_EDGE);
+                resend.note().setForeground(winGreen());
                 resend.showNote("Sent again.");
             });
         });
@@ -2076,7 +2079,7 @@ final class AccountPopup {
             if (note == null) {
                 note = new JLabel(" ");
                 note.setFont(UiFonts.subtext(sf(16f)));
-                note.setForeground(RED_EDGE);
+                note.setForeground(lossRed());
                 note.setAlignmentX(Component.LEFT_ALIGNMENT);
                 note.setBorder(new EmptyBorder(s(8), s(2), 0, 0));
                 note.setVisible(false);
@@ -2866,7 +2869,7 @@ final class AccountPopup {
             g.setColor(UiTheme.inkFill(TEXT_DARK));
             g.fillRoundRect(0, 0, w, h, s(20), s(20));
             g.setFont(MainMenu.variantDisplayFont(sf(15f)));
-            g.setColor(GOLD_LIGHT);
+            g.setColor(UiTheme.DARK ? Color.BLACK : GOLD_LIGHT);     // in dark mode the gold turns purple, like the pill
             FontMetrics small = g.getFontMetrics();
             g.drawString("ELO", (w - small.stringWidth("ELO")) / 2, s(24));
             g.setFont(MainMenu.variantDisplayFont(sf(32f)));
@@ -2900,7 +2903,7 @@ final class AccountPopup {
             g.setStroke(new BasicStroke(1.3f));
             g.drawRoundRect(1, 1, w - 3, h - 3, s(20), s(20));
             g.setFont(MainMenu.variantDisplayFont(sf(38f)));
-            g.setColor(valueColor);
+            g.setColor(valueColor == GREEN_EDGE ? winGreen() : valueColor == RED_EDGE ? lossRed() : valueColor);
             FontMetrics fm = g.getFontMetrics();
             g.drawString(value, (w - fm.stringWidth(value)) / 2, h / 2 + s(8));
             g.setFont(MainMenu.variantDisplayFont(sf(15f)));
@@ -2932,7 +2935,7 @@ final class AccountPopup {
             g.drawString(left, 0, fm.getAscent());
             g.setFont(noGames ? UiFonts.subtext(sf(16f)) : MainMenu.variantDisplayFont(sf(17f)));
             FontMetrics rm = g.getFontMetrics();
-            g.setColor(noGames ? TEXT_MUTED : GREEN_EDGE);
+            g.setColor(noGames ? TEXT_MUTED : winGreen());
             g.drawString(right, w - rm.stringWidth(right), fm.getAscent());
             int barY = fm.getHeight() + s(4);
             int barH = Math.max(s(8), getHeight() - barY - s(2));

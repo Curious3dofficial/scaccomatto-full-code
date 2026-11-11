@@ -119,6 +119,7 @@ final class AppSettings {
     static void setInterfaceScale(int v) {
         NODE.putInt("interfaceScale", v <= 87 ? 75 : v >= 113 ? 125 : 100);
         AnalysisTheme.refreshScale();       // screens opened from now on use the new size
+        SettingsScreen.refreshScale();
         changed();
     }
     static boolean confirmQuit() { return bool("confirmQuit", true); }
