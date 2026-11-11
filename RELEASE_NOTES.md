@@ -7,7 +7,14 @@
 - Both players' names and ratings now show above and below the board in online games.
 - Signing up now confirms your email address first, and the account screens keep one size.
 - Clearer messages when online play is busy or your internet is down.
-- Smaller download.
+- The download is about half the size it was: the music is now stored compressed.
+- The end-of-game window now shows both players' pictures, bots included.
+- Games against a bot, and bot-vs-bot matches, now wait for you to press Start Game, just like a game with a friend.
+- Games and Analysis open faster, and the loading screen no longer freezes.
+- The music now keeps playing during games and Analysis too.
+- Settings > Audio has a new Output device option, so you can switch to headphones or earphones without restarting.
+- Back buttons and sliding screens have their own sounds, and changing the board colour blends smoothly.
+- Settings now changes size with Settings > General > Interface size.
 - Argus, the chess engine, now keeps itself up to date. New versions download quietly and take over the next time you open the game.
 
 
