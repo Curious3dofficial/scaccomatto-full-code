@@ -2145,6 +2145,12 @@ public class SettingsScreen extends JPanel {
     }
 
     private boolean ask(String title, String message, String yes, boolean danger) {
+        return BigPopup.confirm(this, danger ? BigPopup.Tone.DANGER : BigPopup.Tone.PRIMARY,
+                BigPopup.iconFor(title, danger), title, message, yes, "Cancel");
+    }
+
+    /** The old question, kept aside (BigPopup is used now). */
+    private boolean legacyAsk(String title, String message, String yes, boolean danger) {
         boolean[] answer = {false};
         JDialog d = dialog();
         JPanel card = classicCard(title, message, null);
@@ -2170,6 +2176,11 @@ public class SettingsScreen extends JPanel {
     }
 
     private void info(String title, String text) {
+        BigPopup.info(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.INFO, title, text, "Got it");
+    }
+
+    /** The old reading window, kept aside. */
+    private void legacyInfo(String title, String text) {
         JDialog d = dialog();
         JPanel card = classicCard(title, null, text);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));

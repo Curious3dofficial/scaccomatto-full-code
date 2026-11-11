@@ -1528,6 +1528,15 @@ public class AnalysisGame extends JFrame {
      * away. 0 = stay in the review (window closed), 1 = discard, 2 = keep.
      */
     private int askKeepReviewMoves() {
+        int pick = BigPopup.show(overlayHost(), BigPopup.Tone.PRIMARY, BigPopup.Icon.QUESTION, "Keep your moves?",
+                "You tried some moves during this review. Keep them? The line you're on comes over to the "
+                + "Analysis board, and stays in the review for next time.", null,
+                new String[] {"Discard", "Keep"}, 1, -1);
+        return pick < 0 ? 0 : pick + 1;      // 0 = closed, 1 = discard, 2 = keep
+    }
+
+    /** The old window, kept aside. */
+    private int legacyAskKeepReviewMoves() {
         JPanel card = new JPanel(new BorderLayout(0, 30));
         card.setBorder(BorderFactory.createEmptyBorder(48, 56, 46, 56));
         JPanel head = new JPanel();
@@ -3502,6 +3511,19 @@ public class AnalysisGame extends JFrame {
      * {@code confirmLabel} is null). Returns true if the confirm button was pressed.
      */
     private boolean windowDialog(String title, String message, String confirmLabel, AnalysisTheme.Kind kind) {
+        BigPopup.Tone tone = kind == AnalysisTheme.Kind.DANGER ? BigPopup.Tone.DANGER
+                : kind == AnalysisTheme.Kind.SUCCESS ? BigPopup.Tone.SUCCESS : BigPopup.Tone.PRIMARY;
+        if (confirmLabel == null) {
+            BigPopup.info(overlayHost(), confirmLabel == null && tone == BigPopup.Tone.PRIMARY ? BigPopup.toneFor(title) : tone,
+                    BigPopup.iconFor(title, false), title, message, "Got it");
+            return true;
+        }
+        return BigPopup.confirm(overlayHost(), tone, BigPopup.iconFor(title, tone == BigPopup.Tone.DANGER),
+                title, message, confirmLabel, "Cancel");
+    }
+
+    /** The old window popup, kept aside (BigPopup is used now). */
+    private boolean legacyWindowDialog(String title, String message, String confirmLabel, AnalysisTheme.Kind kind) {
         JPanel card = new JPanel(new BorderLayout(0, 30));
         card.setBorder(BorderFactory.createEmptyBorder(48, 56, 46, 56));
         JPanel head = new JPanel();

@@ -514,6 +514,10 @@ public class MainMenu extends JFrame implements ActionListener {
         // wanted (a slow computer), the music starts the moment it is
         OggMusic.onReady(() -> SwingUtilities.invokeLater(this::musicTrackReady));
         OggMusic.prepareAll(SoundManager.musicTracks());
+        // the popups get ready once the title screen has settled, so the first one opens instantly
+        Timer popupWarmUp = new Timer(6000, e -> BigPopup.warmUp());
+        popupWarmUp.setRepeats(false);
+        popupWarmUp.start();
         Rectangle screenBounds = GraphicsEnvironment
                 .getLocalGraphicsEnvironment()
                 .getDefaultScreenDevice()
@@ -4830,6 +4834,11 @@ public class MainMenu extends JFrame implements ActionListener {
 
     /** The same card with its own message under the name (may hold simple HTML like <b>). */
     void showUnderDevelopmentDialog(String featureName, String message) {
+        BigPopup.info(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.INFO, featureName, message, "Got it");
+    }
+
+    /** The old card, kept aside (BigPopup is used now). */
+    void legacyUnderDevelopmentDialog(String featureName, String message) {
         JDialog dialog = new JDialog(this, true);
         dialog.setUndecorated(true);
 
@@ -5848,7 +5857,16 @@ public class MainMenu extends JFrame implements ActionListener {
         }
         if (exitDialogOpen) return;
         exitDialogOpen = true;
-        new ExitDialog(this).open();     // clears exitDialogOpen when it closes
+        try {
+            if (BigPopup.confirm(this, BigPopup.Tone.DANGER, BigPopup.Icon.EXIT, "Leaving already?",
+                    "Are you sure you want to quit Scaccomatto?", "Quit", "Stay")) {
+                dispose();
+                System.exit(0);
+            }
+        } finally {
+            exitDialogOpen = false;
+        }
+        // (the old card, ExitDialog, is kept below but no longer used)
     }
 
 

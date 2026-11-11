@@ -465,6 +465,28 @@ public class BotPanel extends JPanel {
         // Now an actual window just the size of the card (not a see-through layer
         // over the whole screen), centred on the screen with rounded corners. It
         // fades and grows in, and does the same backwards when it closes.
+        // Now part of the game again: drawn inside the app window, opening and closing with
+        // the Linux Mint window effect (see BigPopup), a soft shadow under it.
+        popup.windowed = true;                       // the card fills the panel, no pop of its own
+        Dimension cardSize0 = popup.card.getPreferredSize();
+        int pw = Math.max(cardSize0.width, LockedOpponentPopup.CARD_W), ph = cardSize0.height;
+        popup.setBounds(0, 0, pw, ph);
+        popup.applyPopState(1f);
+        popup.hostedInApp = true;
+        Runnable[] closer = new Runnable[1];
+        popup.inWindowCloser = () -> {
+            if (currentLockedPopup == popup) currentLockedPopup = null;
+            if (closer[0] != null) closer[0].run();
+        };
+        if (BigPopup.showPanel(frame, popup, new Dimension(pw, ph), 40f, true, closer)) {
+            if (currentLockedPopup == popup) currentLockedPopup = null;
+            return;
+        }
+        popup.inWindowCloser = null;
+        popup.hostedInApp = false;
+        popup.applyPopState(0f);
+
+        // (no app window to draw in: the old separate window)
         JDialog dialog = new JDialog(frame, true);
         dialog.setUndecorated(true);
         popup.windowed = true;
@@ -981,7 +1003,18 @@ public class BotPanel extends JPanel {
             animTimer.start();
         }
 
+        /** Set while it's shown inside the app window: closing goes through that. */
+        Runnable inWindowCloser;
+        /** Shown inside the app window (not as its own window). */
+        boolean hostedInApp;
+
         void requestClose() {
+            if (inWindowCloser != null) {
+                Runnable r = inWindowCloser;
+                inWindowCloser = null;
+                r.run();
+                return;
+            }
             if (closing) return;
             closing = true;
             if (animTimer != null && animTimer.isRunning()) animTimer.stop();
@@ -1049,7 +1082,7 @@ public class BotPanel extends JPanel {
         // that while keeping the exact same pivot math.
         @Override
         protected void paintComponent(Graphics g) {
-            if (!windowed) return;
+            if (!windowed || hostedInApp) return;      // inside the app window the corners stay see-through
             g.setColor(UiTheme.c(Color.WHITE));
             g.fillRect(0, 0, getWidth(), getHeight());
         }

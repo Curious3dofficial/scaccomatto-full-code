@@ -109,6 +109,29 @@ final class GameDialogs {
     // ── info / confirm ───────────────────────────────────────────────────────
 
     static void info(Component anchor, String title, String message) {
+        BigPopup.info(anchor, BigPopup.toneFor(title), BigPopup.iconFor(title, false), title, message, "Got it");
+    }
+
+    static boolean confirm(Component anchor, String title, String message, String yes, String no, boolean danger) {
+        return BigPopup.confirm(anchor, danger ? BigPopup.Tone.DANGER : BigPopup.Tone.PRIMARY,
+                BigPopup.iconFor(title, danger), title, message, yes, no);
+    }
+
+    /** Take back? -- the moves that go away as struck-through chips under the message. */
+    static boolean confirmTakeback(Component anchor, java.util.List<String[]> plies) {
+        JPanel chips = new JPanel(new FlowLayout(FlowLayout.CENTER, 14, 0));
+        chips.setOpaque(false);
+        for (String[] p : plies) chips.add(new MoveChip(p[0], p[1]));
+        String msg = plies.size() > 1
+                ? "These moves are undone and it's your turn again."
+                : "This move is undone and it's your turn again.";
+        return BigPopup.show(anchor, BigPopup.Tone.PRIMARY, BigPopup.Icon.UNDO, "Take back?", msg, chips,
+                new String[] {"Keep playing", "Take back"}, 1, 0) == 1;
+    }
+
+    // ── the old popups, kept aside (everything now uses BigPopup) ────────────
+
+    static void legacyInfo(Component anchor, String title, String message) {
         // a short note (Checkmate / White wins!) gets a compact square card
         if (message == null || message.length() <= 60) { squareInfo(anchor, title, message); return; }
         JPanel card = new JPanel(new BorderLayout(0, 38));
@@ -173,7 +196,7 @@ final class GameDialogs {
         holder[0].setVisible(true);
     }
 
-    static boolean confirm(Component anchor, String title, String message, String yes, String no, boolean danger) {
+    static boolean legacyConfirm(Component anchor, String title, String message, String yes, String no, boolean danger) {
         JPanel card = new JPanel(new BorderLayout(0, 38));
         card.setBorder(BorderFactory.createEmptyBorder(58, 72, 52, 72));
         JPanel head = new JPanel();
@@ -207,7 +230,7 @@ final class GameDialogs {
      * what goes away. {@code plies} are {label, move} pairs, oldest first
      * (e.g. {"YOU", "3. Bc4"}, {"BOBBY", "3... Nxe4"}).
      */
-    static boolean confirmTakeback(Component anchor, java.util.List<String[]> plies) {
+    static boolean legacyConfirmTakeback(Component anchor, java.util.List<String[]> plies) {
         JPanel card = new JPanel(new BorderLayout(0, 34));
         card.setBorder(BorderFactory.createEmptyBorder(50, 64, 48, 64));
 

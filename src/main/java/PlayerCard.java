@@ -320,6 +320,11 @@ final class PlayerCard {
 
     /** A small yes/no popup in the same style. */
     static boolean confirm(Window owner, String title, String text, String yes) {
+        return BigPopup.confirm(owner, BigPopup.Tone.DANGER, BigPopup.iconFor(title, true), title, text, yes, "Cancel");
+    }
+
+    /** The old confirm, kept aside (BigPopup is used now). */
+    static boolean legacyConfirm(Window owner, String title, String text, String yes) {
         final boolean[] ok = {false};
         JDialog d = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
@@ -423,6 +428,11 @@ final class PlayerCard {
 
     /** A message with one OK button. */
     static void confirmOnly(Window owner, String title, String text) {
+        BigPopup.info(owner, BigPopup.toneFor(title), BigPopup.iconFor(title, false), title, text, "Got it");
+    }
+
+    /** The old note, kept aside. */
+    static void legacyConfirmOnly(Window owner, String title, String text) {
         JDialog d = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         JPanel c = roundPanel();

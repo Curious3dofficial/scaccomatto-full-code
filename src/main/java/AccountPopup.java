@@ -1931,6 +1931,11 @@ final class AccountPopup {
 
     // Small "Classic" message card with one GOT IT button.
     private static void showNotice(Window owner, String title, String text) {
+        BigPopup.info(owner, BigPopup.toneFor(title), BigPopup.iconFor(title, false), title, text, "Got it");
+    }
+
+    /** The old notice, kept aside. */
+    private static void legacyShowNotice(Window owner, String title, String text) {
         JDialog d = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         Card c = new Card();
