@@ -2852,6 +2852,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
      * and the mushroom cloud -- starting right at the moment of impact (no bomber, no
      * falling nuke).
      */
+    /** Atomic's mushroom cloud: 1.5x the area of Spell Chess's (so 1.22x as wide and tall). */
+    private static final float ATOMIC_CLOUD_SCALE = (float) Math.sqrt(1.5);
+
     private void startAtomicNukeFx(int row, int col) {
         if (!inBounds(row, col)) return;
         ensureFireballImpactFlashSprite();
@@ -2866,6 +2869,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         FireballImpactFx fx = new FireballImpactFx(row, col, System.currentTimeMillis() - impactMs,
                 durationMs, null, false);
         fx.noPlane = true;
+        fx.cloudScale = ATOMIC_CLOUD_SCALE;
         fireballImpactFx.add(fx);
         ensureExplosionFxTimerRunning();
     }
@@ -3633,7 +3637,18 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                 drawFireballLocalWhiteout(ge, cx, cy, postImpactElapsedMs);
             }
             if (postImpactElapsedMs >= FIREBALL_SMOKE_DELAY_MS) {
-                drawFireballSmokePlume(ge, fx, boardOriginX, boardOriginY, impactMs, postImpactCloudElapsedMs);
+                if (fx.cloudScale != 1f) {
+                    // a bigger (or smaller) cloud, grown from its own base on the square
+                    Graphics2D gc = (Graphics2D) ge.create();
+                    float baseY = squareY + SQUARE_SIZE * 0.58f;
+                    gc.translate(cx, baseY);
+                    gc.scale(fx.cloudScale, fx.cloudScale);
+                    gc.translate(-cx, -baseY);
+                    drawFireballSmokePlume(gc, fx, boardOriginX, boardOriginY, impactMs, postImpactCloudElapsedMs);
+                    gc.dispose();
+                } else {
+                    drawFireballSmokePlume(ge, fx, boardOriginX, boardOriginY, impactMs, postImpactCloudElapsedMs);
+                }
             }
             if (elapsedMs < impactMs && vignetteEnvelope > 0f) {
                 Graphics2D gv = (Graphics2D) ge.create();
@@ -7144,7 +7159,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                 applyAtomicExplosionAt(m[2], m[3]);
             }
 
-            boolean legal = findKing(sideWhite) != null;
+            // blowing up your own king is allowed -- you just lose (see the Atomic check in commitMove)
+            boolean legal = true;
 
             for (int r = 0; r < 8; r++) {
                 for (int c = 0; c < 8; c++) {
@@ -10121,7 +10137,7 @@ g2.dispose();
         startAtomicNukeFx(captureRow, captureCol);     // the Spell Chess nuke's blast
         SoundManager.playExtraSound("explosion.mp3");
         applyAtomicExplosionAt(captureRow, captureCol);
-        return findKing(movingPiece.isWhite()) != null;
+        return true;      // even if it took your own king with it: that's a loss, not an illegal move
     }
 
     private void applyAtomicExplosionAt(int centerRow, int centerCol) {
@@ -10432,20 +10448,22 @@ g2.dispose();
                 recordCurrentPosition();
                 setInputEnabled(false);
 
-                if (whiteKing == null && blackKing == null) {
-                    if (gameController != null) {
-                        gameController.showInGameInfoPopup("Draw", "Both kings exploded. Draw.");
-                    } else {
-                        GameDialogs.info(Board.this, "Game over", String.valueOf("Both kings exploded. Draw."));
-                    }
-                    return;
-                }
-
-                String winner = (whiteKing != null) ? "White" : "Black";
-                if (gameController != null) {
-                    gameController.showInGameInfoPopup("King Captured", winner + " wins by atomic explosion.");
+                // your own king went up in your own explosion: you lose (even if theirs went too)
+                boolean moverWhite = movingPiece.isWhite();
+                boolean moverKingGone = moverWhite ? whiteKing == null : blackKing == null;
+                String msg;
+                if (moverKingGone) {
+                    String mover = moverWhite ? "White" : "Black";
+                    String winner = moverWhite ? "Black" : "White";
+                    msg = winner + " wins: " + mover + " blew up their own king.";
                 } else {
-                    GameDialogs.info(Board.this, "Game over", String.valueOf(winner + " wins by atomic explosion."));
+                    String winner = (whiteKing != null) ? "White" : "Black";
+                    msg = winner + " wins by atomic explosion.";
+                }
+                if (gameController != null) {
+                    gameController.showInGameInfoPopup("King Captured", msg);
+                } else {
+                    GameDialogs.info(Board.this, "Game over", msg);
                 }
                 return;
             }

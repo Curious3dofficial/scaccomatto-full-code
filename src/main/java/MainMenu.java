@@ -2613,8 +2613,19 @@ public class MainMenu extends JFrame implements ActionListener {
     // (e.g. going back to the menu), they stay closed ~2 seconds in all,
     // then split apart onto wherever the action led.
     public void playCurtainTransition(Runnable action) {
+        playCurtainTransition(action, false);
+    }
+
+    /** Quick loading bar (Exit Game / Reset Board): no hold, the bar fills in a blink. */
+    private static final int QUICK_COMPLETE_MS = 160, QUICK_COMPLETE_PAUSE_MS = 60;
+
+    /**
+     * @param quick the bar fills almost at once (leaving a game, resetting the board) instead
+     *              of the usual ~1.5 s load
+     */
+    public void playCurtainTransition(Runnable action, boolean quick) {
         if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> playCurtainTransition(action));
+            SwingUtilities.invokeLater(() -> playCurtainTransition(action, quick));
             return;
         }
         beginGameLaunchOverlay(false, false, () -> SwingUtilities.invokeLater(() -> {
@@ -2629,9 +2640,13 @@ public class MainMenu extends JFrame implements ActionListener {
                 errorFailure = failure;
                 CrashLog.record(Thread.currentThread(), failure);
             }
-            // 2s closed in total = hold + bar fill + pause on full
-            finishGameLaunchOverlay(null,
-                    Math.max(0, 2000 - LOADING_COMPLETE_MS - LOADING_COMPLETE_PAUSE_MS));
+            // 2s closed in total = hold + bar fill + pause on full (quick: straight to a fast fill)
+            if (quick) {
+                finishGameLaunchOverlay(null, 0, QUICK_COMPLETE_MS, QUICK_COMPLETE_PAUSE_MS);
+            } else {
+                finishGameLaunchOverlay(null,
+                        Math.max(0, 2000 - LOADING_COMPLETE_MS - LOADING_COMPLETE_PAUSE_MS));
+            }
             Throwable failure = runtimeFailure != null ? runtimeFailure : errorFailure;
             if (failure != null) {
                 String detail = failure.getMessage();
@@ -2646,10 +2661,14 @@ public class MainMenu extends JFrame implements ActionListener {
     }
 
     private void finishGameLaunchOverlay(JComponent gameScreen, int minHoldMs) {
+        finishGameLaunchOverlay(gameScreen, minHoldMs, LOADING_COMPLETE_MS, LOADING_COMPLETE_PAUSE_MS);
+    }
+
+    private void finishGameLaunchOverlay(JComponent gameScreen, int minHoldMs, int completeMs, int completePauseMs) {
         if (gameLaunchOverlay == null || !gameLaunchOverlay.isVisible()) return;
         if (!gameLaunchCovered) {
             // Still sliding/fading in -- open once it's fully covered.
-            pendingLaunchFinish = () -> finishGameLaunchOverlay(gameScreen, minHoldMs);
+            pendingLaunchFinish = () -> finishGameLaunchOverlay(gameScreen, minHoldMs, completeMs, completePauseMs);
             return;
         }
         long elapsed = (long) AnimationTiming.elapsedMillis(gameLaunchOverlayStartedAtNanos);
@@ -2663,7 +2682,7 @@ public class MainMenu extends JFrame implements ActionListener {
         final boolean[] backdropTaken = { false };
         long completeStartedAt = System.nanoTime() + remaining * 1_000_000L;
         long curtainStartedAt = completeStartedAt
-                + (LOADING_COMPLETE_MS + LOADING_COMPLETE_PAUSE_MS) * 1_000_000L;
+                + (completeMs + completePauseMs) * 1_000_000L;
         final boolean[] completingStarted = { false };
         if (gameLaunchOverlayTimer != null) gameLaunchOverlayTimer.stop();
         gameLaunchOverlayTimer = AnimationTiming.createUiTimer(e -> {
@@ -2673,7 +2692,7 @@ public class MainMenu extends JFrame implements ActionListener {
                 completingStarted[0] = true;
                 curtains.beginComplete();
             }
-            float completeT = (now - completeStartedAt) / (LOADING_COMPLETE_MS * 1_000_000f);
+            float completeT = (now - completeStartedAt) / (completeMs * 1_000_000f);
             curtains.setCompleteT(completeT);
             float progress = (now - curtainStartedAt)
                     / (GAME_LAUNCH_CURTAIN_MS * 1_000_000f);

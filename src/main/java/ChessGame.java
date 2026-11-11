@@ -1518,7 +1518,7 @@ public class ChessGame extends JFrame {
             screenBackButton = new AnalysisTheme.IconButton(
                     AnalysisTheme.Glyph.BACK, true, "Back to menu", () -> {
                         if (showGameConfirm("Exit Game", "Exit to main menu?", "Yes", "No")) {
-                            exitToMenuWithCurtain();
+                            exitToMenuQuickly();
                         }
                     });
             screenBackButton.setIconImage(AnalysisTheme.BACK_ARROW, 0.5f);
@@ -1762,7 +1762,7 @@ public class ChessGame extends JFrame {
         if (confirm) {
             // Curtain closes over the game, the menu is switched to behind
             // it, then the curtain opens onto the menu.
-            exitToMenuWithCurtain();
+            exitToMenuQuickly();
         }
     });
     this.exitToMenuBtn = exitMenuBtn;
@@ -2043,7 +2043,7 @@ public class ChessGame extends JFrame {
                 // Esc asks before leaving, like the Exit to Menu button
                 windowPanel.putClientProperty("scaccomatto.escape",
                         (Runnable) () -> {
-                            if (showGameConfirm("Exit Game", "Exit to main menu?", "Yes", "No")) exitToMenuWithCurtain();
+                            if (showGameConfirm("Exit Game", "Exit to main menu?", "Yes", "No")) exitToMenuQuickly();
                         });
                 appHost.showEmbeddedScreen(windowPanel, this::cleanupEmbeddedGame);
                 appHost.finishGameLaunchOverlay(windowPanel);
@@ -3078,7 +3078,7 @@ public class ChessGame extends JFrame {
             if (!gameStarted) {
                 themedGameHistoryPanel.setFooterActions("Exit to Menu", () -> {
                             if (showGameConfirm("Exit Game", "Exit to main menu?", "Yes", "No")) {
-                                exitToMenuWithCurtain();
+                                exitToMenuQuickly();
                             }
                         },
                         "Start Game", this::onStartGamePressed, true, true);
@@ -3098,7 +3098,7 @@ public class ChessGame extends JFrame {
                     {"Offer Draw", (Runnable) this::onOfferDraw, AnalysisTheme.TEXT_DARK},
                     {"Resign", (Runnable) this::onLocalResignRequest, new Color(240, 112, 92)},
                     {"Exit to Menu", (Runnable) () -> {
-                        if (showGameConfirm("Exit Game", "Exit to main menu?", "Yes", "No")) exitToMenuWithCurtain();
+                        if (showGameConfirm("Exit Game", "Exit to main menu?", "Yes", "No")) exitToMenuQuickly();
                     }, AnalysisTheme.TEXT_DARK},
             };
             boolean canAct = gameStarted && !gameOver;
@@ -6613,6 +6613,18 @@ public class ChessGame extends JFrame {
     }
 
     /** New Game / Rematch: a fresh board is a fresh launch, so it gets the loading screen too. */
+    /** Exit Game (confirmed): to the menu behind a loading screen whose bar fills at once. */
+    private void exitToMenuQuickly() {
+        if (appHost != null) appHost.playCurtainTransition(this::exitToMenu, true);
+        else exitToMenu();
+    }
+
+    /** Reset Board: the new board behind a loading screen whose bar fills at once. */
+    private void restartQuickly() {
+        if (appHost != null) appHost.playCurtainTransition(this::resetBoard, true);
+        else resetBoard();
+    }
+
     private void restartWithCurtain() {
         if (appHost != null) appHost.playCurtainTransition(this::resetBoard);
         else resetBoard();
@@ -6695,7 +6707,7 @@ public class ChessGame extends JFrame {
         }
         // a game was played on this board: the new one starts behind the loading screen
         boolean played = board != null && !board.getUciMoveHistoryFromStates().isEmpty();
-        if (played) restartWithCurtain();
+        if (played) restartQuickly();
         else resetBoard();
     }
 
