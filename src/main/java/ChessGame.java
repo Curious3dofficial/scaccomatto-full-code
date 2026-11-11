@@ -758,8 +758,11 @@ public class ChessGame extends JFrame {
         // an online game's chat goes along, to be kept with the review (only if anyone spoke)
         List<ChatLog.Entry> chat = onlineMode && networkManager != null && networkManager.chatLog.hasMessages()
                 ? networkManager.chatLog.entries() : null;
+        // the players go over just as the board showed them: names, pictures and ratings
+        AnalysisGame.GamePlayers players = new AnalysisGame.GamePlayers(white, black,
+                resultAvatar(true), resultAvatar(false), shownElo(true), shownElo(false));
         Runnable go = () -> AnalysisGame.reviewFinishedGame(
-                host, moves, white, black, flipped, variant, chess960Position, startFen, chat);
+                host, moves, players, flipped, variant, chess960Position, startFen, chat);
         if (host != null) {
             host.playCurtainTransition(go);
         } else {
@@ -785,6 +788,28 @@ public class ChessGame extends JFrame {
     }
 
     /** The other player's rating, for the rating change (online games only). */
+    /** The rating shown next to a side's name in this game (a bot's Elo, an account's rating), or null. */
+    private Integer shownElo(boolean white) {
+        try {
+            if (spectateMode) {
+                ChessBot bot = white ? (spectateWhiteBot != null ? spectateWhiteBot : selectedBot)
+                        : (spectateBlackBot != null ? spectateBlackBot : selectedBot);
+                return bot == null ? null : bot.getElo();
+            }
+            if (isBotGame) return white != playerIsWhite && selectedBot != null ? selectedBot.getElo() : null;
+            if (onlineMode) {
+                if (white == localIsWhite) {
+                    AccountApiClient.Session s = AccountSession.get();
+                    return s != null && s.profile() != null ? AccountApiClient.displayRating(s.profile().rating()) : null;
+                }
+                Double r = opponentRatingForResult();
+                return r == null ? null : AccountApiClient.displayRating(r);
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
+    }
+
     private Double opponentRatingForResult() {
         captureOpponentInfo();
         return knownOpponentRating;
@@ -1148,7 +1173,7 @@ public class ChessGame extends JFrame {
                         : (spectateBlackBot != null ? spectateBlackBot : selectedBot);
                 return botPortrait(bot);
             }
-            if (isBotGame && !bottomRow) return botPortrait(selectedBot);
+            if (isBotGame) return bottomRow ? humanPicture(true) : botPortrait(selectedBot);
             if (onlineMode) {
                 // online: your own account picture, and your opponent's once it's loaded
                 return bottomRow == localIsWhite ? AccountPopup.currentAvatar() : opponentPicture();
@@ -1542,7 +1567,8 @@ public class ChessGame extends JFrame {
             LocalPlayers.removeListener(localPlayersListener);
             LocalPlayers.addListener(localPlayersListener);
             if (offlinePlayersEditable()) {
-                bottomPlayerLabel.setText(LocalPlayers.name(true));
+                // against a bot your row shows the same name the result window and Review use
+                bottomPlayerLabel.setText(isBotGame ? localHumanName() : LocalPlayers.name(true));
                 if (!isBotGame) topPlayerLabel.setText(LocalPlayers.name(false));
             }
 
@@ -3882,12 +3908,19 @@ public class ChessGame extends JFrame {
                         : (spectateBlackBot != null ? spectateBlackBot : selectedBot);
                 return botPortrait(bot);
             }
-            if (isBotGame) return white == playerIsWhite ? LocalPlayers.avatar(white) : botPortrait(selectedBot);
+            if (isBotGame) return white == playerIsWhite ? humanPicture(white) : botPortrait(selectedBot);
             if (onlineMode) return white == localIsWhite ? AccountPopup.currentAvatar() : opponentPicture();
             return offlinePlayersEditable() ? LocalPlayers.avatar(white) : null;
         } catch (RuntimeException e) {
             return null;                // no picture: the initial is drawn instead
         }
+    }
+
+    /** Your picture in a game against a bot: the one you set for this side, else your account's. */
+    private java.awt.image.BufferedImage humanPicture(boolean white) {
+        java.awt.image.BufferedImage p = LocalPlayers.avatar(white);
+        if (p != null || LocalPlayers.hasCustomName(white)) return p;
+        try { return AccountPopup.currentAvatar(); } catch (RuntimeException e) { return null; }
     }
 
     private static java.awt.image.BufferedImage botPortrait(ChessBot bot) {
@@ -6520,7 +6553,7 @@ public class ChessGame extends JFrame {
             topPlayerLabel.setText(
                 selectedBot.getName() + " (ELO " + selectedBot.getElo() + ")"
             );
-            bottomPlayerLabel.setText(LocalPlayers.name(true));
+            bottomPlayerLabel.setText(localHumanName());
         }
         return;
     }

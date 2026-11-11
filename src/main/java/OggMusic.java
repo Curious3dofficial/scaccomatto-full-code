@@ -40,8 +40,12 @@ final class OggMusic {
                 if (!name.toLowerCase().endsWith(".ogg")) continue;
                 try {
                     prepare(name);
+                    // a track that wasn't ready when the music wanted to start can start now
+                    Runnable r = onReady;
+                    if (r != null) r.run();
                 } catch (Exception | LinkageError e) {
-                    // that track just won't play
+                    // that track won't play; saved to app.log (Settings > About > Problem reports)
+                    System.err.println("Music: couldn't prepare " + name + ": " + e);
                 }
             }
         }, "music-prepare");
@@ -49,6 +53,11 @@ final class OggMusic {
         t.setPriority(Thread.MIN_PRIORITY);
         t.start();
     }
+
+    private static volatile Runnable onReady;
+
+    /** Runs (on the preparing thread) each time another track becomes playable. */
+    static void onReady(Runnable r) { onReady = r; }
 
     /** The playable .wav for a track, or null if it isn't ready (yet). */
     static File ready(String name) {
@@ -69,7 +78,13 @@ final class OggMusic {
                 if (in == null) return;
                 decode(in, tmp);
             }
-            Files.move(tmp.toPath(), wav.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(tmp.toPath(), wav.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException moveFailed) {
+                // (Windows: a virus scanner can hold the new file for a moment) copy it instead
+                Files.copy(tmp.toPath(), wav.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                tmp.delete();
+            }
         }
         READY.put(name, wav);
     }

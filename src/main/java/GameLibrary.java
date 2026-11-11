@@ -31,6 +31,7 @@ final class GameLibrary {
         List<Review.MoveResult> results = new ArrayList<>();
         String tree;                     // PGN of the review's move list, branches included
         List<ChatLog.Entry> chat = new ArrayList<>();   // an online game's chat, if anyone spoke
+        Integer whiteElo, blackElo;      // the players' ratings at the time, if they had one
 
         Review.GameSummary summary() {
             boolean blackFirst = startFen != null && !Review.whiteToMove(startFen);
@@ -73,6 +74,8 @@ final class GameLibrary {
             sb.append("flipped=").append(r.flipped).append('\n');
             sb.append("whiteAccuracy=").append(r.whiteAccuracy).append('\n');
             sb.append("blackAccuracy=").append(r.blackAccuracy).append('\n');
+            sb.append("whiteElo=").append(r.whiteElo == null ? "" : r.whiteElo).append('\n');
+            sb.append("blackElo=").append(r.blackElo == null ? "" : r.blackElo).append('\n');
             sb.append("moves=").append(String.join(" ", r.moves)).append('\n');
             sb.append("tree=").append(r.tree == null ? "" : clean(r.tree)).append('\n');
             for (String f : r.fens) sb.append("fen=").append(f).append('\n');
@@ -91,7 +94,42 @@ final class GameLibrary {
     private static String clean(String s) { return s.replace('\n', ' ').replace('\r', ' '); }
 
     static void delete(Record r) {
-        if (r != null) new File(DIR, r.id + ".review").delete();
+        if (r == null) return;
+        new File(DIR, r.id + ".review").delete();
+        picture(r, true).delete();
+        picture(r, false).delete();
+    }
+
+    // ── the players' pictures, kept next to the review ─────────────────────
+
+    private static File picture(Record r, boolean white) {
+        return new File(DIR, r.id + (white ? "-white.png" : "-black.png"));
+    }
+
+    /** Keeps the players' pictures (null = none) and ratings with the review. */
+    static void savePlayers(Record r, java.awt.image.BufferedImage whiteAvatar, java.awt.image.BufferedImage blackAvatar,
+                            Integer whiteElo, Integer blackElo) {
+        if (r == null) return;
+        r.whiteElo = whiteElo;
+        r.blackElo = blackElo;
+        for (int i = 0; i < 2; i++) {
+            java.awt.image.BufferedImage img = i == 0 ? whiteAvatar : blackAvatar;
+            File f = picture(r, i == 0);
+            try {
+                if (img == null) f.delete();
+                else { DIR.mkdirs(); javax.imageio.ImageIO.write(img, "png", f); }
+            } catch (Exception ignored) {
+            }
+        }
+        save(r);
+    }
+
+    /** A player's picture kept with the review, or null. */
+    static java.awt.image.BufferedImage avatar(Record r, boolean white) {
+        if (r == null) return null;
+        File f = picture(r, white);
+        if (!f.isFile()) return null;
+        try { return javax.imageio.ImageIO.read(f); } catch (Exception e) { return null; }
     }
 
     /** All saved reviews, newest first. */
@@ -125,6 +163,8 @@ final class GameLibrary {
                     case "flipped": r.flipped = Boolean.parseBoolean(v); break;
                     case "whiteAccuracy": r.whiteAccuracy = Double.parseDouble(v); break;
                     case "blackAccuracy": r.blackAccuracy = Double.parseDouble(v); break;
+                    case "whiteElo": r.whiteElo = v.isBlank() ? null : Integer.valueOf(v); break;
+                    case "blackElo": r.blackElo = v.isBlank() ? null : Integer.valueOf(v); break;
                     case "moves": if (!v.isBlank()) Collections.addAll(r.moves, v.trim().split(" ")); break;
                     case "tree": r.tree = v.isBlank() ? null : v; break;
                     case "fen": r.fens.add(v); break;

@@ -337,12 +337,71 @@ public class ModeSelectScreen extends JPanel {
      */
     private void startEntrance() {
         if (entranceDelayTimer != null && entranceDelayTimer.isRunning()) entranceDelayTimer.stop();
+        entranceSpeed = 1.0;
+        listenForHurry(true);
         entranceDelayTimer = new Timer(ENTRANCE_DELAY_MS, e -> {
             startWordmarkGlide();
             scheduleButtonsFadeIn();
         });
         entranceDelayTimer.setRepeats(false);
         entranceDelayTimer.start();
+    }
+
+    // ── a click during the entrance hurries it along ───────────────────────
+
+    /** How much faster the rest of the entrance plays once the player clicks. */
+    private static final double HURRY_SPEED = 8.0;
+    private volatile double entranceSpeed = 1.0;
+    private java.awt.event.AWTEventListener hurryListener;
+    private Timer buttonsFadeTimer;
+
+    /**
+     * Time for the entrance animations: real time, but running HURRY_SPEED times faster
+     * after a click -- so the six buttons pop in quickly one after another, the back
+     * button fades in to match, and everything becomes clickable as soon as it's all there.
+     */
+    private final class EntranceClock {
+        private long last = System.nanoTime();
+        private double sec;
+
+        double seconds() {
+            long now = System.nanoTime();
+            sec += (now - last) / 1_000_000_000.0 * entranceSpeed;
+            last = now;
+            return sec;
+        }
+    }
+
+    /** A click anywhere on this screen while it's still coming in: play the rest quickly. */
+    private void hurryEntrance() {
+        if (entranceSpeed > 1.0) return;
+        entranceSpeed = HURRY_SPEED;
+        // still in one of the pauses before things start moving: skip the pause
+        if (entranceDelayTimer != null && entranceDelayTimer.isRunning()) {
+            entranceDelayTimer.stop();
+            startWordmarkGlide();
+            fadeInButtons();
+        } else if (buttonsEntryDelayTimer != null && buttonsEntryDelayTimer.isRunning()) {
+            buttonsEntryDelayTimer.stop();
+            fadeInButtons();
+        }
+    }
+
+    private void listenForHurry(boolean on) {
+        Toolkit tk = Toolkit.getDefaultToolkit();
+        if (hurryListener != null) {
+            tk.removeAWTEventListener(hurryListener);
+            hurryListener = null;
+        }
+        if (!on) return;
+        hurryListener = event -> {
+            if (event.getID() != MouseEvent.MOUSE_PRESSED || !isShowing()) return;
+            Object src = event.getSource();
+            if (src instanceof Component && SwingUtilities.isDescendingFrom((Component) src, this)) {
+                hurryEntrance();
+            }
+        };
+        tk.addAWTEventListener(hurryListener, AWTEvent.MOUSE_EVENT_MASK);
     }
 
     /**
@@ -399,15 +458,17 @@ public class ModeSelectScreen extends JPanel {
      * No stagger, no pop -- just a delayed fade.
      */
     private void fadeInButtons() {
-        long startNanos = System.nanoTime();
+        if (buttonsFadeTimer != null && buttonsFadeTimer.isRunning()) buttonsFadeTimer.stop();
+        EntranceClock clock = new EntranceClock();
         double durationSec = FADE_IN_MS / 1000.0;
         double staggerSec = FADE_IN_STAGGER_MS / 1000.0;
         double popDurationSec = POP_DURATION_MS / 1000.0;
 
         Timer fadeTimer = new Timer(8, null);
+        buttonsFadeTimer = fadeTimer;
         fadeTimer.setCoalesce(true);
         fadeTimer.addActionListener(e -> {
-            double elapsed = (System.nanoTime() - startNanos) / 1_000_000_000.0;
+            double elapsed = clock.seconds();
             boolean allDone = true;
             // Per request ("don't allow clicking any of these until the
             // Analysis button is completely revealed") -- every button used
@@ -456,7 +517,10 @@ public class ModeSelectScreen extends JPanel {
             }
 
             paintButtonsNow();
-            if (allDone) ((Timer) e.getSource()).stop();
+            if (allDone) {
+                ((Timer) e.getSource()).stop();
+                listenForHurry(false);       // the entrance is over: clicks are just clicks again
+            }
         });
         fadeTimer.start();
     }
@@ -483,6 +547,8 @@ public class ModeSelectScreen extends JPanel {
         if (entranceDelayTimer != null && entranceDelayTimer.isRunning()) entranceDelayTimer.stop();
         if (buttonsEntryDelayTimer != null && buttonsEntryDelayTimer.isRunning()) buttonsEntryDelayTimer.stop();
         if (wordmarkGlideTimer != null && wordmarkGlideTimer.isRunning()) wordmarkGlideTimer.stop();
+        if (buttonsFadeTimer != null && buttonsFadeTimer.isRunning()) buttonsFadeTimer.stop();
+        listenForHurry(false);
         if (modeExitTimer != null && modeExitTimer.isRunning()) modeExitTimer.stop();
         if (modeExitHandoffTimer != null && modeExitHandoffTimer.isRunning()) modeExitHandoffTimer.stop();
         wordmarkExitOffset = 0f;
@@ -580,7 +646,7 @@ public class ModeSelectScreen extends JPanel {
     private void startWordmarkGlide() {
         if (wordmarkGlideTimer != null && wordmarkGlideTimer.isRunning()) wordmarkGlideTimer.stop();
         wordmarkShiftT = 0f;
-        long startNanos = System.nanoTime();
+        EntranceClock clock = new EntranceClock();
         double durationSec = WORDMARK_GLIDE_MS / 1000.0;
 
         // Smooth version: a fast tick, and each frame repaints only the wordmark's own
@@ -589,7 +655,7 @@ public class ModeSelectScreen extends JPanel {
         wordmarkGlideTimer = new Timer(8, null);
         wordmarkGlideTimer.setCoalesce(true);
         wordmarkGlideTimer.addActionListener(e -> {
-            double t = (System.nanoTime() - startNanos) / 1_000_000_000.0 / durationSec;
+            double t = clock.seconds() / durationSec;
             t = Math.max(0.0, Math.min(1.0, t));
             // Not clamped to [0,1] -- dampedBounce() deliberately swings
             // past both ends of that range; see its own comment.

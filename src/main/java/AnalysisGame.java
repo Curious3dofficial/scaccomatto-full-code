@@ -2107,6 +2107,19 @@ public class AnalysisGame extends JFrame {
     public static void reviewFinishedGame(MainMenu host, List<String> uciMoves, String white, String black,
                                           boolean flipped, String variant, int chess960Position,
                                           String startingFen, List<ChatLog.Entry> chat) {
+        reviewFinishedGame(host, uciMoves, new GamePlayers(white, black, null, null, null, null),
+                flipped, variant, chess960Position, startingFen, chat);
+    }
+
+    /** The finished game's two players as its board showed them: names, pictures, ratings. */
+    record GamePlayers(String white, String black,
+                       java.awt.image.BufferedImage whiteAvatar, java.awt.image.BufferedImage blackAvatar,
+                       Integer whiteElo, Integer blackElo) { }
+
+    /** As above, with the players' pictures and ratings carried over too. */
+    public static void reviewFinishedGame(MainMenu host, List<String> uciMoves, GamePlayers players,
+                                          boolean flipped, String variant, int chess960Position,
+                                          String startingFen, List<ChatLog.Entry> chat) {
         if (uciMoves == null || uciMoves.isEmpty()) return;
         List<String> moves = new ArrayList<>(uciMoves);
         AnalysisGame a = new AnalysisGame(host);
@@ -2115,14 +2128,14 @@ public class AnalysisGame extends JFrame {
             a.finishedGameChatMoves = new ArrayList<>(moves);
         }
         SwingUtilities.invokeLater(() -> a.startFinishedGameReview(
-                moves, white, black, flipped, variant, chess960Position, startingFen));
+                moves, players, flipped, variant, chess960Position, startingFen));
     }
 
     /** The chat of the finished online game being reviewed, and that game's moves (to match the review to it). */
     private List<ChatLog.Entry> finishedGameChat;
     private List<String> finishedGameChatMoves;
 
-    private void startFinishedGameReview(List<String> moves, String white, String black, boolean flipped,
+    private void startFinishedGameReview(List<String> moves, GamePlayers players, boolean flipped,
                                          String variant, int chess960Position, String startingFen) {
         if (board == null) return;
         if (editingPosition) closePositionEditor();
@@ -2140,7 +2153,8 @@ public class AnalysisGame extends JFrame {
         loadReviewedMoves(moves, flipped, moves.size());
         syncFlipState();
         finishedGamePlayers = true;
-        AnalysisPlayers.setGamePlayers(white, black);
+        AnalysisPlayers.setGamePlayers(players.white(), players.black(), players.whiteAvatar(), players.blackAvatar(),
+                players.whiteElo(), players.blackElo());
         requestAnalysis();
         updateNavState();
         runReviewWhenRevealed();
@@ -2215,7 +2229,8 @@ public class AnalysisGame extends JFrame {
         libraryRecord = r;
         if (usePlayers) {
             libraryPlayers = true;
-            AnalysisPlayers.setGamePlayers(r.white, r.black);
+            AnalysisPlayers.setGamePlayers(r.white, r.black, GameLibrary.avatar(r, true), GameLibrary.avatar(r, false),
+                    r.whiteElo, r.blackElo);
         }
         if (preReviewTree == null && tree != null) {
             preReviewTree = tree;
@@ -3710,6 +3725,9 @@ public class AnalysisGame extends JFrame {
                 libraryRecord = GameLibrary.create(summary, reviewMoves, reviewFens, deepTier,
                         AnalysisPlayers.name(true), AnalysisPlayers.name(false), lastOpeningName,
                         board.getCustomStartFen(), viewedFlipped);
+                // the pictures and ratings go into the library with the names
+                GameLibrary.savePlayers(libraryRecord, AnalysisPlayers.avatar(true), AnalysisPlayers.avatar(false),
+                        AnalysisPlayers.elo(true), AnalysisPlayers.elo(false));
                 if (finishedGameChat != null && reviewMoves.equals(finishedGameChatMoves)) {
                     libraryRecord.chat = new ArrayList<>(finishedGameChat);
                     GameLibrary.save(libraryRecord);

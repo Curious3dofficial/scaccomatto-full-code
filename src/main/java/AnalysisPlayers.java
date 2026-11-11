@@ -26,10 +26,23 @@ final class AnalysisPlayers {
     // A specific game's real players (a game just played, or one reopened from the
     // library) shown instead of the saved names until the board moves on to something else.
     private static final String[] override = new String[2];
+    /** That game's players' pictures and ratings (null = an initial / no rating shown). */
+    private static final BufferedImage[] overrideAvatar = new BufferedImage[2];
+    private static final Integer[] overrideElo = new Integer[2];
 
     static void setGamePlayers(String white, String black) {
+        setGamePlayers(white, black, null, null, null, null);
+    }
+
+    /** A game's real players: names, pictures and ratings, all carried over together. */
+    static void setGamePlayers(String white, String black, BufferedImage whiteAvatar, BufferedImage blackAvatar,
+                               Integer whiteElo, Integer blackElo) {
         override[0] = white;
         override[1] = black;
+        overrideAvatar[0] = white == null ? null : whiteAvatar;
+        overrideAvatar[1] = black == null ? null : blackAvatar;
+        overrideElo[0] = white == null ? null : whiteElo;
+        overrideElo[1] = black == null ? null : blackElo;
         for (Runnable r : new ArrayList<>(listeners)) {
             try { r.run(); } catch (Exception ignored) { }
         }
@@ -58,7 +71,7 @@ final class AnalysisPlayers {
 
     /** The side's Elo, or null when none is set (then it isn't shown). */
     static Integer elo(boolean white) {
-        if (override[idx(white)] != null) return null;
+        if (override[idx(white)] != null) return overrideElo[idx(white)];
         int v = PREFS.getInt(white ? "analysisWhiteElo" : "analysisBlackElo", -1);
         return v > 0 ? v : null;
     }
@@ -101,7 +114,7 @@ final class AnalysisPlayers {
 
     static BufferedImage avatar(boolean white) {
         int i = idx(white);
-        if (override[i] != null) return null;   // another game's player: just their initial
+        if (override[i] != null) return overrideAvatar[i];   // another game's player: their own picture (or initial)
         if (!loaded[i]) {
             loaded[i] = true;
             File f = file(white);

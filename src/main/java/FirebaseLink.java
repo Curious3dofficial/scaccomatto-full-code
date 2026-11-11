@@ -211,6 +211,12 @@ final class FirebaseLink {
     }
 
     /** The server's idea of "now", in ms. */
+    /** Whether the database's clock has been read (see {@link #serverNow()}). */
+    static boolean serverTimeKnown() {
+        serverNow();
+        return offsetKnown;
+    }
+
     static long serverNow() {
         if (!offsetKnown) {
             try {
@@ -222,7 +228,8 @@ final class FirebaseLink {
                     offsetKnown = true;
                 }
                 delete("presence/" + uid());   // only needed for that one reading
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                System.err.println("Couldn't read the server's clock: " + e.getMessage());
             }
         }
         return System.currentTimeMillis() + serverOffsetMs;

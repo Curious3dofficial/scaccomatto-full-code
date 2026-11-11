@@ -1474,18 +1474,28 @@ public class OnlinePanel extends JPanel {
             } catch (java.io.IOException e) {
                 lobbies = new ArrayList<>();
             }
-            // Players waiting on the internet count too (the local ones are listed first,
-            // so a game that's on both is joined over the faster local network).
+            // Players waiting on the internet count too.
             if (OnlineRelay.available()) {
                 try {
                     lobbies.addAll(OnlineRelay.findPublic(variant, clock.initialSeconds, clock.incrementSeconds));
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    // saved to app.log (Settings > About > Problem reports), so a search that
+                    // never finds anyone can be traced
+                    System.err.println("Quick Match search failed: " + e.getMessage());
                 }
             }
             if (!matchmaking || run != matchmakingRun) return;
+            // Signed in: a game that's on both this network and the internet is joined over
+            // the internet, because only internet games can be rated (the database checks
+            // both players' results). Guests still take the faster local connection.
+            java.util.Set<String> onlineCodes = new java.util.HashSet<>();
+            if (FirebaseLink.signedInToAccount()) {
+                for (LocalLobbyDiscovery.Lobby l : lobbies) if (OnlineRelay.isOnline(l)) onlineCodes.add(l.code());
+            }
             LocalLobbyDiscovery.Lobby best = null;
             for (LocalLobbyDiscovery.Lobby l : lobbies) {
                 if (!matchesUs(l, variant, clock)) continue;
+                if (!OnlineRelay.isOnline(l) && onlineCodes.contains(l.code())) continue;
                 if (best == null || l.code().compareTo(best.code()) < 0) best = l;
             }
             String mine = myPublicCode;

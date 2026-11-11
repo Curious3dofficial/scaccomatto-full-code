@@ -161,19 +161,42 @@ final class OnlineRelay {
     /** Quick Match games waiting with this variant and clock. */
     static List<LocalLobbyDiscovery.Lobby> findPublic(String variant, int initialSeconds, int incrementSeconds)
             throws IOException {
-        Object v = FirebaseLink.get("public",
-                FirebaseLink.equalTo("key", matchKey(variant, initialSeconds, incrementSeconds)));
+        String key = matchKey(variant, initialSeconds, incrementSeconds);
+        Object v;
+        try {
+            v = FirebaseLink.get("public", FirebaseLink.equalTo("key", key));
+        } catch (FirebaseLink.FirebaseException e) {
+            // The database can refuse the filtered search (its rules have no index on
+            // "key" yet): read the whole list instead and pick out the matching games here.
+            if (e.permissionDenied()) throw e;
+            if (!warnedNoIndex) {
+                warnedNoIndex = true;
+                System.err.println("Quick Match: filtered search refused (" + e.getMessage() + "); reading the full list instead");
+            }
+            v = FirebaseLink.get("public");
+        }
         List<LocalLobbyDiscovery.Lobby> out = new ArrayList<>();
         for (Map.Entry<String, Object> e : FirebaseLink.asMap(v).entrySet()) {
             Map<String, Object> m = FirebaseLink.asMap(e.getValue());
+            if (!key.equals(String.valueOf(m.get("key")))) continue;
             if (fresh(m)) out.add(lobby(e.getKey(), m));
         }
         return out;
     }
 
+    private static volatile boolean warnedNoIndex;
+
+    /**
+     * Still waiting? Judged by the database's own clock. If that clock can't be read, a
+     * computer whose clock is a little off would see every game as stale and never find
+     * anyone -- so then every listed game counts (a game that's really gone just fails
+     * to join, and the search carries on).
+     */
     private static boolean fresh(Map<String, Object> m) {
         long seen = FirebaseLink.num(m.get("seen"), 0);
-        return seen > 0 && FirebaseLink.serverNow() - seen < LOBBY_FRESH_MS;
+        if (seen <= 0) return false;
+        if (!FirebaseLink.serverTimeKnown()) return true;
+        return FirebaseLink.serverNow() - seen < LOBBY_FRESH_MS;
     }
 
     private static String matchKey(String variant, int init, int inc) {

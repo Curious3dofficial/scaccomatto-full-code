@@ -370,7 +370,8 @@ public class SoundManager {
             handle.baseVolume = base;
             musicHandles.add(handle);
             return handle;
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            System.err.println("Music: couldn't play " + name + ": " + e);   // saved to app.log
             return null;
         }
     }

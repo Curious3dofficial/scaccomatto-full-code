@@ -481,7 +481,10 @@ public class MainMenu extends JFrame implements ActionListener {
     protected MainMenu(boolean playStartupIntro, boolean showImmediately) {
         setTitle("Scaccomatto");
         OpeningDetector.warmUp();     // ready before the first game, so its loading screen never stalls
-        OggMusic.prepareAll(SoundManager.musicTracks());   // the themes, ready long before the music starts
+        // the themes, ready long before the music starts -- and if one isn't ready yet when it's
+        // wanted (a slow computer), the music starts the moment it is
+        OggMusic.onReady(() -> SwingUtilities.invokeLater(this::ensureMenuMusicPlaying));
+        OggMusic.prepareAll(SoundManager.musicTracks());
         Rectangle screenBounds = GraphicsEnvironment
                 .getLocalGraphicsEnvironment()
                 .getDefaultScreenDevice()
