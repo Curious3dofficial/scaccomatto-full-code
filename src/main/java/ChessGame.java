@@ -1718,6 +1718,10 @@ public class ChessGame extends JFrame {
     settingsPanel = new SettingsPanel(board);
     settingsPanel.setEngineFeaturesAvailable(isClassicVariant());
     settingsPanel.setLegalMovesAvailable(!"Fog of War".equalsIgnoreCase(gameVariant));
+    boolean duckGame = "Duck Chess".equalsIgnoreCase(gameVariant) || "Duck".equalsIgnoreCase(gameVariant);
+    boolean spellGame = gameVariant != null && gameVariant.toLowerCase().contains("spell");
+    settingsPanel.setPremovesAvailable(!duckGame && !spellGame,
+            duckGame ? "Not in Duck Chess" : "Not in Spell Chess");
     // Bot settings / Online settings, after Analysis (same switches as the main Settings)
     settingsPanel.addGameModeSettings(isBotGame && !spectateMode, onlineMode && !spectateMode, this::applyChatMode);
     settingsPanel.setOnEvalBarChanged(this::updateEvaluationBar);   // eval bar and best move hint switches

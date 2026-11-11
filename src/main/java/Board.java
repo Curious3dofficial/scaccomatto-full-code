@@ -97,6 +97,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         float releaseT;
         boolean shadowTopToBottom;
         boolean cloudOnly;
+        /** Atomic: just the blast (flash, shake, cloud) -- no bomber or falling nuke before it. */
+        boolean noPlane;
         float cloudScale = 1f;
         FireballImpactFx(int row, int col, long now, long durationMs, Piece victimPiece, boolean shadowTopToBottom) {
             this.row = row;
@@ -889,6 +891,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private int duckAnimToCol = -1;
     private long duckAnimStartMs = 0L;
     private static final long DUCK_MOVE_ANIM_MS = 180L;
+    /** Online: the opponent's duck glides a little slower, so you can see where it went. */
+    private static final long REMOTE_DUCK_MOVE_ANIM_MS = 360L;
+    private long duckAnimMs = DUCK_MOVE_ANIM_MS;
     private int whiteChecksDelivered = 0;
     private int blackChecksDelivered = 0;
     private long whiteKingRingPhaseStartMs = 0L;
@@ -1872,6 +1877,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     }
 
     private void resetDuckState() {
+        duckPopStartMs = 0L;
         duckRow = -1;
         duckCol = -1;
         pendingDuckPlacement = false;
@@ -2841,6 +2847,29 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         scheduleSpellChessNukeSound(cloudDelayMs);
     }
 
+    /**
+     * Atomic: a capture blows up with the Spell Chess nuke's blast -- the flash, the shake
+     * and the mushroom cloud -- starting right at the moment of impact (no bomber, no
+     * falling nuke).
+     */
+    private void startAtomicNukeFx(int row, int col) {
+        if (!inBounds(row, col)) return;
+        ensureFireballImpactFlashSprite();
+        ensureFireballSmokeSprite();
+        warmSmokeTintCache();
+        long durationMs = Math.max(1L,
+                Math.round(FIREBALL_OVERLAY_DURATION_MS / Math.max(0.01f, FIREBALL_TRAVEL_SPEED_SCALE)));
+        float nukeImpactT = Math.max(0.05f,
+                Math.min(FIREBALL_IMPACT_T, FIREBALL_IMPACT_T / Math.max(0.01f, FIREBALL_NUKE_TRAVEL_BOOST)));
+        long impactMs = Math.round(durationMs * nukeImpactT);
+        // started "impactMs ago", so the very first frame is the impact
+        FireballImpactFx fx = new FireballImpactFx(row, col, System.currentTimeMillis() - impactMs,
+                durationMs, null, false);
+        fx.noPlane = true;
+        fireballImpactFx.add(fx);
+        ensureExplosionFxTimerRunning();
+    }
+
     private void startBomberCloudFx(int row, int col) {
         if (!inBounds(row, col)) return;
         ensureFireballSmokeSprite();
@@ -3360,7 +3389,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             float approachReveal = Math.max(0f, Math.min(1f, missileTravelT / 0.16f));
             approachReveal = (float) (0.5 - 0.5 * Math.cos(Math.PI * approachReveal));
             float shadowAlpha = 0.70f * shadowPulse * shadowFade * tailFade * approachReveal;
-            if (shadowAlpha > 0f) {
+            if (shadowAlpha > 0f && !fx.noPlane) {
                 int shadowW = Math.max(8, Math.round(SQUARE_SIZE * (1.3f - 0.25f * shadowPlaneT)));
                 int shadowH = Math.max(6, Math.round(SQUARE_SIZE * (0.44f - 0.08f * shadowPlaneT)));
                 ge.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, shadowAlpha))));
@@ -3386,7 +3415,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             float missileY = bomberStartY + ((cy - bomberStartY) * missileTravelT);
             double missileHeading = fx.shadowTopToBottom ? Math.PI / 2.0 : -Math.PI / 2.0;
 
-            if (t <= nukeImpactT) {
+            if (t <= nukeImpactT && !fx.noPlane) {
                 Graphics2D gm = (Graphics2D) ge.create();
                 gm.translate(missileX, missileY);
                 // Sprite has nose-up source orientation, so +90deg aligns it with movement direction.
@@ -3887,7 +3916,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     }
 
     private Point getFireballBoardShakeOffset(long nowMs) {
-        if (!isSpellChessMode() || fireballImpactFx.isEmpty()) return new Point(0, 0);
+        if ((!isSpellChessMode() && !isAtomicMode()) || fireballImpactFx.isEmpty()) return new Point(0, 0);
 
         float maxAmpPx = SQUARE_SIZE * FIREBALL_SHAKE_MAX_SQUARE_FACTOR;
         double shakeX = 0.0;
@@ -3939,7 +3968,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     }
 
     private boolean hasActiveFireballBoardShake(long nowMs) {
-        if (!isSpellChessMode() || fireballImpactFx.isEmpty()) return false;
+        if ((!isSpellChessMode() && !isAtomicMode()) || fireballImpactFx.isEmpty()) return false;
         for (FireballImpactFx fx : fireballImpactFx) {
             long elapsedMs = nowMs - fx.startMs;
             if (elapsedMs < 0L || fx.durationMs <= 0L) continue;
@@ -7145,7 +7174,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private boolean isDuckPlacementAnimating() {
         if (!duckMoveAnimating) return false;
         long elapsed = System.currentTimeMillis() - duckAnimStartMs;
-        if (elapsed >= DUCK_MOVE_ANIM_MS) {
+        if (elapsed >= duckAnimMs) {
             duckMoveAnimating = false;
             return false;
         }
@@ -7205,6 +7234,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         duckPressedOnDuck = false;
 
         if (fromRow >= 0 && fromCol >= 0 && animationsEnabled) {
+            duckAnimMs = duckPlacementIsMine() ? DUCK_MOVE_ANIM_MS : REMOTE_DUCK_MOVE_ANIM_MS;
             duckMoveAnimating = true;
             duckAnimFromRow = fromRow;
             duckAnimFromCol = fromCol;
@@ -7228,7 +7258,36 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         finalizeDuckPlacementAndEndTurn(row, col);
     }
 
+    /** When the duck first came onto the board (0 = not popping). */
+    private long duckPopStartMs;
+    private static final float DUCK_POP_MS = 240f;
+
+    /** The duck's size while it pops in for the first time: 0 -> ~1.15 -> 1. Always 1 after. */
+    private float duckPopScale() {
+        if (duckPopStartMs == 0L) return 1f;
+        float t = (System.currentTimeMillis() - duckPopStartMs) / DUCK_POP_MS;
+        if (t >= 1f) { duckPopStartMs = 0L; return 1f; }
+        float c1 = 2.2f, c3 = c1 + 1, x = t - 1;               // ease-out-back: quick, with a small bounce
+        return Math.max(0f, 1 + c3 * x * x * x + c1 * x * x);
+    }
+
+    private void startDuckPop() {
+        if (!animationsEnabled) return;
+        duckPopStartMs = System.currentTimeMillis();
+        Timer t = new Timer(AnimationTiming.FRAME_DELAY_MS, null);
+        t.setCoalesce(true);
+        t.addActionListener(ev -> {
+            repaint();
+            if (duckPopStartMs == 0L || System.currentTimeMillis() - duckPopStartMs > DUCK_POP_MS + 40) {
+                ((Timer) ev.getSource()).stop();
+                repaint();
+            }
+        });
+        t.start();
+    }
+
     private void finalizeDuckPlacementAndEndTurn(int row, int col) {
+        if (duckRow < 0 || duckCol < 0) startDuckPop();     // its very first appearance
         // online: tell the other side where our duck went (theirs came to us the same way)
         if (onlineMode && gameController != null && duckPlacementIsMine()) {
             gameController.onLocalSpellPhase(DUCK_PHASE, pendingDuckPlacementSideWhite, row, col);
@@ -8553,9 +8612,12 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             if (duckImage != null) {
                 boolean animDuck = isDuckPlacementAnimating();
                 if (animDuck) {
-                    float t = (float) (System.currentTimeMillis() - duckAnimStartMs) / (float) DUCK_MOVE_ANIM_MS;
+                    float t = (float) (System.currentTimeMillis() - duckAnimStartMs) / (float) duckAnimMs;
                     t = Math.max(0f, Math.min(1f, t));
-                    float eased = (float) (1.0 - Math.pow(1.0 - t, 3));
+                    // yours: quick ease-out; the opponent's: speeds up, then slows into place
+                    float eased = duckAnimMs == DUCK_MOVE_ANIM_MS
+                            ? (float) (1.0 - Math.pow(1.0 - t, 3))
+                            : (t < 0.5f ? 4 * t * t * t : 1 - (float) Math.pow(-2 * t + 2, 3) / 2);
                     int fromDisplayRow = boardFlipped ? (7 - duckAnimFromRow) : duckAnimFromRow;
                     int fromDisplayCol = boardFlipped ? (7 - duckAnimFromCol) : duckAnimFromCol;
                     int toDisplayRow = boardFlipped ? (7 - duckAnimToRow) : duckAnimToRow;
@@ -8575,7 +8637,19 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                         gd.fillRoundRect(x + 4, y + 4, SQUARE_SIZE - 8, SQUARE_SIZE - 8, 14, 14);
                         gd.dispose();
                     }
-                    g.drawImage(duckImage, x, y, SQUARE_SIZE, SQUARE_SIZE, null);
+                    float pop = duckPopScale();
+                    if (pop < 0.999f) {
+                        // the duck's first appearance: pops up from nothing, a touch past full size, and settles
+                        Graphics2D gp = (Graphics2D) g.create();
+                        gp.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                        float sz = SQUARE_SIZE * pop;
+                        gp.translate(x + SQUARE_SIZE / 2f - sz / 2f, y + SQUARE_SIZE / 2f - sz / 2f);
+                        gp.scale(pop, pop);
+                        gp.drawImage(duckImage, 0, 0, SQUARE_SIZE, SQUARE_SIZE, null);
+                        gp.dispose();
+                    } else {
+                        g.drawImage(duckImage, x, y, SQUARE_SIZE, SQUARE_SIZE, null);
+                    }
                 }
             }
         }
@@ -10044,7 +10118,7 @@ g2.dispose();
         if (!isAtomicMode()) return true;
         if (capturedPiece == null) return true;
 
-        startAtomicExplosionFx(captureRow, captureCol);
+        startAtomicNukeFx(captureRow, captureCol);     // the Spell Chess nuke's blast
         SoundManager.playExtraSound("explosion.mp3");
         applyAtomicExplosionAt(captureRow, captureCol);
         return findKing(movingPiece.isWhite()) != null;

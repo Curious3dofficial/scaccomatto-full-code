@@ -534,20 +534,25 @@ final class Achievements {
     // ── the "Achievement unlocked" toast ─────────────────────────────────────────
 
     /**
-     * Slides a small card down from the top of whichever window is in front, holds it,
-     * and slides it away. Several unlocks at once queue up one after another.
+     * Drops a card down from the top centre of the app window, holds it, and lifts it back
+     * up. Several unlocks at once queue up one after another.
+     *
+     * <p>The card is drawn once into a picture; each frame only moves that picture, so the
+     * animation stays smooth. It lives in the window's own top layer (a separate see-through
+     * window flickered and left trails on some computers).
      */
     static final class AchievementToast extends JComponent {
         private static final java.util.ArrayDeque<Def> QUEUE = new java.util.ArrayDeque<>();
+        private static final java.util.ArrayDeque<Integer> STARS = new java.util.ArrayDeque<>();
         private static boolean showing;
 
         private final Def def;
-        private final long start = System.nanoTime();
-        private final Timer timer;
-        private static final float IN_MS = 380, HOLD_MS = 2600, OUT_MS = 320;
-
-        private static final java.util.ArrayDeque<Integer> STARS = new java.util.ArrayDeque<>();
         private int stars = 1;
+        private long start;
+        private final Timer timer;
+        private java.awt.image.BufferedImage picture;
+        private static final float IN_MS = 560, HOLD_MS = 2800, OUT_MS = 460;
+        private static final int CARD_W = 760, CARD_H = 168, TOP = 26, SHADOW = 16;
 
         static void show(Def d, int stars) {
             QUEUE.add(d);
@@ -565,56 +570,18 @@ final class Achievements {
             AchievementToast t = new AchievementToast(d);
             Integer st = STARS.poll();
             t.stars = st == null ? 1 : st;
-            t.anchor = javax.swing.SwingUtilities.getRootPane(layers);
-            if (!t.showInOwnWindow()) {
-                // no see-through windows on this system: the window's top layer instead
-                layers.add(t, Integer.valueOf(JLayeredPane.DRAG_LAYER + 100));
-                t.place(layers);
-            }
+            layers.add(t, Integer.valueOf(JLayeredPane.DRAG_LAYER + 100));
+            t.picture = t.makePicture(layers.getGraphicsConfiguration());
+            t.start = System.nanoTime();
+            t.place();
             t.timer.start();
-        }
-
-        /** The window the card floats over, and the card's own little window on top of everything. */
-        private JRootPane anchor;
-        private JWindow win;
-
-        /**
-         * Puts the card in its own see-through window above the app, so it sits on top of
-         * everything -- popups, screen transitions and all. False if the system can't do
-         * see-through windows.
-         */
-        private boolean showInOwnWindow() {
-            try {
-                if (anchor == null || !anchor.isShowing()) return false;
-                GraphicsDevice gd = anchor.getGraphicsConfiguration().getDevice();
-                if (!gd.isWindowTranslucencySupported(GraphicsDevice.WindowTranslucency.PERPIXEL_TRANSLUCENT)) return false;
-                win = new JWindow(SwingUtilities.getWindowAncestor(anchor));
-                win.setBackground(new Color(0, 0, 0, 0));
-                win.setFocusableWindowState(false);          // never steals the keyboard
-                win.setAlwaysOnTop(true);
-                win.setContentPane(this);
-                win.setSize(CARD_W, CARD_H + 14);
-                followAnchor();
-                win.setVisible(true);
-                return true;
-            } catch (Throwable e) {
-                if (win != null) win.dispose();
-                win = null;
-                return false;
-            }
-        }
-
-        /** Top-right corner of the app window, wherever it has been moved to. */
-        private void followAnchor() {
-            if (win == null || anchor == null || !anchor.isShowing()) return;
-            Point p = anchor.getLocationOnScreen();
-            win.setLocation(p.x + anchor.getWidth() - CARD_W - MARGIN, p.y + MARGIN);
         }
 
         private static JLayeredPane targetLayers() {
             Window w = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
             if (w instanceof JDialog && ((JDialog) w).getOwner() instanceof RootPaneContainer) w = ((JDialog) w).getOwner();
-            if (!(w instanceof RootPaneContainer)) {
+            if (!(w instanceof RootPaneContainer) || !w.isShowing()) {
+                w = null;
                 for (Window cand : Window.getWindows()) {
                     if (cand.isShowing() && cand instanceof JFrame) { w = cand; break; }
                 }
@@ -625,62 +592,83 @@ final class Achievements {
         private AchievementToast(Def d) {
             this.def = d;
             setOpaque(false);
-            timer = new Timer(16, e -> tick());
-        }
-
-        private static final int CARD_W = 760, CARD_H = 168, MARGIN = 28;
-
-        private void place(JLayeredPane layers) {
-            // top-right corner, with room for the slide-in from the right edge
-            setBounds(layers.getWidth() - CARD_W - MARGIN, MARGIN, CARD_W, CARD_H + 14);
+            timer = new Timer(8, e -> tick());
+            timer.setCoalesce(true);
         }
 
         private float elapsed() { return (System.nanoTime() - start) / 1_000_000f; }
 
+        /** Where the card is now: 0 = fully up out of sight, 1 = resting at the top. */
+        private float shown() {
+            float t = elapsed();
+            if (t < IN_MS) {
+                float x = t / IN_MS;
+                return 1f - (float) Math.pow(1 - x, 3);          // drops fast, eases to rest
+            }
+            if (t < IN_MS + HOLD_MS) return 1f;
+            float x = Math.min(1f, (t - IN_MS - HOLD_MS) / OUT_MS);
+            return 1f - x * x * x;                              // lifts off slowly, speeds away
+        }
+
+        /** Top centre of the window, at the height the animation has reached. */
+        private void place() {
+            Container p = getParent();
+            if (p == null) return;
+            int w = CARD_W + SHADOW * 2, h = CARD_H + SHADOW * 2;
+            int restY = TOP - SHADOW;
+            int y = Math.round(-h + (restY + h) * shown());
+            setBounds((p.getWidth() - w) / 2, y, w, h);
+        }
+
         private void tick() {
-            if (elapsed() > IN_MS + HOLD_MS + OUT_MS) {
+            Container p = getParent();
+            if (elapsed() > IN_MS + HOLD_MS + OUT_MS || p == null || !p.isShowing()) {
                 timer.stop();
-                if (win != null) {
-                    win.dispose();
-                    win = null;
-                } else {
-                    Container p = getParent();
-                    if (p != null) { p.remove(this); p.repaint(getX(), getY(), getWidth(), getHeight()); }
-                }
+                if (p != null) { p.remove(this); p.repaint(getX(), getY(), getWidth(), getHeight()); }
+                picture = null;
                 next();
                 return;
             }
-            if (win != null) {
-                followAnchor();
-            } else if (getParent() != null) {
-                // stay pinned to the corner if the window is resized meanwhile
-                setLocation(getParent().getWidth() - CARD_W - MARGIN, MARGIN);
-            }
-            repaint();
+            place();       // moving it repaints just the strip it left and the strip it entered
         }
 
         @Override
         protected void paintComponent(Graphics g) {
+            if (picture == null) return;
             Graphics2D g2 = (Graphics2D) g.create();
+            float t = elapsed();
+            float alpha = t < IN_MS ? Math.min(1f, t / (IN_MS * 0.45f))
+                    : t > IN_MS + HOLD_MS ? 1f - Math.min(1f, (t - IN_MS - HOLD_MS) / OUT_MS) : 1f;
+            if (alpha < 1f) g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, alpha)));
+            g2.drawImage(picture, 0, 0, null);
+            g2.dispose();
+        }
+
+        /** The whole card, shadow included, drawn once. */
+        private java.awt.image.BufferedImage makePicture(GraphicsConfiguration gc) {
+            int W = CARD_W + SHADOW * 2, H = CARD_H + SHADOW * 2;
+            java.awt.image.BufferedImage img = gc != null
+                    ? gc.createCompatibleImage(W, H, Transparency.TRANSLUCENT)
+                    : new java.awt.image.BufferedImage(W, H, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g2 = img.createGraphics();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            float t = elapsed();
-            float in = Math.min(1f, t / IN_MS);
-            float out = t > IN_MS + HOLD_MS ? Math.min(1f, (t - IN_MS - HOLD_MS) / OUT_MS) : 0f;
-            // slides in from the right with a little overshoot, slides back out
-            float s = 1.70158f;
-            float inEase = 1 + (s + 1) * (float) Math.pow(in - 1, 3) + s * (float) Math.pow(in - 1, 2);
-            float outEase = out * out;
-            int w = CARD_W, h = CARD_H;
-            int x = Math.round((w + MARGIN) * (1f - inEase) + (w + MARGIN) * outEase);
-            float alpha = Math.max(0f, Math.min(1f, in * 1.6f)) * (1f - outEase);
-            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
-            g2.translate(x, 0);
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            // soft shadow
+            for (int i = 0; i < 8; i++) {
+                g2.setColor(new Color(25, 18, 10, 14 - i));
+                g2.fill(new RoundRectangle2D.Float(SHADOW - i, SHADOW + 6 - i, CARD_W + i * 2, CARD_H + i * 2, 34 + i * 2, 34 + i * 2));
+            }
+            g2.translate(SHADOW, SHADOW);
+            paintCard(g2);
+            g2.dispose();
+            return img;
+        }
 
-            RoundRectangle2D card = new RoundRectangle2D.Float(2, 2, w - 6, h - 4, 34, 34);
-            g2.setColor(new Color(25, 18, 10, 45));
-            g2.fill(new RoundRectangle2D.Float(2, 9, w - 6, h - 4, 34, 34));
+        private void paintCard(Graphics2D g2) {
+            int w = CARD_W, h = CARD_H;
+            RoundRectangle2D card = new RoundRectangle2D.Float(1.5f, 1.5f, w - 3, h - 3, 34, 34);
             g2.setColor(Color.WHITE);
             g2.fill(card);
             Color tier = tierColor(stars);
@@ -692,14 +680,14 @@ final class Achievements {
             g2.draw(card);
 
             int bs = 112;
-            int bx = 28, by = 2 + (h - 4 - bs) / 2;
-            // a shine burst behind the badge
-            float pulse = (float) Math.sin(Math.min(1f, t / 800f) * Math.PI);
-            if (pulse > 0) {
-                int r = Math.round(bs / 2f + 22 * pulse);
-                g2.setColor(new Color(tier.getRed(), tier.getGreen(), tier.getBlue(), Math.round(80 * pulse)));
-                g2.fillOval(bx + bs / 2 - r, by + bs / 2 - r, r * 2, r * 2);
-            }
+            int bx = 28, by = (h - bs) / 2;
+            // a soft glow behind the badge
+            int r = bs / 2 + 14;
+            g2.setPaint(new RadialGradientPaint(new java.awt.geom.Point2D.Float(bx + bs / 2f, by + bs / 2f), r,
+                    new float[] {0.6f, 1f},
+                    new Color[] {new Color(tier.getRed(), tier.getGreen(), tier.getBlue(), 70),
+                            new Color(tier.getRed(), tier.getGreen(), tier.getBlue(), 0)}));
+            g2.fillOval(bx + bs / 2 - r, by + bs / 2 - r, r * 2, r * 2);
             paintBadge(g2, def, bx, by, bs, stars);
 
             int starSize = 44;
@@ -723,7 +711,6 @@ final class Achievements {
             FontMetrics fm = g2.getFontMetrics();
             while (desc.length() > 1 && fm.stringWidth(desc) > max) desc = desc.substring(0, desc.length() - 2) + "…";
             g2.drawString(desc, tx, by + 104);
-            g2.dispose();
         }
     }
 }

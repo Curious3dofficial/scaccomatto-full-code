@@ -168,7 +168,7 @@ public class SettingsPanel extends JPanel {
         });
         group("Moves",
                 legalMovesRow = new Row("Legal move hints", "Dots on the squares a picked-up piece can go to", showLegalMovesToggle, false),
-                new Row("Premoves", "Line up your next move while the other side thinks", premovingToggle, false),
+                premovesRow = new Row("Premoves", "Line up your next move while the other side thinks", premovingToggle, false),
                 new Row("Auto-queen", "Pawns that reach the end become queens straight away", autoQueenToggle, false));
 
         // look & feel
@@ -394,7 +394,24 @@ public class SettingsPanel extends JPanel {
      * Label (and an optional line saying what it does) on the left, the control on the
      * right. A soft wash on hover; clicking a switch's row flips the switch.
      */
-    private Row evalBarRow, bestMoveRow, legalMovesRow;
+    private Row evalBarRow, bestMoveRow, legalMovesRow, premovesRow;
+
+    /**
+     * Duck Chess (and Spell Chess): no premoves -- the duck goes down after every move, so a
+     * move lined up in advance can't work. The row is greyed out and its switch shows off;
+     * the saved choice comes back in other modes.
+     */
+    public void setPremovesAvailable(boolean available, String why) {
+        String tip = available ? null : why;
+        if (premovesRow != null) {
+            premovesRow.setDimmed(!available);
+            premovesRow.setToolTipText(tip);
+        }
+        premovingToggle.setEnabled(available);
+        premovingToggle.setShownOff(!available);
+        premovingToggle.setToolTipText(tip);
+        if (board != null) board.setPremovingEnabled(available && premovingToggle.isSelected());
+    }
     private boolean legalMovesAvailable = true;
 
     /** The board shows legal-move dots only when the switch is on and the mode allows them. */
