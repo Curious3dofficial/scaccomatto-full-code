@@ -566,7 +566,7 @@ final class AccountPopup {
             SoundManager.playExtraSound("tap.wav");
             dialog.dispose();
         });
-        // refresh, just left of the X: loads the page again from the server (friends, profile)
+        // refresh, top left -- the mirror image of the X: loads the page again from the server
         refreshButton = new AnalysisTheme.RefreshButton(true, "Refresh", null);
         refreshButton.setPreferredSize(new Dimension(s(44), s(44)));
         refreshButton.addActionListener(e -> {
@@ -577,26 +577,28 @@ final class AccountPopup {
         JPanel refreshSlot = transparent(new GridBagLayout());   // keeps its space when hidden
         refreshSlot.setPreferredSize(new Dimension(s(44), s(44)));
         refreshSlot.add(refreshButton);
-        JPanel closeWrap = transparent(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        closeWrap.add(refreshSlot);
-        closeWrap.add(Box.createHorizontalStrut(s(10)));
-        JPanel closeOnly = transparent(new GridBagLayout());
-        closeOnly.add(close);
-        closeWrap.add(closeOnly);
-        JPanel closeCol = transparent(new GridBagLayout());
-        closeCol.add(closeWrap);
-        closeWrap = closeCol;
-        row.add(closeWrap, BorderLayout.EAST);
+        JPanel closeWrap = transparent(new GridBagLayout());
+        closeWrap.add(close);
         if (devTools) {
+            // TEST / DEV take the left side: refresh sits beside the X instead
+            JPanel right = transparent(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+            right.add(refreshSlot);
+            right.add(Box.createHorizontalStrut(s(10)));
+            right.add(closeWrap);
+            JPanel rightCol = transparent(new GridBagLayout());
+            rightCol.add(right);
+            row.add(rightCol, BorderLayout.EAST);
             row.add(left, BorderLayout.WEST);
         } else {
-            // the title in the middle, with an empty space on the left as wide as the
-            // close button on the right so it sits truly centred
+            // refresh on the left, X on the right, the same size and distance from the
+            // edges -- so the title in the middle sits truly centred
+            row.add(closeWrap, BorderLayout.EAST);
             title.setHorizontalAlignment(SwingConstants.CENTER);
             row.add(title, BorderLayout.CENTER);
-            JPanel balance = transparent(new BorderLayout());
-            balance.setPreferredSize(closeWrap.getPreferredSize());
-            row.add(balance, BorderLayout.WEST);
+            JPanel leftWrap = transparent(new GridBagLayout());
+            leftWrap.setPreferredSize(closeWrap.getPreferredSize());
+            leftWrap.add(refreshSlot);
+            row.add(leftWrap, BorderLayout.WEST);
         }
         return row;
     }
@@ -1327,7 +1329,7 @@ final class AccountPopup {
     private JComponent friendsTabs(boolean friendsSelected) {
         JPanel row = transparent(new GridLayout(1, 2, s(12), 0));
         Chip friends = new Chip("FRIENDS", friendsSelected);
-        Chip banned = new Chip("BANNED", !friendsSelected);
+        Chip banned = new Chip("BLOCKED", !friendsSelected);
         friends.addActionListener(e -> {
             if (!friendsSelected) { SoundManager.playExtraSound("tap.wav"); setPage(friendsPage(null)); }
         });
@@ -1348,14 +1350,44 @@ final class AccountPopup {
         p.putClientProperty("bannedPage", Boolean.TRUE);
         p.add(friendsTabs(false));
         p.add(Box.createVerticalStrut(s(16)));
+
+        // block by username, same box as Friends' Add
+        JPanel addRow = transparent(new BorderLayout(s(12), 0));
+        addRow.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
+        Field who = new Field("username", false, "@");
+        addRow.add(who, BorderLayout.CENTER);
+        PlayerCard.CardButton block = new PlayerCard.CardButton("Block", true);
+        block.setPreferredSize(new Dimension(s(130), s(56)));
+        addRow.add(block, BorderLayout.EAST);
+        p.add(full(addRow, s(56)));
         JLabel note = new JLabel(message == null
                 ? "Players you've blocked can't chat with you or be matched with you."
                 : message);
         note.setFont(UiFonts.subtext(sf(15f)));
         note.setForeground(TEXT_MUTED);
         note.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(Box.createVerticalStrut(s(6)));
         p.add(note);
-        p.add(Box.createVerticalStrut(s(14)));
+        p.add(Box.createVerticalStrut(s(12)));
+        Runnable submit = () -> {
+            String name = who.getText().trim();
+            if (name.isEmpty()) return;
+            block.setEnabled(false);
+            new SwingWorker<String, Void>() {
+                @Override protected String doInBackground() {
+                    try { return Friends.blockByUsername(name); }
+                    catch (Exception ex) { return FirebaseLink.friendlyError(ex); }
+                }
+                @Override protected void done() {
+                    String msg;
+                    try { msg = get(); } catch (Exception ex) { msg = "Something went wrong."; }
+                    if (page != p) return;
+                    setPage(bannedPage(msg));
+                }
+            }.execute();
+        };
+        block.addActionListener(e -> { SoundManager.playExtraSound("tap.wav"); submit.run(); });
+        who.addActionListener(e -> submit.run());
 
         JPanel list = transparent();
         list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
@@ -1370,7 +1402,7 @@ final class AccountPopup {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.getVerticalScrollBar().setUnitIncrement(s(24));
-        p.add(full(scroll, s(380)));
+        p.add(full(scroll, s(318)));
         p.add(Box.createVerticalStrut(s(14)));
 
         new SwingWorker<java.util.Map<String, String>, Void>() {
@@ -1385,8 +1417,8 @@ final class AccountPopup {
                 try { blocked = get(); } catch (Exception ex) { blocked = java.util.Collections.emptyMap(); }
                 list.add(listHeading(blocked.isEmpty() ? "NOBODY BLOCKED" : "BLOCKED PLAYERS"));
                 if (blocked.isEmpty()) {
-                    JLabel hint = new JLabel("<html><div style='width:" + s(470) + "px'>To block someone, open their "
-                            + "player card during or after an online game.</div></html>");
+                    JLabel hint = new JLabel("<html><div style='width:" + s(470) + "px'>Block someone by their username above, "
+                            + "or from their player card during or after an online game.</div></html>");
                     hint.setFont(UiFonts.subtext(sf(16f)));
                     hint.setForeground(TEXT_MUTED);
                     hint.setAlignmentX(Component.LEFT_ALIGNMENT);

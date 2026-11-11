@@ -60,6 +60,26 @@ final class Friends {
         return add((String) who, "@" + u);
     }
 
+    /** Blocks a player by their @username. Returns the line to show under the box. */
+    static String blockByUsername(String username) throws IOException {
+        String u = username == null ? "" : username.trim().replaceFirst("^@", "").toLowerCase(Locale.ROOT);
+        if (!u.matches("[a-z0-9_]{3,20}")) return "Type their username, like @gary_99.";
+        String me = me();
+        Object who = FirebaseLink.get("usernames/" + u);
+        if (!(who instanceof String)) return "There's no player called @" + u + ".";
+        String uid = (String) who;
+        if (uid.equals(me)) return "That's you!";
+        if (Moderation.isBlocked(uid)) return "@" + u + " is already blocked.";
+        String name = "@" + u;
+        try {
+            Object n = FirebaseLink.get("players/" + uid + "/name");
+            if (n instanceof String && !((String) n).isBlank()) name = (String) n;
+        } catch (Exception ignored) {
+        }
+        Moderation.setBlocked(uid, name, true);
+        return name + " is blocked.";
+    }
+
     /** Friend request (or accept) by account id. */
     static String add(String uid, String shownName) throws IOException {
         String me = me();

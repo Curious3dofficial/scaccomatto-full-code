@@ -1070,7 +1070,8 @@ public class ChessGame extends JFrame {
             openResultWindow = null;
             switch (choice) {
                 case REVIEW: reviewFinishedGame(); break;
-                case NEW_GAME: restartWithCurtain(); break;
+                // after you resigned, the loading screen's bar fills at once
+                case NEW_GAME: if (resignedHere) restartQuickly(); else restartWithCurtain(); break;
                 case REMATCH: restartWithCurtain(); break;
                 case MENU: exitToMenuWithCurtain(); break;
                 default: break;
@@ -3600,6 +3601,7 @@ public class ChessGame extends JFrame {
 
         // Called when local player resigns via UI
         public void onLocalResign() {
+            resignedHere = true;
             setGameOverState();
             botMoveInProgress = false;
             if (networkManager != null) {
@@ -6711,7 +6713,11 @@ public class ChessGame extends JFrame {
         else resetBoard();
     }
 
+    /** This game ended with you resigning: the loading screens after it are quick. */
+    private boolean resignedHere;
+
     public void resetBoard() {
+        resignedHere = false;
         botGeneration++;
         stopTimer();
         SoundManager.stopAllSounds();
