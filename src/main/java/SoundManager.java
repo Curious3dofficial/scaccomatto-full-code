@@ -218,6 +218,14 @@ public class SoundManager {
     /** A screen lifting back up out of view. */
     static final String SCROLL_UP = "scroll_up.wav";
 
+    private static volatile long lastSlideNanos = Long.MIN_VALUE;
+
+    /** A screen slides down into view (true) or lifts back up (false). */
+    static void playScreenSlide(boolean down) {
+        lastSlideNanos = System.nanoTime();
+        playExtraSound(down ? SCROLL_DOWN : SCROLL_UP);
+    }
+
     /** Play a sound from src/assets/extras (or /assets/extras on classpath). */
     public static SoundHandle playExtraSound(String fileName) {
         if (!soundEnabled || fileName == null || fileName.trim().isEmpty()) return null;
@@ -226,8 +234,11 @@ public class SoundManager {
             // The button click waits a moment: if that same click opens a popup, the popup
             // plays its own sound instead and the click is dropped (see PopupSound).
             java.util.Set<java.awt.Window> before = PopupSound.showingDialogs();
+            long pressedAt = System.nanoTime();
             javax.swing.SwingUtilities.invokeLater(() -> {
                 if (PopupSound.newDialogSince(before)) return;
+                // a back press that makes a screen slide away: only the slide's whoosh plays
+                if (BACK.equals(name) && lastSlideNanos - pressedAt >= 0) return;
                 File f = resolveFileFromExtra(name);
                 if (f != null && soundEnabled) playResolvedFile(name, f);
             });

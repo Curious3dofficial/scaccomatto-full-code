@@ -3123,10 +3123,7 @@ public class MainMenu extends JFrame implements ActionListener {
         // Esc lifts it back off, like its back button does -- unless it has its own Esc
         if (screen.getClientProperty(ESCAPE_BACK) == null
                 && screen.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).get(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0)) == null) {
-            screen.putClientProperty(ESCAPE_BACK, (Runnable) () -> {
-                SoundManager.playExtraSound("tap.wav");
-                returnToMenuRising();
-            });
+            screen.putClientProperty(ESCAPE_BACK, (Runnable) this::returnToMenuRising);   // the slide's whoosh is its sound
         }
         java.awt.image.BufferedImage under = snapshot(mainPanel);
         showEmbeddedScreen(screen, null);
@@ -3182,7 +3179,7 @@ public class MainMenu extends JFrame implements ActionListener {
      */
     private void runScreenSlide(java.awt.image.BufferedImage under, java.awt.image.BufferedImage over,
                                 boolean dropping, Runnable done) {
-        SoundManager.playExtraSound(dropping ? SoundManager.SCROLL_DOWN : SoundManager.SCROLL_UP);
+        SoundManager.playScreenSlide(dropping);
         JLayeredPane layers = getLayeredPane();
         Rectangle area = SwingUtilities.convertRectangle(mainPanel.getParent(), mainPanel.getBounds(), layers);
         final float[] pos = {dropping ? 0f : 1f};     // 1 = fully covering
