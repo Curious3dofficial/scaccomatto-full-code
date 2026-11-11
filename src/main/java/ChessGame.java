@@ -3616,7 +3616,8 @@ public class ChessGame extends JFrame {
                         && !showGameConfirm("Offer Draw", "Offer your opponent a draw?", "Offer", "Cancel")) return;
                 networkManager.sendOfferDraw();
                 chatEvent("You offered a draw");
-                showGamePopup("Offer Draw", "Draw offer sent to opponent.");
+                GameToast.show(dialogAnchor(), GameToast.Icon.DRAW_OFFER, "DRAW OFFERED",
+                        "Waiting for " + ("Opponent".equals(opponentChatName()) ? "your opponent" : opponentChatName()) + " to answer", new Color(146, 104, 230));
             } else {
                 boolean confirm = showGameConfirm("Offer Draw", "Offer draw to local opponent?", "Offer", "Cancel");
                 if (confirm) {
@@ -3659,7 +3660,8 @@ public class ChessGame extends JFrame {
 
         public void onRemoteDrawDeclined() {
             chatEvent(opponentChatName() + " declined the draw");
-            showGamePopup("Draw Declined", "Opponent declined the draw. The game continues.");
+            GameToast.show(dialogAnchor(), GameToast.Icon.DECLINED, "DRAW DECLINED",
+                    ("Opponent".equals(opponentChatName()) ? "Your opponent" : opponentChatName()) + " wants to keep playing", new Color(214, 84, 96));
         }
 
     private class SpellDeckPanel extends JPanel {
