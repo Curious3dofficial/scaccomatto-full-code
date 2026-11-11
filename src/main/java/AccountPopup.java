@@ -1171,7 +1171,7 @@ final class AccountPopup {
         // add by username
         JPanel addRow = transparent(new BorderLayout(s(12), 0));
         addRow.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
-        Field who = new Field("@username", false);
+        Field who = new Field("username", false, "@");      // the @ stays put while you type
         addRow.add(who, BorderLayout.CENTER);
         PlayerCard.CardButton add = new PlayerCard.CardButton("Add", true);
         add.setPreferredSize(new Dimension(s(130), s(56)));
@@ -1238,7 +1238,7 @@ final class AccountPopup {
                             PlayerCard.CardButton no = new PlayerCard.CardButton("Decline", false);
                             yes.addActionListener(e -> friendAction(() -> Friends.accept(q.uid), q.name + " is now your friend."));
                             no.addActionListener(e -> friendAction(() -> Friends.decline(q.uid), null));
-                            list.add(friendRow(q.name, "@" + q.username, null, yes, no));
+                            list.add(friendRow(q.uid, q.name, "@" + q.username, null, false, yes, no));
                         }
                         list.add(Box.createVerticalStrut(s(10)));
                     }
@@ -1273,8 +1273,8 @@ final class AccountPopup {
                             }
                         });
                         String rating = f.rating == null ? "" : " · " + AccountApiClient.displayRating(f.rating);
-                        list.add(friendRow(f.name, "@" + f.username + rating + " · " + status,
-                                f.online ? (f.playing ? GOLD : GREEN) : null, ch, rm));
+                        list.add(friendRow(f.uid, f.name, "@" + f.username + rating + " · " + status,
+                                f.online ? (f.playing ? GOLD : GREEN) : null, true, ch, rm));
                     }
                 } catch (Exception ex) {
                     loading.setText("Couldn't load your friends. " + FirebaseLink.friendlyError(ex));
@@ -1322,21 +1322,91 @@ final class AccountPopup {
     }
 
     /** One line: an online dot, name, details, and two small buttons. */
-    private static JComponent friendRow(String name, String details, Color dot, JButton a, JButton b) {
+    /** {@code src} scaled to a {@code size} px circle with soft (anti-aliased) edges. */
+    private static java.awt.image.BufferedImage roundPicture(java.awt.image.BufferedImage src, int size) {
+        size = Math.max(1, size);
+        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setColor(Color.WHITE);
+        g.fill(new Ellipse2D.Float(0, 0, size, size));          // the mask
+        g.setComposite(AlphaComposite.SrcIn);
+        // centre-crop to a square so the face isn't squashed
+        int side = Math.min(src.getWidth(), src.getHeight());
+        int sx = (src.getWidth() - side) / 2, sy = (src.getHeight() - side) / 2;
+        g.drawImage(src, 0, 0, size, size, sx, sy, sx + side, sy + side, null);
+        g.dispose();
+        return out;
+    }
+
+    /** Friends' pictures, fetched once each while the popup is open (null = they have none). */
+    private static final java.util.Map<String, java.util.Optional<java.awt.image.BufferedImage>> FRIEND_PICS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * One person in the friends list: their round picture (their initial until it loads, or
+     * if they have none) with, for friends, a status dot on its bottom-right -- green online,
+     * gold playing, grey offline -- like a chat app.
+     */
+    private static JComponent friendRow(String uid, String name, String details, Color dot, boolean showStatus,
+                                        JButton a, JButton b) {
         JPanel row = new RoundPanel(UiTheme.c(255, 253, 248), CARD_BORDER, s(18));
         row.setLayout(new BorderLayout(s(12), 0));
         row.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
         row.setBorder(new EmptyBorder(s(8), s(14), s(8), s(10)));
+        Color rowBg = UiTheme.c(255, 253, 248);
         JComponent d = new JComponent() {
             @Override protected void paintComponent(Graphics g0) {
                 Graphics2D g = quality(g0);
-                int sz = s(12);
-                g.setColor(dot != null ? dot : UiTheme.c(200, 192, 178));
-                g.fill(new Ellipse2D.Float((getWidth() - sz) / 2f, (getHeight() - sz) / 2f, sz, sz));
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                int size = Math.min(getWidth(), getHeight()) - s(2);
+                int x = (getWidth() - size) / 2, y = (getHeight() - size) / 2;
+                Ellipse2D.Float circle = new Ellipse2D.Float(x, y, size, size);
+                java.util.Optional<java.awt.image.BufferedImage> pic = uid == null ? java.util.Optional.empty() : FRIEND_PICS.get(uid);
+                if (pic != null && pic.isPresent()) {
+                    // drawn into a smooth round picture first (clipping straight onto the
+                    // screen leaves a jagged edge)
+                    g.drawImage(roundPicture(pic.get(), size), x, y, null);
+                } else {
+                    g.setColor(UiTheme.c(234, 226, 210));
+                    g.fill(circle);
+                    String letter = name == null || name.isBlank() ? "?" : name.trim().substring(0, 1).toUpperCase();
+                    g.setFont(MainMenu.variantDisplayFont(size * 0.5f));
+                    g.setColor(TEXT_DARK);
+                    FontMetrics fm = g.getFontMetrics();
+                    g.drawString(letter, x + (size - fm.stringWidth(letter)) / 2f,
+                            y + size / 2f + (fm.getAscent() - fm.getDescent()) / 2f);
+                }
+                if (showStatus) {
+                    int sz = Math.round(size * 0.34f);
+                    float dx = x + size - sz * 0.85f, dy = y + size - sz * 0.85f;
+                    g.setColor(rowBg);                       // a ring of the row's colour around the dot
+                    g.fill(new Ellipse2D.Float(dx - s(3), dy - s(3), sz + s(6), sz + s(6)));
+                    g.setColor(dot != null ? dot : UiTheme.c(176, 168, 154));
+                    g.fill(new Ellipse2D.Float(dx, dy, sz, sz));
+                }
                 g.dispose();
             }
         };
-        d.setPreferredSize(new Dimension(s(16), s(16)));
+        d.setPreferredSize(new Dimension(s(44), s(44)));
+        if (uid != null && !FRIEND_PICS.containsKey(uid)) {
+            new SwingWorker<java.awt.image.BufferedImage, Void>() {
+                @Override protected java.awt.image.BufferedImage doInBackground() {
+                    try {
+                        byte[] bytes = AccountApiClient.avatarOf(uid);
+                        return bytes == null ? null : javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }
+                @Override protected void done() {
+                    try { FRIEND_PICS.put(uid, java.util.Optional.ofNullable(get())); } catch (Exception ignored) { }
+                    d.repaint();
+                }
+            }.execute();
+        }
         row.add(d, BorderLayout.WEST);
         JLabel text = new JLabel("<html><b>" + escape(name) + "</b><br><span style='color:#827562'>"
                 + escape(details) + "</span></html>");
@@ -2291,8 +2361,15 @@ final class AccountPopup {
         private boolean revealed;
         private boolean eyeHover;
         private static final int EYE_ZONE = s(56);
+        /** Fixed text before what's typed (the "@" of a username), or null. */
+        private final String prefix;
 
         Field(String placeholder, boolean secret) {
+            this(placeholder, secret, null);
+        }
+
+        Field(String placeholder, boolean secret, String prefix) {
+            this.prefix = prefix;
             this.placeholder = placeholder;
             this.secret = secret;
             this.hiddenEcho = getEchoChar();
@@ -2301,7 +2378,21 @@ final class AccountPopup {
             setForeground(TEXT_DARK);
             setCaretColor(GOLD);
             setOpaque(false);
-            setBorder(new EmptyBorder(s(8), s(20), s(8), secret ? EYE_ZONE + s(4) : s(20)));
+            int prefixW = prefix == null ? 0 : getFontMetrics(getFont()).stringWidth(prefix);
+            setBorder(new EmptyBorder(s(8), s(20) + prefixW, s(8), secret ? EYE_ZONE + s(4) : s(20)));
+            if (prefix != null) {
+                // the prefix is drawn, not typed: a typed or pasted copy of it is dropped
+                ((javax.swing.text.AbstractDocument) getDocument()).setDocumentFilter(new javax.swing.text.DocumentFilter() {
+                    @Override public void insertString(FilterBypass fb, int off, String s, javax.swing.text.AttributeSet a)
+                            throws javax.swing.text.BadLocationException {
+                        super.insertString(fb, off, s == null ? null : s.replace(prefix, ""), a);
+                    }
+                    @Override public void replace(FilterBypass fb, int off, int len, String s, javax.swing.text.AttributeSet a)
+                            throws javax.swing.text.BadLocationException {
+                        super.replace(fb, off, len, s == null ? null : s.replace(prefix, ""), a);
+                    }
+                });
+            }
             addFocusListener(new FocusAdapter() {
                 @Override public void focusGained(FocusEvent e) { repaint(); }
                 @Override public void focusLost(FocusEvent e) { repaint(); }
@@ -2363,6 +2454,15 @@ final class AccountPopup {
             g.dispose();
             super.paintComponent(g0);
             if (secret) paintEye(g0);
+            if (prefix != null) {
+                Graphics2D gp = quality(g0);
+                gp.setFont(getFont());
+                gp.setColor(getPassword().length == 0 ? UiTheme.c(170, 160, 145) : TEXT_DARK);
+                FontMetrics fm = gp.getFontMetrics();
+                gp.drawString(prefix, getInsets().left - fm.stringWidth(prefix),
+                        (getHeight() + fm.getAscent() - fm.getDescent()) / 2);
+                gp.dispose();
+            }
             if (getPassword().length == 0) {
                 Graphics2D gp = quality(g0);
                 gp.setFont(getFont());

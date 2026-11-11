@@ -264,6 +264,17 @@ public class MainMenu extends JFrame implements ActionListener {
     // "All themes": which one plays next (Theme 1, 2, 3, 4, then round again)
     private static int nextThemeIndex = 0;
 
+    /** A music track just became playable: start the music, but never mid-glide on the title. */
+    private void musicTrackReady() {
+        if (MainMenuScreen.introMoving) {
+            Timer later = new Timer(300, e -> musicTrackReady());
+            later.setRepeats(false);
+            later.start();
+            return;
+        }
+        ensureMenuMusicPlaying();
+    }
+
     private void ensureMenuMusicPlaying() {
         if (menuMusicHandle != null || coldLaunchMusicDelayActive) return;
         if (AppSettings.MUSIC_ROTATE.equals(AppSettings.musicTrack())) {
@@ -483,7 +494,7 @@ public class MainMenu extends JFrame implements ActionListener {
         OpeningDetector.warmUp();     // ready before the first game, so its loading screen never stalls
         // the themes, ready long before the music starts -- and if one isn't ready yet when it's
         // wanted (a slow computer), the music starts the moment it is
-        OggMusic.onReady(() -> SwingUtilities.invokeLater(this::ensureMenuMusicPlaying));
+        OggMusic.onReady(() -> SwingUtilities.invokeLater(this::musicTrackReady));
         OggMusic.prepareAll(SoundManager.musicTracks());
         Rectangle screenBounds = GraphicsEnvironment
                 .getLocalGraphicsEnvironment()
@@ -628,6 +639,14 @@ public class MainMenu extends JFrame implements ActionListener {
         });
         coldLaunchMusicTimer.setRepeats(false);
         coldLaunchMusicTimer.start();
+        // ...or sooner: at the end of the title's splash hold, while the wordmark is still
+        // standing still, so loading the track can't make its glide to the top stutter
+        MainMenuScreen.beforeIntroMove = () -> {
+            if (!coldLaunchMusicDelayActive) return;
+            coldLaunchMusicTimer.stop();
+            coldLaunchMusicDelayActive = false;
+            ensureMenuMusicPlaying();
+        };
         // "Remember me": sign back in to the account server quietly in the
         // background (also loads the profile picture for the account button).
         AccountPopup.restoreSessionAsync();
@@ -1642,13 +1661,12 @@ public class MainMenu extends JFrame implements ActionListener {
             }
 
             if (cvEntranceDelayTimer != null && cvEntranceDelayTimer.isRunning()) cvEntranceDelayTimer.stop();
-            cvEntranceDelayTimer = new Timer(CV_ENTRANCE_DELAY_MS, e -> {
+            Entrance.begin();   // a click from here on plays the rest of the entrance 3x as fast
+            cvEntranceDelayTimer = Entrance.after(CV_ENTRANCE_DELAY_MS, e -> {
                 playChessVariantsWordmarkEntrance();
                 playChessVariantsCardsEntrance(); // the 8 variant cards' own left/right slide-in -- see its own comment
                 playChessVariantsSideButtonsEntrance(); // the back/play circles' own fade-in -- see its own comment
             });
-            cvEntranceDelayTimer.setRepeats(false);
-            cvEntranceDelayTimer.start();
         }
     }
 
@@ -2016,9 +2034,9 @@ public class MainMenu extends JFrame implements ActionListener {
         if (cvWordmarkFadeTimer != null && cvWordmarkFadeTimer.isRunning()) cvWordmarkFadeTimer.stop();
         chessVariantsWordmark.setAlpha(1f);
         if (cvWordmarkEntranceTimer != null && cvWordmarkEntranceTimer.isRunning()) cvWordmarkEntranceTimer.stop();
-        long startedAt = System.nanoTime();
+        long startedAt = Entrance.nanos();
         cvWordmarkEntranceTimer = AnimationTiming.createUiTimer(e -> {
-            float t = AnimationTiming.progress(startedAt, CV_WORDMARK_GLIDE_MS);
+            float t = Entrance.progress(startedAt, CV_WORDMARK_GLIDE_MS);
             chessVariantsWordmark.setShiftT((float) dampedBounce(t));
             if (t >= 1f) {
                 chessVariantsWordmark.setShiftT(1f);
@@ -2214,9 +2232,9 @@ public class MainMenu extends JFrame implements ActionListener {
         final int[] travel = cvCardsTravel;
         for (JButton card : localVariantButtons) SmoothFade.freeze(card);   // slide as pictures
 
-        long startedAt = System.nanoTime();
+        long startedAt = Entrance.nanos();
         cvCardsEntranceTimer = AnimationTiming.createUiTimer(e -> {
-            float elapsed = AnimationTiming.elapsedMillis(startedAt);
+            float elapsed = Entrance.elapsedMillis(startedAt);
             boolean allDone = true;
             for (int i = 0; i < n; i++) {
                 int row = i / 2;
@@ -2293,9 +2311,9 @@ public class MainMenu extends JFrame implements ActionListener {
         if (cvSideButtonsEntranceTimer != null && cvSideButtonsEntranceTimer.isRunning()) cvSideButtonsEntranceTimer.stop();
         cvBackButton.putClientProperty("fadeAlpha", 0f);
         cvPlayButton.putClientProperty("fadeAlpha", 0f);
-        long startedAt = System.nanoTime();
+        long startedAt = Entrance.nanos();
         cvSideButtonsEntranceTimer = AnimationTiming.createUiTimer(e -> {
-            float t = AnimationTiming.progress(startedAt, CV_SIDE_BUTTONS_FADE_MS);
+            float t = Entrance.progress(startedAt, CV_SIDE_BUTTONS_FADE_MS);
             float eased = 1f - (float) Math.pow(1f - t, 3); // ease-out-cubic, same shape as the cards' own entrance
             cvBackButton.putClientProperty("fadeAlpha", eased);
             cvPlayButton.putClientProperty("fadeAlpha", eased);
@@ -4189,7 +4207,7 @@ public class MainMenu extends JFrame implements ActionListener {
 
     /** True once every bot card of the entrance has finished sliding in. */
     private static boolean cardsAllLanded(int cardCount, long startedAt) {
-        float last = AnimationTiming.elapsedMillis(startedAt) - Math.max(0, cardCount - 1) * BOT_SELECT_CARDS_STAGGER_MS;
+        float last = Entrance.elapsedMillis(startedAt) - Math.max(0, cardCount - 1) * BOT_SELECT_CARDS_STAGGER_MS;
         return last >= BOT_SELECT_CARDS_SLIDE_MS;
     }
 
@@ -4201,6 +4219,7 @@ public class MainMenu extends JFrame implements ActionListener {
         if (botSelectPanelsEntranceTimer != null && botSelectPanelsEntranceTimer.isRunning()) {
             botSelectPanelsEntranceTimer.stop();
         }
+        Entrance.begin();   // a click from here on plays the rest of the entrance 3x as fast
         mainContainer.validate();
 
         Rectangle headingBounds = heading.getBounds();
@@ -4325,9 +4344,9 @@ public class MainMenu extends JFrame implements ActionListener {
         // opening part of the slide isn't skipped while that first frame is drawn
         final long[] clock = {0L};
         botSelectPanelsEntranceTimer = AnimationTiming.createUiTimer(e -> {
-            if (clock[0] == 0L) clock[0] = System.nanoTime();
+            if (clock[0] == 0L) clock[0] = Entrance.nanos();
             final long startedAt = clock[0];
-            float panelsT = AnimationTiming.progress(startedAt, BOT_SELECT_PANELS_SLIDE_MS);
+            float panelsT = Entrance.progress(startedAt, BOT_SELECT_PANELS_SLIDE_MS);
             float panelsEased = 1f - (float) Math.pow(1f - panelsT, 3); // ease-out-cubic, same shape as the Variants cards' own entrance
             if (leftGhost.getParent() != null) {
                 leftGhost.setLocation(leftRest.x - Math.round(leftTravel * (1f - panelsEased)), leftRest.y);
@@ -4342,7 +4361,7 @@ public class MainMenu extends JFrame implements ActionListener {
 
             boolean cardsDone = true;
             for (int i = 0; i < cardCount; i++) {
-                float localElapsed = AnimationTiming.elapsedMillis(startedAt) - i * BOT_SELECT_CARDS_STAGGER_MS;
+                float localElapsed = Entrance.elapsedMillis(startedAt) - i * BOT_SELECT_CARDS_STAGGER_MS;
                 float cardT = Math.max(0f, Math.min(1f, localElapsed / BOT_SELECT_CARDS_SLIDE_MS));
                 if (cardT < 1f) cardsDone = false;
                 float cardEased = 1f - (float) Math.pow(1f - cardT, 3);
@@ -4361,14 +4380,14 @@ public class MainMenu extends JFrame implements ActionListener {
 
             float wordmarkT = 1f;
             if (heroWordmark != null) {
-                wordmarkT = AnimationTiming.progress(startedAt, BOT_SELECT_WORDMARK_DROP_MS);
+                wordmarkT = Entrance.progress(startedAt, BOT_SELECT_WORDMARK_DROP_MS);
                 float wordmarkEased = 1f - (float) Math.pow(1f - wordmarkT, 3);
                 heroWordmark.setShiftT(wordmarkEased);
             }
 
             float scrollbarT = 1f;
             if (ladderScrollBar != null) {
-                float localElapsed = AnimationTiming.elapsedMillis(startedAt) - scrollbarFadeDelayMs;
+                float localElapsed = Entrance.elapsedMillis(startedAt) - scrollbarFadeDelayMs;
                 scrollbarT = Math.max(0f, Math.min(1f, localElapsed / BOT_SELECT_SCROLLBAR_FADE_MS));
                 ladderScrollBar.putClientProperty("scrollbarFadeAlpha", scrollbarT);
                 ladderScrollBar.repaint();

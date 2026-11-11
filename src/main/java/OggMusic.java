@@ -194,8 +194,16 @@ final class OggMusic {
         }
     }
 
+    private static volatile boolean held;
+
+    /** While held, making the music files waits (so a busy animation gets the computer to itself). */
+    static void hold(boolean on) { held = on; }
+
     /** Reads the next chunk of the file into the Ogg reader. False at the end of the file. */
     private static boolean feed(SyncState oy, InputStream in) throws IOException {
+        for (int waited = 0; held && waited < 5000; waited += 20) {
+            try { Thread.sleep(20); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+        }
         int at = oy.buffer(4096);
         int n = in.read(oy.data, at, 4096);
         if (n <= 0) {

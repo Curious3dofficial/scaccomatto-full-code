@@ -106,22 +106,6 @@ final class AppSettings {
 
     // ── General ──────────────────────────────────────────────────────────────
 
-    /** 80-130 (%). Used by the dark screens' sizing; takes effect on the next start. */
-    /**
-     * Settings > General > Interface size: Small, Normal or Big (75 / 100 / 125 %).
-     * Older saves from the free slider snap to the nearest of the three.
-     */
-    static int interfaceScale() {
-        int v = integer("interfaceScale", 100);
-        return v <= 87 ? 75 : v >= 113 ? 125 : 100;
-    }
-
-    static void setInterfaceScale(int v) {
-        NODE.putInt("interfaceScale", v <= 87 ? 75 : v >= 113 ? 125 : 100);
-        AnalysisTheme.refreshScale();       // screens opened from now on use the new size
-        SettingsScreen.refreshScale();
-        changed();
-    }
     static boolean confirmQuit() { return bool("confirmQuit", true); }
 
     // ── Audio (0-100) ────────────────────────────────────────────────────────

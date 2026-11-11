@@ -337,71 +337,22 @@ public class ModeSelectScreen extends JPanel {
      */
     private void startEntrance() {
         if (entranceDelayTimer != null && entranceDelayTimer.isRunning()) entranceDelayTimer.stop();
-        entranceSpeed = 1.0;
-        listenForHurry(true);
-        entranceDelayTimer = new Timer(ENTRANCE_DELAY_MS, e -> {
+        Entrance.begin();   // a click from here on plays the rest of the entrance 3x as fast
+        entranceDelayTimer = Entrance.after(ENTRANCE_DELAY_MS, e -> {
             startWordmarkGlide();
             scheduleButtonsFadeIn();
         });
-        entranceDelayTimer.setRepeats(false);
-        entranceDelayTimer.start();
     }
 
-    // ── a click during the entrance hurries it along ───────────────────────
-
-    /** How much faster the rest of the entrance plays once the player clicks. */
-    private static final double HURRY_SPEED = 8.0;
-    private volatile double entranceSpeed = 1.0;
-    private java.awt.event.AWTEventListener hurryListener;
     private Timer buttonsFadeTimer;
 
-    /**
-     * Time for the entrance animations: real time, but running HURRY_SPEED times faster
-     * after a click -- so the six buttons pop in quickly one after another, the back
-     * button fades in to match, and everything becomes clickable as soon as it's all there.
-     */
-    private final class EntranceClock {
-        private long last = System.nanoTime();
-        private double sec;
+    /** Seconds on the entrance clock (see Entrance) since this was made. */
+    private static final class EntranceClock {
+        private final long start = Entrance.nanos();
 
         double seconds() {
-            long now = System.nanoTime();
-            sec += (now - last) / 1_000_000_000.0 * entranceSpeed;
-            last = now;
-            return sec;
+            return (Entrance.nanos() - start) / 1_000_000_000.0;
         }
-    }
-
-    /** A click anywhere on this screen while it's still coming in: play the rest quickly. */
-    private void hurryEntrance() {
-        if (entranceSpeed > 1.0) return;
-        entranceSpeed = HURRY_SPEED;
-        // still in one of the pauses before things start moving: skip the pause
-        if (entranceDelayTimer != null && entranceDelayTimer.isRunning()) {
-            entranceDelayTimer.stop();
-            startWordmarkGlide();
-            fadeInButtons();
-        } else if (buttonsEntryDelayTimer != null && buttonsEntryDelayTimer.isRunning()) {
-            buttonsEntryDelayTimer.stop();
-            fadeInButtons();
-        }
-    }
-
-    private void listenForHurry(boolean on) {
-        Toolkit tk = Toolkit.getDefaultToolkit();
-        if (hurryListener != null) {
-            tk.removeAWTEventListener(hurryListener);
-            hurryListener = null;
-        }
-        if (!on) return;
-        hurryListener = event -> {
-            if (event.getID() != MouseEvent.MOUSE_PRESSED || !isShowing()) return;
-            Object src = event.getSource();
-            if (src instanceof Component && SwingUtilities.isDescendingFrom((Component) src, this)) {
-                hurryEntrance();
-            }
-        };
-        tk.addAWTEventListener(hurryListener, AWTEvent.MOUSE_EVENT_MASK);
     }
 
     /**
@@ -411,9 +362,7 @@ public class ModeSelectScreen extends JPanel {
      */
     private void scheduleButtonsFadeIn() {
         if (buttonsEntryDelayTimer != null && buttonsEntryDelayTimer.isRunning()) buttonsEntryDelayTimer.stop();
-        buttonsEntryDelayTimer = new Timer(BUTTONS_FADE_IN_DELAY_MS, e -> fadeInButtons());
-        buttonsEntryDelayTimer.setRepeats(false);
-        buttonsEntryDelayTimer.start();
+        buttonsEntryDelayTimer = Entrance.after(BUTTONS_FADE_IN_DELAY_MS, e -> fadeInButtons());
     }
 
     // Overshoot constant for the entrance pop (see popScale() below): pops
@@ -519,7 +468,6 @@ public class ModeSelectScreen extends JPanel {
             paintButtonsNow();
             if (allDone) {
                 ((Timer) e.getSource()).stop();
-                listenForHurry(false);       // the entrance is over: clicks are just clicks again
             }
         });
         fadeTimer.start();
@@ -548,7 +496,6 @@ public class ModeSelectScreen extends JPanel {
         if (buttonsEntryDelayTimer != null && buttonsEntryDelayTimer.isRunning()) buttonsEntryDelayTimer.stop();
         if (wordmarkGlideTimer != null && wordmarkGlideTimer.isRunning()) wordmarkGlideTimer.stop();
         if (buttonsFadeTimer != null && buttonsFadeTimer.isRunning()) buttonsFadeTimer.stop();
-        listenForHurry(false);
         if (modeExitTimer != null && modeExitTimer.isRunning()) modeExitTimer.stop();
         if (modeExitHandoffTimer != null && modeExitHandoffTimer.isRunning()) modeExitHandoffTimer.stop();
         wordmarkExitOffset = 0f;

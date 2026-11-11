@@ -105,15 +105,13 @@ final class AnalysisTheme {
      */
     static volatile float K = computeK();
 
-    /** Picks up a new Interface size; screens built after this use it. */
+    /** Works the size factor out again (after Restore defaults). */
     static void refreshScale() { K = computeK(); }
 
     private static float computeK() {
         try {
             int h = Toolkit.getDefaultToolkit().getScreenSize().height;
-            // Settings > General > Interface size (Small / Normal / Big) on top of the screen fit
-            float base = Math.max(0.72f, Math.min(1f, h / 1040f));
-            return base * AppSettings.interfaceScale() / 100f;
+            return Math.max(0.72f, Math.min(1f, h / 1040f));
         } catch (Exception e) {
             return 1f;
         }

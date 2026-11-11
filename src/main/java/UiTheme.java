@@ -19,11 +19,17 @@ import java.awt.image.BufferedImage;
 final class UiTheme {
     private UiTheme() { }
 
-    /** "light", "dark" or "system". */
+    /** "light" or "dark". */
     static String choice() {
         String forced = System.getProperty("scaccomatto.theme");
         if (forced != null && !forced.isBlank()) return forced.trim().toLowerCase();
-        return AppSettings.str("theme", "light");
+        String saved = AppSettings.str("theme", "light");
+        if ("system".equals(saved)) {
+            // the "System" choice is gone: keep the look it was giving, from now on for good
+            saved = systemPrefersDark() ? "dark" : "light";
+            AppSettings.setStr("theme", saved);
+        }
+        return saved;
     }
 
     /** Which look is showing right now. Changes live through {@link #setDark}. */

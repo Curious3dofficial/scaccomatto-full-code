@@ -47,7 +47,7 @@ import java.util.function.Function;
  * cards step through it too. Swap sides, a random matchup, and one big Start Battle.
  *
  * <p>The whole screen is drawn on a 1920 x 1080 design canvas scaled to the window (and
- * to Settings > Interface size), so everything keeps its proportions at any size. Every
+ * to the window size), so everything keeps its proportions at any size. Every
  * colour comes from {@link UiTheme}, so it follows Light / Dark, live.
  */
 final class SpectateScreen extends JComponent {
@@ -316,9 +316,7 @@ final class SpectateScreen extends JComponent {
         g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
         int w = getWidth(), h = getHeight();
 
-        float iface = AppSettings.interfaceScale() / 100f;
-        // never bigger than the window: Big keeps the full fit, Small shrinks a little
-        scale = Math.min(w / DW, h / DH) * Math.max(0.8f, Math.min(1f, iface));
+        scale = Math.min(w / DW, h / DH);           // the whole design, as big as the window allows
         offX = (w - DW * scale) / 2f;
         offY = (h - DH * scale) / 2f;
         AffineTransform keep = g.getTransform();

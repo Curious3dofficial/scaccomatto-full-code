@@ -271,9 +271,8 @@ public class OnlinePanel extends JPanel {
         setScrollbarAlpha(variantScroll, 0f);
         setScrollbarAlpha(lobbyScroll, 0f);
 
-        entranceDelayTimer = new Timer(ENTRANCE_DELAY_MS, e -> playEntrance());
-        entranceDelayTimer.setRepeats(false);
-        entranceDelayTimer.start();
+        Entrance.begin();   // a click from here on plays the rest of the entrance 3x as fast
+        entranceDelayTimer = Entrance.after(ENTRANCE_DELAY_MS, e -> playEntrance());
     }
 
     private void setTilesHidden(boolean hidden) {
@@ -319,12 +318,12 @@ public class OnlinePanel extends JPanel {
         setTilesHidden(false);
         final int n = listCards.size();
         for (JButton card : listCards) SmoothFade.freeze(card);   // slide as pictures
-        final long startedAt = System.nanoTime();
+        final long startedAt = Entrance.nanos();
         final int tilesTotalMs = TILE_SLIDE_MS + TILE_SLIDE_STAGGER_MS * Math.max(0, n - 1);
         // Scrollbars fade in once the tiles have landed.
         final float scrollbarDelay = Math.min(tilesTotalMs, TILE_SLIDE_MS + TILE_SLIDE_STAGGER_MS * 3);
         entranceTimer = AnimationTiming.createUiTimer(e -> {
-            float elapsed = AnimationTiming.elapsedMillis(startedAt);
+            float elapsed = Entrance.elapsedMillis(startedAt);
             boolean done = true;
 
             // Wordmark: damped bounce drop.

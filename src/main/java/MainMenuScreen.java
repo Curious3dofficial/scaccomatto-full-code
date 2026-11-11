@@ -255,9 +255,17 @@ public class MainMenuScreen extends JPanel {
         if (introStarted) return;
         introStarted = true;
 
-        Timer hold = new Timer(INTRO_HOLD_MS, e -> startIntroTransition());
-        hold.setRepeats(false);
-        hold.start();
+        Entrance.begin();   // a click from here on plays the rest of the intro 3x as fast
+        Entrance.after(INTRO_HOLD_MS, e -> {
+            // Everything heavy happens now, while the wordmark is still standing still:
+            // the picture used for the move, and the menu music (loading a track into
+            // memory freezes the screen for a moment -- it used to land mid-move, which
+            // is what made the glide stutter). Then a short breath before moving.
+            prepareMovingPicture();
+            Runnable heavy = beforeIntroMove;
+            if (heavy != null) heavy.run();
+            Entrance.after(INTRO_SETTLE_MS, e2 -> startIntroTransition());
+        });
     }
 
     /**
@@ -282,21 +290,28 @@ public class MainMenuScreen extends JPanel {
      * only has wordmarkT left to drive.
      */
     private void startIntroTransition() {
+        prepareMovingPicture();
         introTransitionActive = true;
-        long startNanos = System.nanoTime();
+        introMoving = true;
+        OggMusic.hold(true);          // the music files can finish being made after the move
+        long startNanos = Entrance.nanos();
         double moveDurationSec = INTRO_TRANSITION_MS / 1000.0;
 
-        Timer timer = new Timer(16, null);
+        Timer timer = new Timer(8, null);
+        timer.setCoalesce(true);
         timer.addActionListener(e -> {
-            double elapsed = (System.nanoTime() - startNanos) / 1_000_000_000.0;
+            double elapsed = (Entrance.nanos() - startNanos) / 1_000_000_000.0;
 
             double moveT = Math.max(0.0, Math.min(1.0, elapsed / moveDurationSec));
             wordmarkT = easeInOutSine(moveT); // 0 -> 1, eases in and out, no jerk at the start
 
-            repaint();
+            SmoothFade.paintNow(this);    // this frame now, not whenever Swing gets round to it
             if (moveT >= 1.0) {
                 wordmarkT = 1.0;
                 introTransitionActive = false;
+                introMoving = false;
+                OggMusic.hold(false);
+                movingPicture = null;
                 ((Timer) e.getSource()).stop();
                 // the wordmark has been on screen the whole intro: only the buttons fade in
                 fadeInIntroButtons(false);
@@ -323,6 +338,7 @@ public class MainMenuScreen extends JPanel {
      * buttons are still visibly animating in around it.
      */
     private void fadeInIntroButtons() {
+        Entrance.begin();
         fadeInIntroButtons(true);
     }
 
@@ -333,13 +349,13 @@ public class MainMenuScreen extends JPanel {
      *        in is what made the screen flicker.
      */
     private void fadeInIntroButtons(boolean withHeader) {
-        long startNanos = System.nanoTime();
+        long startNanos = Entrance.nanos();
         double durationSec = INTRO_BUTTONS_FADE_MS / 1000.0;
 
         Timer timer = new Timer(8, null);
         timer.setCoalesce(true);
         timer.addActionListener(e -> {
-            double t = (System.nanoTime() - startNanos) / 1_000_000_000.0 / durationSec;
+            double t = (Entrance.nanos() - startNanos) / 1_000_000_000.0 / durationSec;
             t = Math.max(0.0, Math.min(1.0, t));
             float alpha = SmoothFade.inOut(t);   // gentle at both ends
             setAllButtonsFadeAlphaQuiet(alpha);
@@ -534,6 +550,23 @@ public class MainMenuScreen extends JPanel {
     }
 
     private java.awt.image.BufferedImage bgPicture, wordmarkPicture;
+    /** The wordmark at its big splash size, ready to draw fast (made before the move). */
+    private java.awt.image.BufferedImage movingPicture;
+
+    /** True while the intro's wordmark is gliding to the top: nothing heavy should start then. */
+    static volatile boolean introMoving;
+    /** Run once at the end of the splash hold, before the move (the app starts its music here). */
+    static Runnable beforeIntroMove;
+    /** A short pause between the heavy work above and the move itself. */
+    private static final int INTRO_SETTLE_MS = 150;
+
+    private void prepareMovingPicture() {
+        if (movingPicture != null || wordmark == null || getWidth() <= 0) return;
+        int w = getWidth();
+        int introWmW = clamp((int) (w * 0.86), 640, 1200);
+        int introWmH = (int) (introWmW * (wordmark.getHeight(this) / (double) wordmark.getWidth(this)));
+        movingPicture = SmoothFade.scaled(wordmark, introWmW, introWmH, getGraphicsConfiguration(), false);
+    }
     private int bgTheme = -1;
 
     @Override
@@ -617,7 +650,16 @@ public class MainMenuScreen extends JPanel {
             if (headerFadeAlpha < 1f) {
                 g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, headerFadeAlpha))));
             }
-            if (introTransitionActive) {
+            if (introTransitionActive && movingPicture != null) {
+                // exact (not whole-pixel) size and place every frame, so the glide doesn't wobble
+                double fw = introWmW + (finalWmW - introWmW) * wordmarkT;
+                double fh = introWmH + (finalWmH - introWmH) * wordmarkT;
+                double fx = (w - fw) / 2.0;
+                double fy = introWmY + (finalWmY - introWmY) * wordmarkT;
+                java.awt.geom.AffineTransform at = java.awt.geom.AffineTransform.getTranslateInstance(fx, fy);
+                at.scale(fw / movingPicture.getWidth(), fh / movingPicture.getHeight());
+                g2.drawImage(movingPicture, at, null);
+            } else if (introTransitionActive) {
                 g2.drawImage(wordmark, wmX, wmY, wmW, wmH, this);
             } else {
                 // settled size: scale once, then every fade frame is a plain copy

@@ -98,7 +98,6 @@ public class AchievementsScreen extends JPanel {
     @Override
     public void addNotify() {
         super.addNotify();
-        grid.cols = Grid.columnsForInterfaceSize();     // the size may have changed in Settings
         Achievements.addListener(refresh);
         rebuild();
         grid.startReveal();
@@ -300,7 +299,7 @@ public class AchievementsScreen extends JPanel {
         ZoomSlider() {
             setOpaque(false);
             setPreferredSize(new Dimension(300, 64));
-            setToolTipText("Interface size (same as in Settings)");
+            setToolTipText("Card size");
             knob = stopFor(grid.cols);
             MouseAdapter m = new MouseAdapter() {
                 @Override public void mousePressed(MouseEvent e) {
@@ -325,7 +324,7 @@ public class AchievementsScreen extends JPanel {
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         }
 
-        /** Stop 0 = Small (3 columns), 1 = Normal (2), 2 = Big (1) -- the Interface size steps. */
+        /** Stop 0 = 3 columns of small cards, 1 = 2 columns, 2 = 1 column of big cards. */
         private float stopFor(int cols) { return 3 - cols; }
 
         private int trackX0() { return 62; }
@@ -482,24 +481,18 @@ public class AchievementsScreen extends JPanel {
     // ── the grid of cards ────────────────────────────────────────────────────────
 
     /** Lays cards out in as many columns as fit (each at least ~380px), tracking the viewport width. */
-    /** Sizes on this screen follow Settings > General > Interface size, like every other screen. */
     private static int z(int v) { return AnalysisTheme.k(v); }
     private static float z(float v) { return AnalysisTheme.k(v); }
 
-    /** Just the fit-to-screen part of the interface size (the columns already carry Small / Normal / Big). */
+    /** How much this screen is scaled to fit the computer's screen. */
     private static float screenFit() {
-        return AnalysisTheme.K / (AppSettings.interfaceScale() / 100f);
+        return AnalysisTheme.K;
     }
 
     private static final class Grid extends JPanel implements Scrollable {
         private static final int GAP = 18;
-        /** Settings > General > Interface size: Small = 3 columns, Normal = 2, Big = 1. */
-        int cols = columnsForInterfaceSize();
-
-        static int columnsForInterfaceSize() {
-            int scale = AppSettings.interfaceScale();
-            return scale <= 75 ? 3 : scale >= 125 ? 1 : 2;
-        }
+        /** Two columns to start with; the card-size slider changes it. */
+        int cols = 2;
 
         int cardHeight() {
             int base = cols >= 4 ? 112 : cols == 3 ? 132 : cols == 2 ? 172 : 212;
@@ -509,14 +502,9 @@ public class AchievementsScreen extends JPanel {
         /** How much a card's contents are scaled up from the 3-column size. */
         float zoom() { return cardHeight() / 132f; }   // (includes the screen fit)
 
-        /**
-         * The size slider and Settings > General > Interface size are the same setting:
-         * 3 columns = Small, 2 = Normal, 1 = Big. Moving one moves the other.
-         */
+        /** The card-size slider: 3, 2 or 1 columns. */
         void setColumns(int c) {
             cols = Math.max(1, Math.min(3, c));
-            int scale = cols >= 3 ? 75 : cols == 2 ? 100 : 125;
-            if (AppSettings.interfaceScale() != scale) AppSettings.setInterfaceScale(scale);
             revalidate();
             repaint();
         }
@@ -528,17 +516,18 @@ public class AchievementsScreen extends JPanel {
         }
 
         void startReveal() {
-            revealStart = System.nanoTime();
+            Entrance.begin();   // a click while the tiles come in plays the rest 3x as fast
+            revealStart = Entrance.nanos();
             Timer t = new Timer(16, null);
             t.addActionListener(e -> {
                 repaint();
-                if ((System.nanoTime() - revealStart) / 1e6 > 400 + getComponentCount() * 35) ((Timer) e.getSource()).stop();
+                if ((Entrance.nanos() - revealStart) / 1e6 > 400 + getComponentCount() * 35) ((Timer) e.getSource()).stop();
             });
             t.start();
         }
 
         float revealFor(int index) {
-            float t = (float) ((System.nanoTime() - revealStart) / 1e6 - index * 35) / 320f;
+            float t = (float) ((Entrance.nanos() - revealStart) / 1e6 - index * 35) / 320f;
             return Math.max(0f, Math.min(1f, t));
         }
 

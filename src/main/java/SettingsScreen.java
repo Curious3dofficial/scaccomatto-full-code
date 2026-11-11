@@ -37,21 +37,17 @@ public class SettingsScreen extends JPanel {
     static final Color DANGER = UiTheme.c(196, 72, 58);
 
     /** Sizes are designed at 1080p and shrink on smaller screens. */
-    private static volatile float S = computeScale();
+    private static final float S = computeScale();
 
     private static float computeScale() {
         try {
             int h = Toolkit.getDefaultToolkit().getScreenSize().height;
-            // a size up from the first version (everything ~18% bigger), then
-            // Settings > General > Interface size (Small / Normal / Big) on top
-            return 1.18f * Math.max(0.68f, Math.min(1f, h / 1080f)) * AppSettings.interfaceScale() / 100f;
+            // a size up from the first version (everything ~18% bigger)
+            return 1.18f * Math.max(0.68f, Math.min(1f, h / 1080f));
         } catch (Exception e) {
             return 1f;
         }
     }
-
-    /** Picks up a new Interface size (the open Settings screen is rebuilt with it). */
-    static void refreshScale() { S = computeScale(); }
 
     static int s(int v) { return Math.max(1, Math.round(v * S)); }
     static float s(float v) { return v * S; }
@@ -82,8 +78,8 @@ public class SettingsScreen extends JPanel {
 
     private final MainMenu host;
     private final Runnable onBack;
-    private Sidebar sidebar = new Sidebar();
-    private PageHost pageHost = new PageHost();
+    private final Sidebar sidebar = new Sidebar();
+    private final PageHost pageHost = new PageHost();
     private Category current = Category.GENERAL;
 
     public SettingsScreen(MainMenu host, Runnable onBack) {
@@ -114,18 +110,6 @@ public class SettingsScreen extends JPanel {
         body.add(sidebar, BorderLayout.WEST);
         body.add(pageHost, BorderLayout.CENTER);
         add(body, BorderLayout.CENTER);
-    }
-
-    /** The Interface size changed: the whole screen is made again at the new size, on the same page. */
-    private void rebuildAll() {
-        removeAll();
-        pictures.clear();
-        sidebar = new Sidebar();
-        pageHost = new PageHost();
-        assemble();
-        showCategory(current, false);
-        revalidate();
-        repaint();
     }
 
     // The ivory backdrop (the warm cream gradient the other menu screens use).
@@ -201,14 +185,6 @@ public class SettingsScreen extends JPanel {
 
     private void rebuildCurrent() {
         pageHost.show(buildPage(current), false);
-    }
-
-    /** The Interface size changed (here or with the Ctrl +/- keys): remake any Settings screen showing in {@code root}. */
-    static void refreshShowing(java.awt.Container root) {
-        for (java.awt.Component c : root.getComponents()) {
-            if (c instanceof SettingsScreen && c.isShowing()) ((SettingsScreen) c).rebuildAll();
-            else if (c instanceof java.awt.Container) refreshShowing((java.awt.Container) c);
-        }
     }
 
     static Graphics2D smooth(Graphics g) {
@@ -334,7 +310,7 @@ public class SettingsScreen extends JPanel {
         private final int pad = s(14);
 
         /** Rows share the card's full height (no empty space under the list), and get closer
-         *  together when the card is short (a big Interface size) so the whole list still fits. */
+         *  together when the card is short (a small window) so the whole list still fits. */
         private int rowH() {
             int avail = getHeight() - s(10) - pad * 2 - s(20);
             return Math.max(s(40), Math.min(s(96), avail / Category.values().length));
@@ -803,7 +779,7 @@ public class SettingsScreen extends JPanel {
         private boolean hovering;
         /** The control on the right, in its holder (null for a row without one). */
         private JPanel east;
-        /** No room for the text and the control side by side (a big Interface size): the control goes on its own line, centred. */
+        /** No room for the text and the control side by side (a narrow window): the control goes on its own line, centred. */
         private boolean stacked;
 
         Row(String label, String desc, JComponent control, boolean soon) {
@@ -1629,24 +1605,15 @@ public class SettingsScreen extends JPanel {
             case GENERAL: {
                 rows.add(soonRow("Language", "English for now -- more languages later",
                         new Dropdown(new String[]{"English"}, 0, null, null)));
-                String[] themes = {"system", "light", "dark"};
+                String[] themes = {"light", "dark"};
                 Segmented[] themePick = new Segmented[1];
-                themePick[0] = new Segmented(new String[]{"System", "Light", "Dark"},
-                        indexOf(themes, AppSettings.str("theme", "light")), null,
+                themePick[0] = new Segmented(new String[]{"Light", "Dark"},
+                        UiTheme.DARK ? 1 : 0, null,
                         i -> {
                             AppSettings.setStr("theme", themes[i]);
                             SwingUtilities.invokeLater(() -> switchTheme(themes[i]));
                         });
-                rows.add(new Row("Theme", "Follow your system, or always light / dark", themePick[0], false));
-                int[] sizes = {75, 100, 125};
-                int sizeIndex = AppSettings.interfaceScale() == 75 ? 0 : AppSettings.interfaceScale() == 125 ? 2 : 1;
-                rows.add(new Row("Interface size", null,
-                        new Segmented(new String[]{"Small", "Normal", "Big"}, sizeIndex, null,
-                                i -> {
-                                    AppSettings.setInterfaceScale(sizes[i]);
-                                    // after the click has finished: the screen is remade at the new size
-                                    SwingUtilities.invokeLater(() -> refreshShowing(SwingUtilities.getWindowAncestor(this)));
-                                }), false));
+                rows.add(new Row("Theme", "Light or dark", themePick[0], false));
                 rows.add(toggleRow("Confirm before quitting", "Ask before the app closes",
                         AppSettings.confirmQuit(), v -> AppSettings.setBool("confirmQuit", v)));
                 rows.add(section("Reset"));
@@ -2370,7 +2337,6 @@ public class SettingsScreen extends JPanel {
             + "• Press M anywhere to mute or unmute.\n"
             + "• Press Esc to go back a screen.\n"
             + "• On the menus, the arrow keys move between options and Enter picks one.\n"
-            + "• Ctrl + and Ctrl − change the interface size.\n"
             + "\n"
             + "Playing\n"
             + "• Drag a piece, or click it and then click where it should go.\n"
