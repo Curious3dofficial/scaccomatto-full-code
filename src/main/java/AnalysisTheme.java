@@ -424,16 +424,71 @@ final class AnalysisTheme {
                 g2.setStroke(new BasicStroke(2f));
                 g2.draw(new java.awt.geom.Ellipse2D.Float(cx - d / 2 - 1, cy - d / 2 - 1, d + 2, d + 2));
             }
-            // the X: a quarter turn on hover, eased
-            float arm = plate * 0.17f;
             Graphics2D x = (Graphics2D) g2.create();
-            x.rotate(Math.toRadians(90 * turn.value()), cx, cy);
+            x.rotate(Math.toRadians(glyphTurn(turn.value())), cx, cy);
             x.setColor(ink);
             x.setStroke(new BasicStroke(Math.max(2f, plate * 0.06f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            x.draw(new java.awt.geom.Line2D.Float(cx - arm, cy - arm, cx + arm, cy + arm));
-            x.draw(new java.awt.geom.Line2D.Float(cx + arm, cy - arm, cx - arm, cy + arm));
+            drawGlyph(x, cx, cy, plate);
             x.dispose();
             g2.dispose();
+        }
+
+        /** How far the icon is turned (degrees) at this much hover. The X: a quarter turn. */
+        protected double glyphTurn(float hovered) { return 90 * hovered; }
+
+        /** The icon in the middle, in the pen already set up: an X. */
+        protected void drawGlyph(Graphics2D x, float cx, float cy, float plate) {
+            float arm = plate * 0.17f;
+            x.draw(new java.awt.geom.Line2D.Float(cx - arm, cy - arm, cx + arm, cy + arm));
+            x.draw(new java.awt.geom.Line2D.Float(cx + arm, cy - arm, cx - arm, cy + arm));
+        }
+    }
+
+    /**
+     * The same round button as the close X, with a "try again" arrow instead: it leans a
+     * little on hover and spins once when pressed.
+     */
+    static class RefreshButton extends CloseButton {
+        private long spinStart;
+        private final javax.swing.Timer spin = new javax.swing.Timer(8, e -> {
+            if ((System.nanoTime() - spinStart) / 1e6 >= SPIN_MS) ((javax.swing.Timer) e.getSource()).stop();
+            repaint();
+        });
+        private static final float SPIN_MS = 520f;
+
+        RefreshButton(boolean light, String tooltip, Runnable action) {
+            super(light, tooltip == null ? "Refresh" : tooltip, action);
+            spin.setCoalesce(true);
+            addActionListener(e -> { spinStart = System.nanoTime(); spin.restart(); });
+        }
+
+        @Override protected double glyphTurn(float hovered) {
+            double turned = 40 * hovered;
+            if (spin.isRunning()) {
+                double t = Math.min(1.0, (System.nanoTime() - spinStart) / 1e6 / SPIN_MS);
+                turned += 360 * (1 - Math.pow(1 - t, 3));      // one full turn, slowing at the end
+            }
+            return turned;
+        }
+
+        @Override protected void drawGlyph(Graphics2D x, float cx, float cy, float plate) {
+            float r = plate * 0.19f;
+            // an almost-full circle, open at the top right, with an arrowhead on that end
+            x.draw(new java.awt.geom.Arc2D.Float(cx - r, cy - r, r * 2, r * 2, 60, 290, java.awt.geom.Arc2D.OPEN));
+            double a = Math.toRadians(60);
+            float ex = cx + (float) (r * Math.cos(a)), ey = cy - (float) (r * Math.sin(a));
+            float head = plate * 0.11f;
+            java.awt.geom.Path2D.Float tip = new java.awt.geom.Path2D.Float();
+            // the arrow runs anticlockwise (towards the top): its head points along that way
+            double dir = a + Math.PI / 2;                  // tangent, anticlockwise
+            float tx = (float) Math.cos(dir), ty = (float) -Math.sin(dir);
+            float nx = (float) Math.cos(a), ny = (float) -Math.sin(a);
+            tip.moveTo(ex + tx * head * 0.9f, ey + ty * head * 0.9f);
+            tip.lineTo(ex + nx * head * 0.75f, ey + ny * head * 0.75f);
+            tip.lineTo(ex - nx * head * 0.75f, ey - ny * head * 0.75f);
+            tip.closePath();
+            x.fill(tip);
+            x.draw(tip);
         }
     }
 

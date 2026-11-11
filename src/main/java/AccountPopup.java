@@ -566,8 +566,26 @@ final class AccountPopup {
             SoundManager.playExtraSound("tap.wav");
             dialog.dispose();
         });
-        JPanel closeWrap = transparent(new GridBagLayout());
-        closeWrap.add(close);
+        // refresh, just left of the X: loads the page again from the server (friends, profile)
+        refreshButton = new AnalysisTheme.RefreshButton(true, "Refresh", null);
+        refreshButton.setPreferredSize(new Dimension(s(44), s(44)));
+        refreshButton.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            refreshPage();
+        });
+        refreshButton.setVisible(false);
+        JPanel refreshSlot = transparent(new GridBagLayout());   // keeps its space when hidden
+        refreshSlot.setPreferredSize(new Dimension(s(44), s(44)));
+        refreshSlot.add(refreshButton);
+        JPanel closeWrap = transparent(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        closeWrap.add(refreshSlot);
+        closeWrap.add(Box.createHorizontalStrut(s(10)));
+        JPanel closeOnly = transparent(new GridBagLayout());
+        closeOnly.add(close);
+        closeWrap.add(closeOnly);
+        JPanel closeCol = transparent(new GridBagLayout());
+        closeCol.add(closeWrap);
+        closeWrap = closeCol;
         row.add(closeWrap, BorderLayout.EAST);
         if (devTools) {
             row.add(left, BorderLayout.WEST);
@@ -603,8 +621,20 @@ final class AccountPopup {
     private static final int PAGE_H = s(676);
     private JComponent pageFrame;
 
+    private AnalysisTheme.RefreshButton refreshButton;
+
+    /** The refresh button: fetches what this page shows again. */
+    private void refreshPage() {
+        if (page == null) return;
+        if (Boolean.TRUE.equals(page.getClientProperty("friendsPage"))) setPage(friendsPage(null));
+        else if (onProfilePage) refreshProfileAsync();
+    }
+
     private void setPage(JComponent next) {
         onProfilePage = Boolean.TRUE.equals(next.getClientProperty("profilePage"));
+        if (refreshButton != null) {
+            refreshButton.setVisible(onProfilePage || Boolean.TRUE.equals(next.getClientProperty("friendsPage")));
+        }
         if (testLogin != null) testLogin.setVisible(!AccountSession.isSignedIn());
         if (pageFrame != null) card.remove(pageFrame);
         page = next;
@@ -1161,6 +1191,7 @@ final class AccountPopup {
      */
     private JComponent friendsPage(String message) {
         JPanel p = column();
+        p.putClientProperty("friendsPage", Boolean.TRUE);
         JLabel heading = new JLabel("Friends");
         heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
         heading.setForeground(TEXT_DARK);

@@ -75,6 +75,10 @@ final class FriendsUi {
         JDialog d = new JDialog(mm, "Challenge", Dialog.ModalityType.MODELESS);
         open = d;
         d.setUndecorated(true);
+        // Another popup (like Account) blocks every other window while it's open -- this one
+        // stays clickable anyway, and stays in front of it
+        d.setModalExclusionType(Dialog.ModalExclusionType.APPLICATION_EXCLUDE);
+        d.setAlwaysOnTop(true);
         JPanel p = PlayerCard.roundPanel();
         p.setLayout(new BorderLayout(0, 14));
         p.setBorder(new EmptyBorder(22, 26, 20, 26));
@@ -102,6 +106,7 @@ final class FriendsUi {
             SoundManager.playExtraSound("tap.wav");
             d.dispose();
             answerLater(c);
+            closeOtherPopups(d);           // e.g. the Account popup, so the game isn't stuck behind it
             mm.acceptChallenge(c.code);
         });
         d.setContentPane(p);
@@ -117,6 +122,13 @@ final class FriendsUi {
         expire.setRepeats(false);
         expire.start();
         d.setVisible(true);      // (the popup sound plays by itself, see PopupSound)
+    }
+
+    /** Closes any popup that's blocking the app's windows, apart from {@code keep}. */
+    private static void closeOtherPopups(Window keep) {
+        for (Window w : Window.getWindows()) {
+            if (w != keep && w instanceof Dialog && ((Dialog) w).isModal() && w.isShowing()) w.dispose();
+        }
     }
 
     private static void answerLater(Friends.Challenge c) {
