@@ -375,6 +375,9 @@ final class GameDialogs {
                 : anchor instanceof Window ? (Window) anchor : SwingUtilities.getWindowAncestor(anchor);
         JDialog dialog = new JDialog(owner, "", Dialog.ModalityType.MODELESS);
         dialog.setUndecorated(true);
+        // the result window blocks the game window while it's open -- and with it every
+        // window the game owns, this one included, so Accept/Decline couldn't be clicked
+        dialog.setModalExclusionType(Dialog.ModalExclusionType.APPLICATION_EXCLUDE);
         tint(dialog, anchor);
         JPanel card = new JPanel();
         card.setOpaque(true);

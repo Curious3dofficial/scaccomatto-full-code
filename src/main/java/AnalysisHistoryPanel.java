@@ -613,6 +613,7 @@ public final class AnalysisHistoryPanel extends JPanel {
 
         JPanel actions = new JPanel(new GridLayout(1, 2, 10, 0));
         actions.setOpaque(false);
+        footerActions = actions;
         if (reviewMode) {
             actions.add(new AnalysisTheme.Button("Summary", AnalysisTheme.Kind.SECONDARY, () -> run(onHighlights)));
             nextKeyButton = new AnalysisTheme.Button("Next Key Moment", AnalysisTheme.Kind.PRIMARY, () -> run(onNextKey));
@@ -744,6 +745,7 @@ public final class AnalysisHistoryPanel extends JPanel {
 
     private JButton firstButton, prevButton, nextButton, lastButton;
     private AnalysisTheme.Button resetButton, reviewButton;
+    private JPanel footerActions;
 
     /**
      * Greys out whatever can't be pressed right now: back/start at the first move,
@@ -763,7 +765,16 @@ public final class AnalysisHistoryPanel extends JPanel {
                                  String primaryText, Runnable primaryAction,
                                  boolean secondaryEnabled, boolean primaryEnabled) {
         if (resetButton == null || reviewButton == null) return;
-        resetButton.setText(secondaryText);
+        // no left button (e.g. online games have no Reset): Game Review takes the whole row
+        boolean showSecondary = secondaryText != null;
+        if (footerActions != null && (resetButton.getParent() == footerActions) != showSecondary) {
+            if (showSecondary) footerActions.add(resetButton, 0);
+            else footerActions.remove(resetButton);
+            footerActions.setLayout(new GridLayout(1, showSecondary ? 2 : 1, 10, 0));
+            footerActions.revalidate();
+            footerActions.repaint();
+        }
+        if (showSecondary) resetButton.setText(secondaryText);
         reviewButton.setText(primaryText);
         // Game Review is always purple (it's the Analysis side of the app), whatever the board colour
         reviewButton.putClientProperty(AnalysisTheme.ACCENT_KEY,

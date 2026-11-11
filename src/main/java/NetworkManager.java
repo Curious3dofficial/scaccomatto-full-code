@@ -128,6 +128,21 @@ public class NetworkManager {
     // Coming back to a game that's already running (same code), after a dropped link.
     private static final String RESUME = "SCACCOMATTO_RESUME 2";
     private static final int HANDSHAKE_TIMEOUT_MS = 5000;
+
+    // Who plays White is decided by the host at random (it used to be always the host);
+    // its WELCOME tells the joiner which colour it got: "SCACCOMATTO_WELCOME 2 W" or "... B".
+    private final boolean hostWhite = new java.security.SecureRandom().nextBoolean();
+
+    private String welcomeLine() { return WELCOME + (hostWhite ? " B" : " W"); }
+
+    private static boolean isWelcome(String line) {
+        return line != null && (line.equals(WELCOME) || line.startsWith(WELCOME + " "));
+    }
+
+    /** The joiner's colour from the host's WELCOME (an older host, with no colour: Black). */
+    private static boolean joinerWhite(String welcome) {
+        return welcome != null && welcome.trim().endsWith(" W");
+    }
     // Ports tried when hosting, Among Us style: if one is taken (another
     // game on this computer), just use the next free one.
     public static final int FIRST_GAME_PORT = 5000;
@@ -208,9 +223,8 @@ public class NetworkManager {
             // connect into this game.
             try { server.close(); } catch (IOException ignored) {}
             if (closing) return;
-            // in/out were already set up by the handshake.
-            // Host plays white
-            if (listener != null) listener.onConnected(true);
+            // in/out were already set up by the handshake (which told the joiner its colour)
+            if (listener != null) listener.onConnected(hostWhite);
             startListenLoop();
         } catch (IOException e) {
             try { server.close(); } catch (IOException ignored) {}
@@ -264,7 +278,7 @@ public class NetworkManager {
                     }
                     if (!claimed.compareAndSet(false, true)) return;
                     r.unlist();
-                    r.send(WELCOME);
+                    r.send(welcomeLine());
                     relayMode = true;
                     hostedConnection = true;
                     in = r.reader();
@@ -272,7 +286,7 @@ public class NetworkManager {
                     try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
                     if (closing) return;
                     announceAccount();
-                    if (listener != null) listener.onConnected(true);
+                    if (listener != null) listener.onConnected(hostWhite);
                     startListenLoop();
                     return;
                 }
@@ -313,12 +327,12 @@ public class NetworkManager {
                 while (!closing && System.currentTimeMillis() < until) {
                     String line = r.take(500);
                     if (line == null) { if (r.denied()) break; continue; }
-                    if (WELCOME.equals(line) || WRONG_CODE.equals(line)) { reply = line; break; }
+                    if (isWelcome(line) || WRONG_CODE.equals(line)) { reply = line; break; }
                 }
             } catch (InterruptedException ignored) {
             }
             if (closing) { r.close(); return; }
-            if (!WELCOME.equals(reply)) {
+            if (!isWelcome(reply)) {
                 relay = null;
                 r.close();
                 if (listener != null) {
@@ -332,7 +346,7 @@ public class NetworkManager {
             in = r.reader();
             out = r.writer();
             announceAccount();
-            if (listener != null) listener.onConnected(false);
+            if (listener != null) listener.onConnected(joinerWhite(reply));
             startListenLoop();
         }, "scaccomatto-join-online");
         t.setDaemon(true);
@@ -354,7 +368,7 @@ public class NetworkManager {
                 w.println(WRONG_CODE);
                 return false;
             }
-            w.println(WELCOME);
+            w.println(welcomeLine());
             candidate.setSoTimeout(0);
             // Keep the same reader so nothing already buffered is lost.
             in = r;
@@ -392,7 +406,7 @@ public class NetworkManager {
                 } catch (SocketTimeoutException timeout) {
                     reply = null;
                 }
-                if (!WELCOME.equals(reply)) {
+                if (!isWelcome(reply)) {
                     try { candidate.close(); } catch (IOException ignored) {}
                     if (closing) return;
                     if (listener != null) {
@@ -406,8 +420,7 @@ public class NetworkManager {
                 in = r;
                 out = w;
                 if (closing) return;
-                // Client plays black
-                if (listener != null) listener.onConnected(false);
+                if (listener != null) listener.onConnected(joinerWhite(reply));
                 startListenLoop();
             } catch (IOException e) {
                 if (closing) return;
@@ -854,7 +867,7 @@ public class NetworkManager {
                     new OutputStreamWriter(candidate.getOutputStream())), true);
             w.println(RESUME + " " + joinCode);
             String reply = r.readLine();
-            if (!WELCOME.equals(reply)) {
+            if (!isWelcome(reply)) {
                 candidate.close();
                 return false;
             }

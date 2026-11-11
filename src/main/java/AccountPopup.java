@@ -627,13 +627,15 @@ final class AccountPopup {
     private void refreshPage() {
         if (page == null) return;
         if (Boolean.TRUE.equals(page.getClientProperty("friendsPage"))) setPage(friendsPage(null));
+        else if (Boolean.TRUE.equals(page.getClientProperty("bannedPage"))) setPage(bannedPage(null));
         else if (onProfilePage) refreshProfileAsync();
     }
 
     private void setPage(JComponent next) {
         onProfilePage = Boolean.TRUE.equals(next.getClientProperty("profilePage"));
         if (refreshButton != null) {
-            refreshButton.setVisible(onProfilePage || Boolean.TRUE.equals(next.getClientProperty("friendsPage")));
+            refreshButton.setVisible(onProfilePage || Boolean.TRUE.equals(next.getClientProperty("friendsPage"))
+                    || Boolean.TRUE.equals(next.getClientProperty("bannedPage")));
         }
         if (testLogin != null) testLogin.setVisible(!AccountSession.isSignedIn());
         if (pageFrame != null) card.remove(pageFrame);
@@ -1192,12 +1194,8 @@ final class AccountPopup {
     private JComponent friendsPage(String message) {
         JPanel p = column();
         p.putClientProperty("friendsPage", Boolean.TRUE);
-        JLabel heading = new JLabel("Friends");
-        heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
-        heading.setForeground(TEXT_DARK);
-        heading.setAlignmentX(Component.LEFT_ALIGNMENT);
-        p.add(heading);
-        p.add(Box.createVerticalStrut(s(12)));
+        p.add(friendsTabs(true));
+        p.add(Box.createVerticalStrut(s(16)));
 
         // add by username
         JPanel addRow = transparent(new BorderLayout(s(12), 0));
@@ -1310,6 +1308,99 @@ final class AccountPopup {
                 } catch (Exception ex) {
                     loading.setText("Couldn't load your friends. " + FirebaseLink.friendlyError(ex));
                     list.add(loading);
+                }
+                list.revalidate();
+                list.repaint();
+            }
+        }.execute();
+
+        Btn back = new Btn("BACK", Btn.GREY_STYLE);
+        back.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            setPage(profilePage());
+        });
+        p.add(full(back, s(62)));
+        return p;
+    }
+
+    /** Friends | Banned: the two halves of the friends page. */
+    private JComponent friendsTabs(boolean friendsSelected) {
+        JPanel row = transparent(new GridLayout(1, 2, s(12), 0));
+        Chip friends = new Chip("FRIENDS", friendsSelected);
+        Chip banned = new Chip("BANNED", !friendsSelected);
+        friends.addActionListener(e -> {
+            if (!friendsSelected) { SoundManager.playExtraSound("tap.wav"); setPage(friendsPage(null)); }
+        });
+        banned.addActionListener(e -> {
+            if (friendsSelected) { SoundManager.playExtraSound("tap.wav"); setPage(bannedPage(null)); }
+        });
+        row.add(friends);
+        row.add(banned);
+        return full(row, s(56));
+    }
+
+    /**
+     * Banned: everyone you've blocked (from a player's card in an online game). Their chat
+     * is hidden and you're never matched with them; Unblock undoes that.
+     */
+    private JComponent bannedPage(String message) {
+        JPanel p = column();
+        p.putClientProperty("bannedPage", Boolean.TRUE);
+        p.add(friendsTabs(false));
+        p.add(Box.createVerticalStrut(s(16)));
+        JLabel note = new JLabel(message == null
+                ? "Players you've blocked can't chat with you or be matched with you."
+                : message);
+        note.setFont(UiFonts.subtext(sf(15f)));
+        note.setForeground(TEXT_MUTED);
+        note.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(note);
+        p.add(Box.createVerticalStrut(s(14)));
+
+        JPanel list = transparent();
+        list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
+        list.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
+        JLabel loading = new JLabel("Loading...");
+        loading.setFont(UiFonts.subtext(sf(17f)));
+        loading.setForeground(TEXT_MUTED);
+        list.add(loading);
+        JScrollPane scroll = new JScrollPane(list,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(s(24));
+        p.add(full(scroll, s(380)));
+        p.add(Box.createVerticalStrut(s(14)));
+
+        new SwingWorker<java.util.Map<String, String>, Void>() {
+            @Override protected java.util.Map<String, String> doInBackground() {
+                Moderation.loadBlockListFromAccount();      // blocks made on your other computers too
+                return Moderation.blockedPlayers();
+            }
+            @Override protected void done() {
+                if (page != p) return;
+                list.removeAll();
+                java.util.Map<String, String> blocked;
+                try { blocked = get(); } catch (Exception ex) { blocked = java.util.Collections.emptyMap(); }
+                list.add(listHeading(blocked.isEmpty() ? "NOBODY BLOCKED" : "BLOCKED PLAYERS"));
+                if (blocked.isEmpty()) {
+                    JLabel hint = new JLabel("<html><div style='width:" + s(470) + "px'>To block someone, open their "
+                            + "player card during or after an online game.</div></html>");
+                    hint.setFont(UiFonts.subtext(sf(16f)));
+                    hint.setForeground(TEXT_MUTED);
+                    hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+                    list.add(hint);
+                }
+                for (java.util.Map.Entry<String, String> b : blocked.entrySet()) {
+                    String id = b.getKey(), name = b.getValue();
+                    PlayerCard.CardButton unblock = new PlayerCard.CardButton("Unblock", false);
+                    unblock.addActionListener(e -> {
+                        SoundManager.playExtraSound("tap.wav");
+                        Moderation.setBlocked(id, name, false);
+                        setPage(bannedPage(name + " is unblocked."));
+                    });
+                    list.add(friendRow(id, name, "Blocked", null, false, unblock, null));
                 }
                 list.revalidate();
                 list.repaint();
@@ -1444,13 +1535,15 @@ final class AccountPopup {
         text.setFont(UiFonts.subtext(sf(16f)));
         text.setForeground(TEXT_DARK);
         row.add(text, BorderLayout.CENTER);
-        JPanel btns = transparent(new GridLayout(1, 2, s(8), 0));
+        JPanel btns = transparent(new GridLayout(1, b == null ? 1 : 2, s(8), 0));
         a.setPreferredSize(new Dimension(s(120), s(44)));
-        b.setPreferredSize(new Dimension(s(110), s(44)));
         a.setFont(MainMenu.variantDisplayFont(sf(15f)));
-        b.setFont(MainMenu.variantDisplayFont(sf(15f)));
         btns.add(a);
-        btns.add(b);
+        if (b != null) {
+            b.setPreferredSize(new Dimension(s(110), s(44)));
+            b.setFont(MainMenu.variantDisplayFont(sf(15f)));
+            btns.add(b);
+        }
         JPanel bw = transparent(new GridBagLayout());
         bw.add(btns);
         row.add(bw, BorderLayout.EAST);

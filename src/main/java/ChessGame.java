@@ -630,9 +630,8 @@ public class ChessGame extends JFrame {
         } else {
             showGamePopup(title, message);
         }
-        if (isKingCapturedPopup(title) && onlineMode) {
-            exitToMenuWithCurtain();
-        }
+        // (the result window's own buttons decide what happens next; its X just closes it,
+        // so you can look at the board, chat or ask for a rematch)
     }
 
     private void sendGameResultIfNeeded(String title, String message) {
@@ -710,9 +709,14 @@ public class ChessGame extends JFrame {
             gameReviewBtn.repaint();
         }
         if (themedGameHistoryPanel != null && gameStarted) {
-            themedGameHistoryPanel.setFooterActions("Reset", this::confirmResetBoard,
+            themedGameHistoryPanel.setFooterActions(resetLabel(), this::confirmResetBoard,
                     "Game Review", this::onReviewButton, true, on);
         }
+    }
+
+    /** The Reset button's label -- none at all in online games (you can't reset someone else's board). */
+    private String resetLabel() {
+        return onlineMode || spectateMode ? null : "Reset";
     }
 
     private void onReviewButton() {
@@ -3075,7 +3079,7 @@ public class ChessGame extends JFrame {
                         },
                         "Start Game", this::onStartGamePressed, true, true);
             } else {
-                themedGameHistoryPanel.setFooterActions("Reset", this::confirmResetBoard,
+                themedGameHistoryPanel.setFooterActions(resetLabel(), this::confirmResetBoard,
                         "Game Review", this::onReviewButton, true, canReviewGame());
             }
             themedGameHistoryPanel.refresh();

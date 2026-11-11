@@ -7152,6 +7152,28 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         return true;
     }
 
+    /** Online: the duck message's id (sent on the same channel as spell steps). */
+    static final String DUCK_PHASE = "DUCK";
+    /** Online: where the opponent put the duck, if that arrived before their move finished showing. */
+    private int[] queuedRemoteDuck;
+
+    /** Whether the duck waiting to be placed is this player's to place (online: only the mover's). */
+    private boolean duckPlacementIsMine() {
+        return !onlineMode || pendingDuckPlacementSideWhite == localIsWhite;
+    }
+
+    /** Online: the opponent placed the duck after their move. */
+    private void applyRemoteDuckPlacement(boolean moverWhite, int row, int col) {
+        if (!isDuckChessMode() || !inBounds(row, col)) return;
+        if (pendingDuckPlacement && pendingDuckPlacementSideWhite == moverWhite && !duckPlacementIsMine()
+                && !duckMoveAnimating) {
+            queuedRemoteDuck = null;
+            completeDuckPlacementAndEndTurn(row, col);
+        } else {
+            queuedRemoteDuck = new int[] {moverWhite ? 1 : 0, row, col};   // their move is still being shown
+        }
+    }
+
     private void beginDuckPlacementPhase() {
         pendingDuckPlacement = true;
         pendingDuckPlacementSideWhite = whiteTurn;
@@ -7164,7 +7186,13 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         duckPressedOnDuck = false;
         duckMoveAnimating = false;
         possibleMoves.clear();
-        possibleMoves.addAll(getDuckPlacementMoves());
+        if (duckPlacementIsMine()) {
+            possibleMoves.addAll(getDuckPlacementMoves());
+        } else if (queuedRemoteDuck != null) {
+            // the opponent's duck already arrived: put it down now
+            int[] q = queuedRemoteDuck;
+            SwingUtilities.invokeLater(() -> applyRemoteDuckPlacement(q[0] == 1, q[1], q[2]));
+        }
         repaint();
     }
 
@@ -7201,6 +7229,10 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     }
 
     private void finalizeDuckPlacementAndEndTurn(int row, int col) {
+        // online: tell the other side where our duck went (theirs came to us the same way)
+        if (onlineMode && gameController != null && duckPlacementIsMine()) {
+            gameController.onLocalSpellPhase(DUCK_PHASE, pendingDuckPlacementSideWhite, row, col);
+        }
         duckRow = row;
         duckCol = col;
         duckMoveAnimating = false;
@@ -8951,6 +8983,7 @@ g2.dispose();
         final int r = row, c = col;
 
         if (pendingDuckPlacement) {
+            if (!duckPlacementIsMine()) return;      // online: the opponent is placing their duck
             pressX = logicalMouseX(e);
             pressY = logicalMouseY(e);
             duckPressedOnDuck = isDuckSquare(r, c);
@@ -9464,6 +9497,7 @@ g2.dispose();
             if (tryResolvePendingSpellTargeting(row, col)) return;
         }
         if (pendingDuckPlacement) {
+            if (!duckPlacementIsMine()) return;      // online: the opponent is placing their duck
             int col = mouseCol(e);
             int row = mouseRow(e);
             if (row < 0 || row > 7 || col < 0 || col > 7) {
@@ -10707,7 +10741,7 @@ g2.dispose();
         }
 
         if (pendingDuckPlacement) {
-            if (isDuckSquare(row, col) || board[row][col] == null) {
+            if (duckPlacementIsMine() && (isDuckSquare(row, col) || board[row][col] == null)) {
                 setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             } else {
                 setCursor(Cursor.getDefaultCursor());
@@ -11011,6 +11045,10 @@ g2.dispose();
     }
 
     public void applyRemoteSpellPhase(String phaseId, boolean casterWhite, int row, int col) {
+        if (DUCK_PHASE.equals(phaseId)) {
+            applyRemoteDuckPlacement(casterWhite, row, col);
+            return;
+        }
         if (!isSpellChessMode() || phaseId == null) return;
         if (animating || whiteTurn != casterWhite || !inBounds(row, col)) return;
         if (SPELL_PHASE_BOMBER_PRIME.equals(phaseId)) {
