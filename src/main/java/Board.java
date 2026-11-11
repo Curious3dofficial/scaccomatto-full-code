@@ -10130,6 +10130,9 @@ g2.dispose();
         return valid;
     }
 
+    /** Atomic: how long the blast plays before the result window opens. */
+    private static final int ATOMIC_RESULT_DELAY_MS = 1500;
+
     private boolean applyAtomicExplosionIfNeeded(Piece movingPiece, Piece capturedPiece, int captureRow, int captureCol) {
         if (!isAtomicMode()) return true;
         if (capturedPiece == null) return true;
@@ -10460,11 +10463,18 @@ g2.dispose();
                     String winner = (whiteKing != null) ? "White" : "Black";
                     msg = winner + " wins by atomic explosion.";
                 }
-                if (gameController != null) {
-                    gameController.showInGameInfoPopup("King Captured", msg);
-                } else {
-                    GameDialogs.info(Board.this, "Game over", msg);
-                }
+                // the result shows 1.5 s later, so the blast can be seen first
+                final String result = msg;
+                Timer later = new Timer(ATOMIC_RESULT_DELAY_MS, ev -> {
+                    if (!isShowing()) return;            // left the game meanwhile
+                    if (gameController != null) {
+                        gameController.showInGameInfoPopup("King Captured", result);
+                    } else {
+                        GameDialogs.info(Board.this, "Game over", result);
+                    }
+                });
+                later.setRepeats(false);
+                later.start();
                 return;
             }
         }

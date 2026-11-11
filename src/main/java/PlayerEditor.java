@@ -86,8 +86,12 @@ final class PlayerEditor {
             if (fd.getFile() == null) return;
             java.awt.image.BufferedImage img = AccountPopup.loadAnyImage(new java.io.File(fd.getDirectory(), fd.getFile()));
             if (img != null) {
-                picked[0] = AnalysisPlayers.squareCrop(img);
-                preview.repaint();
+                // let them choose the part of the picture to keep (cancel = keep the old one)
+                java.awt.image.BufferedImage cropped = PhotoCrop.open(window[0] != null ? window[0] : owner, img);
+                if (cropped != null) {
+                    picked[0] = cropped;
+                    preview.repaint();
+                }
             }
         };
         preview.addMouseListener(new java.awt.event.MouseAdapter() {

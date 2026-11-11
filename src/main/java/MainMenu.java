@@ -276,7 +276,7 @@ public class MainMenu extends JFrame implements ActionListener {
     }
 
     private void ensureMenuMusicPlaying() {
-        if (menuMusicHandle != null || coldLaunchMusicDelayActive) return;
+        if (menuMusicHandle != null || coldLaunchMusicDelayActive || boardOnScreen()) return;
         if (AppSettings.MUSIC_ROTATE.equals(AppSettings.musicTrack())) {
             playNextTheme();
             if (menuMusicHandle != null) return;
@@ -308,6 +308,24 @@ public class MainMenu extends JFrame implements ActionListener {
         if (menuMusicHandle == null) return;
         stopMenuMusic();
         ensureMenuMusicPlaying();
+    }
+
+    /** A board (game or analysis) is opening or open: no menu music until back on the menus. */
+    private boolean boardLaunching;
+
+    private boolean boardOnScreen() {
+        return boardLaunching || (activeScreen != null && activeScreenCleanup != null);
+    }
+
+    /**
+     * Fades the menu music smoothly to silence over {@code ms} (a board is opening), and
+     * keeps it off until the menus are back. Already fading: carries on as it is.
+     */
+    private void fadeOutMenuMusicForBoard(int ms) {
+        boardLaunching = true;
+        SoundManager.SoundHandle h = menuMusicHandle;
+        menuMusicHandle = null;
+        if (h != null) h.fadeOutAndStop(ms);
     }
 
     private void stopMenuMusic() {
@@ -1729,6 +1747,7 @@ public class MainMenu extends JFrame implements ActionListener {
         clearEmbeddedScreen();
         activeScreen = screen;
         activeScreenCleanup = cleanup;
+        if (cleanup != null) boardLaunching = false;    // the board is up: boardOnScreen() covers it now
         mainPanel.add(screen, "ACTIVE_SCREEN");
         if (proportionalUiScaler != null) {
             proportionalUiScaler.registerTree(screen);
@@ -1836,7 +1855,9 @@ public class MainMenu extends JFrame implements ActionListener {
             SwingUtilities.invokeLater(() -> launchGameWithOverlay(launchAction, fadeIn));
             return;
         }
-        // The music keeps playing into the game (it runs through the whole app).
+        // a board is opening: the menu music fades out while the loading screen comes in
+        // (already fading if the launch cinematic started it)
+        fadeOutMenuMusicForBoard(fadeIn ? LOADING_FADE_IN_MS : LOADING_CLOSE_MS);
         beginGameLaunchOverlay(fadeIn, false, () ->
                 // Let Swing paint the covered frame before game construction occupies the EDT.
                 SwingUtilities.invokeLater(() -> {
@@ -1916,6 +1937,10 @@ public class MainMenu extends JFrame implements ActionListener {
         setGlassPane(cinematic);
         cinematic.setVisible(true);
         cinematic.requestFocusInWindow();
+
+        // the screen starts darkening: the music fades out with it, reaching silence
+        // just as the loading screen has come down
+        fadeOutMenuMusicForBoard(SPELL_LAUNCH_CHARGE_MS + SPELL_LAUNCH_CIRCLE_MS + LOADING_FADE_IN_MS);
 
         long startedAt = System.nanoTime();
         variantLaunchCinematicTimer = AnimationTiming.createUiTimer(e -> {
@@ -3270,6 +3295,7 @@ public class MainMenu extends JFrame implements ActionListener {
     }
 
     public void returnToMenuFromEmbeddedScreen() {
+        boardLaunching = false;
         clearEmbeddedScreen();
         // Pop only the single entry showEmbeddedScreen() pushed when this
         // excursion started (almost always "MENU"), instead of wiping the
@@ -4711,7 +4737,8 @@ public class MainMenu extends JFrame implements ActionListener {
                 break;
                 
             case "START_ANALYSIS":
-                new AnalysisGame(this);       // the music keeps playing here too
+                fadeOutMenuMusicForBoard(LOADING_CLOSE_MS);   // no music on the analysis board
+                new AnalysisGame(this);
                 break;
                 
             case "QUIT":

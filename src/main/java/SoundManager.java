@@ -86,6 +86,31 @@ public class SoundManager {
 
         void setTargetVolume(float v) { this.targetVolume = v; }
 
+        /**
+         * Music: fades smoothly down to silence over {@code ms}, then stops. Muted (M) music
+         * just stops at the end.
+         */
+        public void fadeOutAndStop(int ms) {
+            if (stopped) return;
+            Clip c = clip;
+            if (c == null || ms <= 0) { stop(); return; }
+            final float from = targetVolume;
+            final long startedAt = System.nanoTime();
+            javax.swing.Timer t = AnimationTiming.createUiTimer(null);
+            t.addActionListener(e -> {
+                if (stopped || clip != c) { t.stop(); return; }
+                float p = AnimationTiming.progress(startedAt, ms);
+                // a gentle S-curve down, so it never drops suddenly
+                float level = (float) (0.5 + 0.5 * Math.cos(Math.PI * p));
+                if (!silencedByGlobalMute) setClipVolume(c, Math.max(0f, from * level));
+                if (p >= 1f) {
+                    t.stop();
+                    stop();
+                }
+            });
+            t.start();
+        }
+
         /** Immediately stop and release the sound. Safe to call more than once. */
         public void stop() {
             stopped = true;
