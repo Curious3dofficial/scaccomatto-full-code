@@ -22,6 +22,31 @@ final class PlayerEditor {
         void save(boolean white, String name, BufferedImage avatar, ChessTitle title, Integer elo);
     }
 
+    /** How much the editor is scaled up (set as it opens). */
+    private static float K = 1f;
+    private static int z(int v) { return Math.round(v * K); }
+    private static float zf(float v) { return v * K; }
+    /** Widths can grow more than heights: the popup is wide (16:9). */
+    private static float KW = 1f;
+    private static int zw(int v) { return Math.round(v * KW); }
+
+    /** How much wider it can be: most of the popup's width. */
+    private static float fitWidth(Window owner, int baseW) {
+        Rectangle scr = owner != null && owner.getGraphicsConfiguration() != null
+                ? owner.getGraphicsConfiguration().getBounds()
+                : new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());
+        return Math.max(1f, Math.min(2.2f, scr.width * 0.635f / baseW));
+    }
+
+    /** Up to 1.5x, but the whole editor still fits in the popup on this screen. */
+    private static float fitScale(Window owner, int baseW, int baseH) {
+        Rectangle scr = owner != null && owner.getGraphicsConfiguration() != null
+                ? owner.getGraphicsConfiguration().getBounds()
+                : new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());
+        float k = Math.min(scr.width * 0.66f / baseW, scr.height * 0.80f / baseH);
+        return Math.max(1f, Math.min(1.5f, k));
+    }
+
     /**
      * Opens the editor for one side. {@code anchor} is any component on the screen it
      * belongs to; the window is centred on that screen over a dimmed backdrop.
@@ -29,28 +54,32 @@ final class PlayerEditor {
     static void show(Component anchor, Store store, boolean white) {
         Window owner = anchor instanceof Window ? (Window) anchor : SwingUtilities.getWindowAncestor(anchor);
         final JDialog[] window = new JDialog[1];
+        // everything sized up to fill most of the popup (it used to sit small in the middle
+        // of a big card): as big as the screen allows, up to 1.5x
+        K = fitScale(owner, store.hasTitleAndElo() ? 780 : 760, store.hasTitleAndElo() ? 640 : 470);
+        KW = Math.max(K, fitWidth(owner, store.hasTitleAndElo() ? 780 : 760));
         Runnable closeWindow = () -> { if (window[0] != null) window[0].dispose(); };
         final java.awt.image.BufferedImage[] picked = { store.avatar(white) };
-        JPanel card = new JPanel(new BorderLayout(0, 30));
-        card.setBorder(BorderFactory.createEmptyBorder(48, 56, 46, 56));
-        card.setPreferredSize(new Dimension(780, 640));
+        JPanel card = new JPanel(new BorderLayout(z(0), z(30)));
+        card.setBorder(BorderFactory.createEmptyBorder(z(40), z(44), z(40), z(44)));
+        card.setPreferredSize(new Dimension(zw(780), z(640)));
 
-        JLabel title = AnalysisTheme.title("EDIT PLAYER", 40f);
+        JLabel title = AnalysisTheme.title("EDIT PLAYER", zf(40f));
         card.add(title, BorderLayout.NORTH);
 
         JTextField nameField = new JTextField(store.name(white));
-        nameField.setFont(AnalysisTheme.medium(22f));
+        nameField.setFont(AnalysisTheme.medium(zf(22f)));
         nameField.setForeground(AnalysisTheme.TEXT_DARK);
         nameField.setCaretColor(AnalysisTheme.GOLD_EDGE);
         nameField.setSelectionColor(AnalysisTheme.SELECTED_BG);
         nameField.setSelectedTextColor(Color.WHITE);
         nameField.setOpaque(false);
-        nameField.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
+        nameField.setBorder(BorderFactory.createEmptyBorder(z(14), z(16), z(14), z(16)));
 
         JComponent preview = new JComponent() {
             final AnalysisTheme.Fader hv = new AnalysisTheme.Fader(this::repaint, 160f);
             {
-                setPreferredSize(new Dimension(170, 170));
+                setPreferredSize(new Dimension(z(170), z(170)));
                 setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 setToolTipText("Change picture");
                 addMouseListener(new java.awt.event.MouseAdapter() {
@@ -104,7 +133,7 @@ final class PlayerEditor {
         right.setOpaque(false);
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
         JLabel nameLabel = new JLabel("NAME");
-        nameLabel.setFont(AnalysisTheme.bold(16f));
+        nameLabel.setFont(AnalysisTheme.bold(zf(16f)));
         nameLabel.setForeground(AnalysisTheme.TEXT_MUTED);
         nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         JPanel well = new JPanel(new BorderLayout()) {
@@ -120,41 +149,41 @@ final class PlayerEditor {
         well.setOpaque(false);
         well.add(nameField);
         well.setAlignmentX(Component.LEFT_ALIGNMENT);
-        well.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
+        well.setMaximumSize(new Dimension(Integer.MAX_VALUE, z(62)));
         nameField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override public void focusGained(java.awt.event.FocusEvent e) { well.repaint(); }
             @Override public void focusLost(java.awt.event.FocusEvent e) { well.repaint(); }
         });
-        JPanel picButtons = new JPanel(new GridLayout(1, 2, 10, 0));
+        JPanel picButtons = new JPanel(new GridLayout(1, 2, z(10), 0));
         picButtons.setOpaque(false);
         picButtons.setAlignmentX(Component.LEFT_ALIGNMENT);
-        picButtons.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+        picButtons.setMaximumSize(new Dimension(Integer.MAX_VALUE, z(60)));
         AnalysisTheme.Button change = new AnalysisTheme.Button("Change picture", AnalysisTheme.Kind.SECONDARY, choose);
-        change.setFont(AnalysisTheme.display(20f));
+        change.setFont(AnalysisTheme.display(zf(20f)));
         AnalysisTheme.Button remove = new AnalysisTheme.Button("Remove", AnalysisTheme.Kind.MUTED, () -> {
             picked[0] = null;
             preview.repaint();
         });
-        remove.setFont(AnalysisTheme.display(20f));
+        remove.setFont(AnalysisTheme.display(zf(20f)));
         picButtons.add(change);
         picButtons.add(remove);
         right.add(nameLabel);
-        right.add(Box.createVerticalStrut(8));
+        right.add(Box.createVerticalStrut(z(8)));
         right.add(well);
-        right.add(Box.createVerticalStrut(16));
+        right.add(Box.createVerticalStrut(z(16)));
         right.add(picButtons);
 
         // ── title + Elo ──
         final ChessTitle[] chosenTitle = { store.title(white) };
         Integer currentElo = store.elo(white);
         JTextField eloField = new JTextField(currentElo == null ? "" : String.valueOf(currentElo));
-        eloField.setFont(AnalysisTheme.medium(22f));
+        eloField.setFont(AnalysisTheme.medium(zf(22f)));
         eloField.setForeground(AnalysisTheme.TEXT_DARK);
         eloField.setCaretColor(AnalysisTheme.GOLD_EDGE);
         eloField.setSelectionColor(AnalysisTheme.SELECTED_BG);
         eloField.setSelectedTextColor(Color.WHITE);
         eloField.setOpaque(false);
-        eloField.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+        eloField.setBorder(BorderFactory.createEmptyBorder(z(12), z(16), z(12), z(16)));
         ((javax.swing.text.AbstractDocument) eloField.getDocument()).setDocumentFilter(new javax.swing.text.DocumentFilter() {
             private String keep(String in) { return in == null ? "" : in.replaceAll("[^0-9]", ""); }
             @Override public void insertString(FilterBypass fb, int off, String str, javax.swing.text.AttributeSet a)
@@ -175,7 +204,7 @@ final class PlayerEditor {
         };
 
         JLabel hint = new JLabel(" ");
-        hint.setFont(AnalysisTheme.medium(15f));
+        hint.setFont(AnalysisTheme.medium(zf(15f)));
         hint.setForeground(AnalysisTheme.TEXT_MUTED);
         hint.setAlignmentX(Component.LEFT_ALIGNMENT);
 
@@ -199,7 +228,7 @@ final class PlayerEditor {
                 ChessTitle t = chosenTitle[0];
                 int x = 16;
                 if (t != ChessTitle.NONE) x += t.paint(g2, x, h / 2f, 28f) + 10;
-                g2.setFont(AnalysisTheme.medium(20f));
+                g2.setFont(AnalysisTheme.medium(zf(20f)));
                 g2.setColor(t == ChessTitle.NONE ? AnalysisTheme.TEXT_MUTED : AnalysisTheme.TEXT_DARK);
                 FontMetrics fm = g2.getFontMetrics();
                 g2.drawString(t == ChessTitle.NONE ? "None" : t.fullName, x, h / 2 + (fm.getAscent() - fm.getDescent()) / 2);
@@ -211,8 +240,8 @@ final class PlayerEditor {
                 g2.dispose();
             }
         };
-        titleButton.setPreferredSize(new Dimension(10, 58));
-        titleButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 58));
+        titleButton.setPreferredSize(new Dimension(z(10), z(58)));
+        titleButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, z(58)));
         titleButton.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         Runnable refreshHint = () -> {
@@ -271,7 +300,7 @@ final class PlayerEditor {
                             int tagW = 76;
                             if (t != ChessTitle.NONE) t.paint(g2, x, h / 2f, 26f);
                             x += tagW;
-                            g2.setFont(AnalysisTheme.medium(18f));
+                            g2.setFont(AnalysisTheme.medium(zf(18f)));
                             g2.setColor(AnalysisTheme.TEXT_DARK);
                             FontMetrics fm = g2.getFontMetrics();
                             int base = h / 2 + (fm.getAscent() - fm.getDescent()) / 2;
@@ -310,36 +339,36 @@ final class PlayerEditor {
         JPanel labels = new JPanel(new GridBagLayout());
         labels.setOpaque(false);
         labels.setAlignmentX(Component.LEFT_ALIGNMENT);
-        labels.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
+        labels.setMaximumSize(new Dimension(Integer.MAX_VALUE, z(90)));
         GridBagConstraints gc = new GridBagConstraints();
         gc.fill = GridBagConstraints.HORIZONTAL;
-        gc.gridy = 0; gc.gridx = 0; gc.weightx = 0.62; gc.insets = new Insets(0, 0, 8, 10);
+        gc.gridy = 0; gc.gridx = 0; gc.weightx = 0.62; gc.insets = new Insets(z(0), z(0), z(8), z(10));
         JLabel tl = new JLabel("TITLE");
-        tl.setFont(AnalysisTheme.bold(16f));
+        tl.setFont(AnalysisTheme.bold(zf(16f)));
         tl.setForeground(AnalysisTheme.TEXT_MUTED);
         labels.add(tl, gc);
-        gc.gridx = 1; gc.weightx = 0.38; gc.insets = new Insets(0, 0, 8, 0);
+        gc.gridx = 1; gc.weightx = 0.38; gc.insets = new Insets(z(0), z(0), z(8), z(0));
         JLabel el = new JLabel("ELO");
-        el.setFont(AnalysisTheme.bold(16f));
+        el.setFont(AnalysisTheme.bold(zf(16f)));
         el.setForeground(AnalysisTheme.TEXT_MUTED);
         labels.add(el, gc);
-        gc.gridy = 1; gc.gridx = 0; gc.weightx = 0.62; gc.insets = new Insets(0, 0, 0, 10);
+        gc.gridy = 1; gc.gridx = 0; gc.weightx = 0.62; gc.insets = new Insets(z(0), z(0), z(0), z(10));
         labels.add(titleButton, gc);
-        gc.gridx = 1; gc.weightx = 0.38; gc.insets = new Insets(0, 0, 0, 0);
-        eloWell.setPreferredSize(new Dimension(10, 58));
+        gc.gridx = 1; gc.weightx = 0.38; gc.insets = new Insets(z(0), z(0), z(0), z(0));
+        eloWell.setPreferredSize(new Dimension(z(10), z(58)));
         labels.add(eloWell, gc);
 
         if (store.hasTitleAndElo()) {
-            right.add(Box.createVerticalStrut(22));
+            right.add(Box.createVerticalStrut(z(22)));
             right.add(labels);
-            right.add(Box.createVerticalStrut(8));
+            right.add(Box.createVerticalStrut(z(8)));
             right.add(hint);
         } else {
-            card.setPreferredSize(new Dimension(760, 470));
+            card.setPreferredSize(new Dimension(zw(760), z(470)));
         }
         refreshHint.run();
 
-        JPanel middle = new JPanel(new BorderLayout(22, 0));
+        JPanel middle = new JPanel(new BorderLayout(z(22), z(0)));
         middle.setOpaque(false);
         JPanel pvWrap = new JPanel(new GridBagLayout());
         pvWrap.setOpaque(false);
@@ -348,11 +377,11 @@ final class PlayerEditor {
         middle.add(right, BorderLayout.CENTER);
         card.add(middle, BorderLayout.CENTER);
 
-        JPanel buttons = new JPanel(new GridLayout(1, 2, 16, 0));
+        JPanel buttons = new JPanel(new GridLayout(1, 2, z(16), 0));
         buttons.setOpaque(false);
-        buttons.setPreferredSize(new Dimension(10, 78));
+        buttons.setPreferredSize(new Dimension(z(10), z(78)));
         AnalysisTheme.Button cancelBtn = new AnalysisTheme.Button("CANCEL", AnalysisTheme.Kind.MUTED, closeWindow);
-        cancelBtn.setFont(AnalysisTheme.display(25f));
+        cancelBtn.setFont(AnalysisTheme.display(zf(25f)));
         buttons.add(cancelBtn);
         Runnable save = () -> {
             Integer elo = typedElo.get();
@@ -363,7 +392,7 @@ final class PlayerEditor {
         };
         eloField.addActionListener(e -> save.run());
         AnalysisTheme.Button saveBtn = new AnalysisTheme.Button("SAVE", AnalysisTheme.Kind.PRIMARY, save);
-        saveBtn.setFont(AnalysisTheme.display(25f));
+        saveBtn.setFont(AnalysisTheme.display(zf(25f)));
         buttons.add(saveBtn);
         nameField.addActionListener(e -> save.run());
         card.add(buttons, BorderLayout.SOUTH);

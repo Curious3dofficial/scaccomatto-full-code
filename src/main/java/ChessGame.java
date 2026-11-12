@@ -1044,7 +1044,8 @@ public class ChessGame extends JFrame {
             else if (t.equals("draw") || r.whiteWon == null) r.title = "Draw";
             else if (t.contains("three")) r.title = "Three Checks";
             else if (t.contains("hill")) r.title = "King of the Hill";
-            else if (t.contains("king")) r.title = "King Captured";
+            // atomic chess: the king isn't taken, it goes up with the explosion
+            else if (t.contains("king")) r.title = board != null && board.isAtomicMode() ? "King Blew Up" : "King Captured";
             else if (ml.contains("forfeit") || ml.contains("disconnect")) r.title = "Opponent Left";
             else r.title = "Game Over";
 
