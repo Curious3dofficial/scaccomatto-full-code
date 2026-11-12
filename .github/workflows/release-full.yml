@@ -1,0 +1,121 @@
+# Builds the FULL game for Windows and Linux on GitHub's computers and puts both
+# installers on the download website's repo (scaccomatto-download, release "full-<version>").
+# Nothing is uploaded from your own computer, so it's quick even on a slow connection.
+#
+# Run it with:  gh workflow run release-full.yml --repo Curious3dofficial/scaccomatto-game --ref master
+# Needs the DOWNLOAD_TOKEN secret (a GitHub token that can write to scaccomatto-download).
+
+name: Release full version
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: WiX Toolset (jpackage needs it for the setup wizard)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --version 3.14.1 -y --no-progress
+            echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
+      - name: Firebase settings (from the secret)
+        shell: pwsh
+        env:
+          FIREBASE_PROPERTIES: ${{ secrets.FIREBASE_PROPERTIES }}
+        run: |
+          if (-not $env:FIREBASE_PROPERTIES) { Write-Error "The FIREBASE_PROPERTIES secret is missing."; exit 1 }
+          Set-Content -Path src/main/assets/firebase.properties -Value $env:FIREBASE_PROPERTIES -Encoding utf8
+      - name: Build
+        shell: pwsh
+        run: mvn -B -q clean package -DskipTests
+      - name: Pack the Windows installer
+        shell: pwsh
+        run: |
+          $version = (mvn -q help:evaluate "-Dexpression=project.version" -DforceStdout).Trim()
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target/scaccomatto-$version.jar" dist/
+          jpackage --type exe `
+            --name Scaccomatto --app-version $version `
+            --vendor "Alekhine Studios" `
+            --description "Chess, with personality" `
+            --input dist --main-jar "scaccomatto-$version.jar" --main-class Main `
+            --icon packaging/windows/scaccomatto.ico `
+            --add-modules java.se,jdk.crypto.ec,jdk.unsupported,jdk.localedata,jdk.zipfs `
+            --win-dir-chooser --win-shortcut --win-shortcut-prompt --win-menu --win-menu-group "Scaccomatto" `
+            --win-upgrade-uuid 7c27d338-d9df-49a7-a747-aafaa13ef36c `
+            --dest installers
+          Rename-Item "installers/Scaccomatto-$version.exe" "Scaccomatto-Setup-$version.exe"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows
+          path: installers/*.exe
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Firebase settings (from the secret)
+        env:
+          FIREBASE_PROPERTIES: ${{ secrets.FIREBASE_PROPERTIES }}
+        run: |
+          if [ -z "$FIREBASE_PROPERTIES" ]; then echo "The FIREBASE_PROPERTIES secret is missing."; exit 1; fi
+          printf '%s\n' "$FIREBASE_PROPERTIES" > src/main/assets/firebase.properties
+      - name: Build and pack the Linux installer
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fakeroot > /dev/null
+          VERSION=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
+          mvn -B -q clean package -DskipTests
+          rm -rf dist && mkdir dist && cp "target/scaccomatto-$VERSION.jar" dist/
+          jpackage --type deb \
+            --name Scaccomatto --app-version "$VERSION" \
+            --vendor "Alekhine Studios" \
+            --description "Chess, with personality" \
+            --input dist --main-jar "scaccomatto-$VERSION.jar" --main-class Main \
+            --icon src/main/assets/icon.png \
+            --add-modules java.se,jdk.crypto.ec,jdk.unsupported,jdk.localedata,jdk.zipfs \
+            --java-options "-Dawt.useSystemAAFontSettings=on" \
+            --linux-package-name scaccomatto \
+            --linux-shortcut --linux-menu-group Game --linux-app-category games \
+            --dest installers
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux
+          path: installers/*.deb
+
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          path: out
+      - name: Put both installers on the download site's repo
+        env:
+          GH_TOKEN: ${{ secrets.DOWNLOAD_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "The DOWNLOAD_TOKEN secret is missing."; exit 1; fi
+          VERSION=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
+          REPO=Curious3dofficial/scaccomatto-download
+          TAG=full-$VERSION
+          gh release view "$TAG" -R "$REPO" > /dev/null 2>&1 || \
+            gh release create "$TAG" -R "$REPO" --title "Scaccomatto $VERSION" --notes "Scaccomatto, full version." --latest=false
+          gh release upload "$TAG" -R "$REPO" --clobber out/windows/*.exe out/linux/*.deb
+          echo "Done: https://github.com/$REPO/releases/tag/$TAG"
