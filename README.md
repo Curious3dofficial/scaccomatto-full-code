@@ -53,7 +53,7 @@ The full game keeps Argus up to date by itself. When you change the engine, run:
 bash publish-argus.sh
 ```
 
-It builds Argus, checks it can find a move, signs it and uploads it to the `engine` release of scaccomatto-download. Every copy of the game checks for it in the background, tries it out (everything the game uses in Argus must still be there), and switches to it the next time it opens. If a new engine ever fails, the game goes back to the Argus it was built with. Scaccomatto Free never changes its engine.
+It builds Argus, checks it can find a move, signs it and uploads it to the `engine` release of scaccomatto-free-site. Every copy of the game checks for it in the background, tries it out (everything the game uses in Argus must still be there), and switches to it the next time it opens. If a new engine ever fails, the game goes back to the Argus it was built with. Scaccomatto Free never changes its engine.
 
 One-time setup: `java tools/ArgusPublish.java keygen` makes the signing key in `~/.scaccomatto-signing/` (keep a backup, never commit it) and puts its public half in `ArgusBoot.java`. After each publish, commit `src/main/assets/engine/argus.version`.
 

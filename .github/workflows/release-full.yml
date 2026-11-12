@@ -2,7 +2,7 @@
 # installers on the paid site's repo (scaccomatto-full, release "v<version>").
 # Nothing is uploaded from your own computer, so it's quick even on a slow connection.
 #
-# Run it with:  gh workflow run release-full.yml --repo Curious3dofficial/scaccomatto-game --ref master
+# Run it with:  gh workflow run release-full.yml --repo Curious3dofficial/scaccomatto-full-code --ref master
 # Needs the DOWNLOAD_TOKEN secret (a GitHub token that can write to scaccomatto-full).
 
 name: Release full version
@@ -113,7 +113,7 @@ jobs:
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "The DOWNLOAD_TOKEN secret is missing."; exit 1; fi
           VERSION=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
-          REPO=Curious3dofficial/scaccomatto-full
+          REPO=Curious3dofficial/scaccomatto-full-site
           TAG=v$VERSION
           gh release view "$TAG" -R "$REPO" > /dev/null 2>&1 || \
             gh release create "$TAG" -R "$REPO" --title "Scaccomatto $VERSION" --notes "Scaccomatto $VERSION"

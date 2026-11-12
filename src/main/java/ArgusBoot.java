@@ -43,7 +43,7 @@ final class ArgusBoot {
 
     /** Where the newest engine is announced (a GitHub release of the public download site). */
     static final String MANIFEST_URL = System.getProperty("scaccomatto.argus.manifest",
-            "https://github.com/Curious3dofficial/scaccomatto-download/releases/download/engine/argus.json");
+            "https://github.com/Curious3dofficial/scaccomatto-free-site/releases/download/engine/argus.json");
 
     static final File DIR = new File(new File(System.getProperty("user.home"), ".scaccomatto"), "engine");
     private static final File BAD = new File(DIR, "bad.txt");

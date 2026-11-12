@@ -5,7 +5,7 @@
 # Run from this folder:   bash publish-argus.sh
 # Try it without sending: bash publish-argus.sh --no-upload
 set -e
-REPO="Curious3dofficial/scaccomatto-download"
+REPO="Curious3dofficial/scaccomatto-free-site"
 TAG="engine"
 WORK="target/argus-publish"
 
