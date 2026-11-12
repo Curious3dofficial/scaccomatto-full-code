@@ -1,9 +1,9 @@
 # Builds the FULL game for Windows and Linux on GitHub's computers and puts both
-# installers on the download website's repo (scaccomatto-download, release "full-<version>").
+# installers on the paid site's repo (scaccomatto-full, release "v<version>").
 # Nothing is uploaded from your own computer, so it's quick even on a slow connection.
 #
 # Run it with:  gh workflow run release-full.yml --repo Curious3dofficial/scaccomatto-game --ref master
-# Needs the DOWNLOAD_TOKEN secret (a GitHub token that can write to scaccomatto-download).
+# Needs the DOWNLOAD_TOKEN secret (a GitHub token that can write to scaccomatto-full).
 
 name: Release full version
 
@@ -113,11 +113,11 @@ jobs:
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "The DOWNLOAD_TOKEN secret is missing."; exit 1; fi
           VERSION=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)
-          REPO=Curious3dofficial/scaccomatto-download
-          TAG=full-$VERSION
+          REPO=Curious3dofficial/scaccomatto-full
+          TAG=v$VERSION
           gh release view "$TAG" -R "$REPO" > /dev/null 2>&1 || \
-            gh release create "$TAG" -R "$REPO" --title "Scaccomatto $VERSION" --notes "Scaccomatto, full version." --latest=false
+            gh release create "$TAG" -R "$REPO" --title "Scaccomatto $VERSION" --notes "Scaccomatto $VERSION"
           gh release upload "$TAG" -R "$REPO" --clobber out/windows/*.exe out/linux/*.deb
           # (in case it was left as a draft: drafts are invisible to visitors and the website)
-          gh release edit "$TAG" -R "$REPO" --draft=false --tag "$TAG" --latest=false
+          gh release edit "$TAG" -R "$REPO" --draft=false --tag "$TAG" --latest
           echo "Done: https://github.com/$REPO/releases/tag/$TAG"
