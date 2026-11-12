@@ -20,6 +20,7 @@ public class Main {
         Runtime.getRuntime().addShutdownHook(new Thread(Friends::clearPresence, "presence-off"));
         PopupSound.install();
         installGlobalMuteShortcut();
+        TextEditKeys.install();               // Ctrl+Backspace / Ctrl+Delete in every text box
         SmoothFade.installFrameSync();
         SmoothScroll.install();
         SwingUtilities.invokeLater(MainMenu::new);
@@ -32,26 +33,67 @@ public class Main {
     // any individual window's bindings do, regardless of which of the
     // app's several JFrames (MainMenu, ChessGame, AnalysisGame, puzzles)
     // currently has focus, so this only needs to be installed once, here.
+    //
+    // Holding M and pressing Up / Down changes the master volume 5% at a time.
+    // So a quick tap still mutes, the mute now happens when M is let go, and
+    // only if no arrow was pressed while it was held. This dispatcher is the
+    // first one added, so it runs before every other hotkey in the app: while
+    // M is held, Up / Down never reach the move list or anything else.
+    private static boolean mHeld, mUsedForVolume;
+
     private static void installGlobalMuteShortcut() {
-        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
-            if (e.getID() != KeyEvent.KEY_PRESSED) return false;
-            if (e.getKeyCode() != KeyEvent.VK_M) return false;
-            if (e.isControlDown() || e.isAltDown() || e.isMetaDown()) return false;
+        KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+        kfm.addKeyEventDispatcher(e -> {
+            int id = e.getID();
+            int code = e.getKeyCode();
+            if (id != KeyEvent.KEY_PRESSED && id != KeyEvent.KEY_RELEASED) return false;
 
-            // Don't hijack the letter "m" while the user is typing it into
-            // a text field (player name, search, chat, etc.).
-            Component focusOwner = e.getComponent();
-            if (focusOwner instanceof javax.swing.text.JTextComponent) return false;
-
-            boolean muted = SoundManager.toggleMuted();
-            Window active = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow();
-            if (active == null) {
-                active = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
+            if (code == KeyEvent.VK_M) {
+                if (id == KeyEvent.KEY_PRESSED) {
+                    if (e.isControlDown() || e.isAltDown() || e.isMetaDown()) return false;
+                    // Don't hijack the letter "m" while the user is typing it into
+                    // a text field (player name, search, chat, etc.).
+                    if (e.getComponent() instanceof javax.swing.text.JTextComponent) return false;
+                    if (!mHeld) {                 // (key repeat sends more presses: ignore those)
+                        mHeld = true;
+                        mUsedForVolume = false;
+                    }
+                    return true;
+                }
+                // released
+                if (!mHeld) return false;
+                mHeld = false;
+                if (!mUsedForVolume) {
+                    boolean muted = SoundManager.toggleMuted();
+                    showVolume(muted);
+                }
+                return true;
             }
-            if (active != null) {
-                MuteIndicator.show(active, muted);
+
+            if (mHeld && (code == KeyEvent.VK_UP || code == KeyEvent.VK_DOWN)) {
+                if (id == KeyEvent.KEY_PRESSED) {
+                    mUsedForVolume = true;
+                    int now = AppSettings.masterVolume();
+                    int next = Math.max(0, Math.min(100,
+                            (int) Math.round(now / 5.0) * 5 + (code == KeyEvent.VK_UP ? 5 : -5)));
+                    AppSettings.setInteger("masterVolume", next);
+                    SoundManager.refreshVolumes();
+                    // turning it up while muted brings the sound back
+                    if (code == KeyEvent.VK_UP && SoundManager.isMuted()) SoundManager.toggleMuted();
+                    showVolume(SoundManager.isMuted());
+                }
+                return true;                      // the arrows don't go anywhere else meanwhile
             }
             return false;
         });
+        // switching windows while M is down: forget it, so M doesn't feel stuck
+        kfm.addPropertyChangeListener("activeWindow", ev -> { mHeld = false; });
+    }
+
+    private static void showVolume(boolean muted) {
+        KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+        Window active = kfm.getFocusedWindow();
+        if (active == null) active = kfm.getActiveWindow();
+        if (active != null) MuteIndicator.show(active, muted, AppSettings.masterVolume());
     }
 }

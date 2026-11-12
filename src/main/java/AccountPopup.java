@@ -72,12 +72,55 @@ final class AccountPopup {
         return v * S;
     }
 
-    private static final int CONTENT_W = s(640);
+    /** Every page uses the popup's full width (it used to be a narrow column in the middle). */
+    private static final int CONTENT_W = computeWideW();
+    private static final int WIDE_W = CONTENT_W;
+    /** Their list fills the page down to the Back button. */
+    private static final int LIST_H = s(676 - (64 + 16 + 64 + 6 + 26 + 12 + 14 + 66) - 6);
+
+    private static int computeWideW() {
+        try {
+            int screenW = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds().width;
+            return Math.max(s(640), Math.min(s(920), Math.round(screenW * 0.58f)));
+        } catch (Exception e) {
+            return s(920);
+        }
+    }
+
+    /** The page is the full page height, so the glue in it can spread things out. */
+    private static void fillPage(JPanel p) {
+        p.setPreferredSize(new Dimension(CONTENT_W, PAGE_H));
+        p.setMaximumSize(new Dimension(CONTENT_W, PAGE_H));
+    }
+
+    /** Space that grows with the room left over (at least {@code min}). */
+    private static Component gap(int min) {
+        return new Box.Filler(new Dimension(0, min), new Dimension(0, min), new Dimension(0, Short.MAX_VALUE));
+    }
+
+    /** Full width, at least {@code minH} tall, taking whatever height is left (lists). */
+    private static <T extends JComponent> T stretch(T c, int minH) {
+        c.setAlignmentX(Component.LEFT_ALIGNMENT);
+        c.setPreferredSize(new Dimension(CONTENT_W, minH));
+        c.setMinimumSize(new Dimension(CONTENT_W, minH));
+        c.setMaximumSize(new Dimension(CONTENT_W, Short.MAX_VALUE));
+        return c;
+    }
+
+    // Fixed height, the wide pages' width, left-aligned in a BoxLayout column.
+    private static <T extends JComponent> T wide(T c, int h) {
+        c.setAlignmentX(Component.LEFT_ALIGNMENT);
+        c.setPreferredSize(new Dimension(WIDE_W, h));
+        c.setMaximumSize(new Dimension(WIDE_W, h));
+        c.setMinimumSize(new Dimension(WIDE_W, h));
+        return c;
+    }
 
     // ---- signed-in account (mirrors the server's profile) ----
     private static final class Profile {
         String name;
         String username;
+        String email;
         int elo;
         int wins;
         int losses;
@@ -143,6 +186,7 @@ final class AccountPopup {
         Profile p = new Profile();
         p.name = ap.profileName();
         p.username = ap.username();
+        p.email = ap.email();
         p.elo = AccountApiClient.displayRating(ap.rating());
         p.wins = ap.wins();
         p.losses = ap.losses();
@@ -395,7 +439,7 @@ final class AccountPopup {
             return;
         }
         // no tap here: the button that opened this already played one
-        JDialog d = new JDialog(owner, "Log in", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new BigPopup.InDialog(owner, "Log in", Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         Card c = new Card();
         c.setLayout(new BorderLayout(0, s(22)));
@@ -451,7 +495,7 @@ final class AccountPopup {
 
     private void open(Window owner) {
         SoundManager.playExtraSound("tap.wav");
-        dialog = new JDialog(owner, "Account", Dialog.ModalityType.APPLICATION_MODAL);
+        dialog = new BigPopup.InDialog(owner, "Account", Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setUndecorated(true);
         // Rounded corners come from the window SHAPE, not a see-through
         // window: a translucent window has to be fully redrawn every time a
@@ -513,11 +557,28 @@ final class AccountPopup {
     }
 
     private boolean onProfilePage;
+    /** What shows under your name: 0 = @username, 1 = email partly hidden, 2 = full email. */
+    private int handleMode;
+
+    private static String handleText(Profile me, int mode) {
+        if (mode == 0 || me.email == null || me.email.isBlank()) return "@" + me.username;
+        return mode == 1 ? maskEmail(me.email) : me.email;
+    }
+
+    /** "chandana02@gmail.com" -> "ch*******2@gmail.com": the first two and the last letter before the @. */
+    static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at < 0) return email;
+        String local = email.substring(0, at), domain = email.substring(at);
+        int n = local.length();
+        if (n <= 3) return local.charAt(0) + "*".repeat(Math.max(1, n - 1)) + domain;
+        return local.substring(0, 2) + "*".repeat(n - 3) + local.charAt(n - 1) + domain;
+    }
 
     private JComponent header() {
         JPanel row = transparent(new BorderLayout());
         JLabel title = new JLabel("ACCOUNT");
-        title.setFont(MainMenu.variantDisplayFont(sf(40f)));
+        title.setFont(MainMenu.variantDisplayFont(sf(52f)));
         title.setForeground(TEXT_DARK);
         // TEST: signs straight into an offline test account, no server needed
         testLogin = new Btn("TEST", Btn.WHITE_STYLE);
@@ -568,14 +629,14 @@ final class AccountPopup {
         });
         // refresh, top left -- the mirror image of the X: loads the page again from the server
         refreshButton = new AnalysisTheme.RefreshButton(true, "Refresh", null);
-        refreshButton.setPreferredSize(new Dimension(s(44), s(44)));
+        refreshButton.setPreferredSize(new Dimension(s(58), s(58)));
         refreshButton.addActionListener(e -> {
             SoundManager.playExtraSound("tap.wav");
             refreshPage();
         });
         refreshButton.setVisible(false);
         JPanel refreshSlot = transparent(new GridBagLayout());   // keeps its space when hidden
-        refreshSlot.setPreferredSize(new Dimension(s(44), s(44)));
+        refreshSlot.setPreferredSize(new Dimension(s(58), s(58)));
         refreshSlot.add(refreshButton);
         JPanel closeWrap = transparent(new GridBagLayout());
         closeWrap.add(close);
@@ -652,7 +713,7 @@ final class AccountPopup {
         gc.anchor = Boolean.TRUE.equals(page.getClientProperty("centreInFrame"))
                 ? GridBagConstraints.CENTER : GridBagConstraints.NORTH;
         frame.add(page, gc);
-        frame.setPreferredSize(new Dimension(CONTENT_W, PAGE_H));
+        frame.setPreferredSize(new Dimension(Math.max(CONTENT_W, page.getPreferredSize().width), PAGE_H));
         frame.setMinimumSize(frame.getPreferredSize());
         if (Boolean.getBoolean("scaccomatto.debugAccountPages") && page.getPreferredSize().height > PAGE_H) {
             System.err.println("Account page too tall: " + page.getPreferredSize().height + " > " + PAGE_H);
@@ -675,14 +736,15 @@ final class AccountPopup {
     // =====================================================================
     private JComponent signInPage() {
         JPanel p = column();
+        fillPage(p);
         p.add(tabs(true));
-        p.add(Box.createVerticalStrut(s(18)));
+        p.add(gap(s(18)));
 
-        Field login = new Field("you@example.com", false);
+        Field login = new Field("you@example.com or username", false);
         signInEmail = login;
         Field password = new Field("Password", true);
-        p.add(fieldBlock("EMAIL", login));
-        p.add(Box.createVerticalStrut(s(16)));
+        p.add(fieldBlock("EMAIL OR USERNAME", login));
+        p.add(gap(s(16)));
         p.add(fieldBlock("PASSWORD", password));
         p.add(Box.createVerticalStrut(s(14)));
 
@@ -729,7 +791,7 @@ final class AccountPopup {
         clearErrorOnEdit(signIn, login, password);
         p.add(full(signIn, s(66)));
         p.add(signIn.note());
-        p.add(Box.createVerticalStrut(s(18)));
+        p.add(gap(s(18)));
         p.add(orDivider());
         p.add(Box.createVerticalStrut(s(18)));
 
@@ -888,13 +950,15 @@ final class AccountPopup {
     private static void copyEmail(Field from, Field to) {
         if (from == null || to == null) return;
         String typed = from.getText().trim();
-        if (!typed.isEmpty() && to.getText().trim().isEmpty()) to.setText(typed);
+        // only an email carries over (a username typed to sign in isn't one)
+        if (typed.contains("@") && to.getText().trim().isEmpty()) to.setText(typed);
     }
 
     private JComponent createPage() {
         JPanel p = column();
+        fillPage(p);
         p.add(tabs(false));
-        p.add(Box.createVerticalStrut(s(12)));
+        p.add(gap(s(12)));
 
         Field name = new Field("What should we call you?", false);
         Field username = new Field("Letters, numbers, _ (unchangeable)", false);
@@ -902,14 +966,14 @@ final class AccountPopup {
         createEmail = email;
         Field password = new Field("At least 10 characters", true);
         p.add(fieldBlock("PROFILE NAME", name));
-        p.add(Box.createVerticalStrut(s(8)));
+        p.add(gap(s(8)));
         p.add(fieldBlock("USERNAME", username));
-        p.add(Box.createVerticalStrut(s(8)));
+        p.add(gap(s(8)));
         p.add(fieldBlock("EMAIL", email));
-        p.add(Box.createVerticalStrut(s(8)));
+        p.add(gap(s(8)));
         p.add(fieldBlock("PASSWORD", password));
-        p.add(Box.createVerticalStrut(s(8)));
-        JLabel terms = new JLabel("<html><div style='width:" + s(470) + "px'>By creating an account you confirm you're 13 or older"
+        p.add(gap(s(8)));
+        JLabel terms = new JLabel("<html><div style='width:" + (CONTENT_W - s(20)) + "px'>By creating an account you confirm you're 13 or older"
                 + " and agree to the Terms and Privacy Policy (Settings > About).</div></html>");
         terms.setFont(UiFonts.subtext(sf(15f)));
         terms.setForeground(TEXT_MUTED);
@@ -1082,13 +1146,14 @@ final class AccountPopup {
         createEmail = null;
         Profile me = signedIn;
         JPanel p = column();
+        fillPage(p);
         p.putClientProperty("profilePage", Boolean.TRUE);
 
         // --- profile card
         JPanel profile = new RoundPanel(CREAM, GOLD, s(28));
         profile.setLayout(new BorderLayout(s(22), s(0)));
         profile.setBorder(new EmptyBorder(s(18), s(24), s(18), s(26)));
-        Avatar avatar = new Avatar(me.name, me.avatar, s(96));
+        Avatar avatar = new Avatar(me.name, me.avatar, s(118));
         // Hover darkens it and shows a pencil; click to pick a new picture.
         avatar.setEditable(() -> pickAvatar(me));
         JPanel avatarWrap = transparent(new GridBagLayout());
@@ -1106,9 +1171,27 @@ final class AccountPopup {
             setPage(editPage());
         });
         nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JLabel handle = new JLabel("@" + me.username);
+        // click the @username to cycle: @username -> hidden email (ch*****3@...) -> full email
+        boolean hasEmail = me.email != null && !me.email.isBlank();
+        if (!hasEmail) handleMode = 0;
+        JLabel handle = new JLabel(handleText(me, handleMode));
         handle.setFont(UiFonts.subtext(sf(20f)));
         handle.setForeground(TEXT_MUTED);
+        if (hasEmail) {
+            handle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            handle.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (!SwingUtilities.isLeftMouseButton(e)) return;
+                    SoundManager.playExtraSound("tap.wav");
+                    handleMode = (handleMode + 1) % 3;
+                    handle.setText(handleText(me, handleMode));
+                    handle.revalidate();
+                    handle.repaint();
+                }
+                @Override public void mouseEntered(java.awt.event.MouseEvent e) { handle.setForeground(TEXT_DARK); }
+                @Override public void mouseExited(java.awt.event.MouseEvent e) { handle.setForeground(TEXT_MUTED); }
+            });
+        }
         JLabel since = new JLabel("Member since " + me.memberSince);
         since.setFont(UiFonts.subtext(sf(16f)));
         since.setForeground(TEXT_MUTED);
@@ -1123,8 +1206,8 @@ final class AccountPopup {
         JPanel eloWrap = transparent(new GridBagLayout());
         eloWrap.add(new EloBadge(me.elo));
         profile.add(eloWrap, BorderLayout.EAST);
-        p.add(full(profile, s(164)));
-        p.add(Box.createVerticalStrut(s(22)));
+        p.add(full(profile, s(196)));
+        p.add(gap(s(22)));
 
         // --- stats
         p.add(sectionLabel("STATS"));
@@ -1134,11 +1217,10 @@ final class AccountPopup {
         stats.add(new StatTile(String.valueOf(me.wins), "WINS", GREEN_EDGE));
         stats.add(new StatTile(String.valueOf(me.losses), "LOSSES", RED_EDGE));
         stats.add(new StatTile(String.valueOf(me.draws), "DRAWS", TEXT_MUTED));
-        p.add(full(stats, s(104)));
-        p.add(Box.createVerticalStrut(s(14)));
-        int rate = me.games() == 0 ? 0 : Math.round(100f * me.wins / me.games());
-        p.add(full(new WinRateBar(rate, me.games() == 0), s(40)));
-        p.add(Box.createVerticalStrut(s(24)));
+        p.add(full(stats, s(132)));
+        p.add(Box.createVerticalStrut(s(16)));
+        p.add(full(new WinRateBar(me.wins, me.draws, me.losses), s(62)));
+        p.add(gap(s(24)));
 
         // --- actions
         // (EDIT PROFILE button removed -- the name/pencil does that now.)
@@ -1205,15 +1287,15 @@ final class AccountPopup {
         Field who = new Field("username", false, "@");      // the @ stays put while you type
         addRow.add(who, BorderLayout.CENTER);
         PlayerCard.CardButton add = new PlayerCard.CardButton("Add", true);
-        add.setPreferredSize(new Dimension(s(130), s(56)));
+        add.setPreferredSize(new Dimension(s(180), s(64)));
+        add.setFont(MainMenu.variantDisplayFont(sf(20f)));
         addRow.add(add, BorderLayout.EAST);
-        p.add(full(addRow, s(56)));
+        p.add(wide(addRow, s(64)));
         JLabel note = new JLabel(message == null ? " " : message);
-        note.setFont(UiFonts.subtext(sf(15f)));
+        note.setFont(UiFonts.subtext(sf(17f)));
         note.setForeground(TEXT_MUTED);
-        note.setAlignmentX(Component.LEFT_ALIGNMENT);
         p.add(Box.createVerticalStrut(s(6)));
-        p.add(note);
+        p.add(wide(note, s(26)));
         Runnable submit = () -> {
             String name = who.getText().trim();
             if (name.isEmpty()) return;
@@ -1248,7 +1330,7 @@ final class AccountPopup {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.getVerticalScrollBar().setUnitIncrement(s(24));
-        p.add(full(scroll, s(330)));
+        p.add(wide(scroll, LIST_H));
         p.add(Box.createVerticalStrut(s(14)));
 
         new SwingWorker<Object[], Void>() {
@@ -1269,15 +1351,17 @@ final class AccountPopup {
                             PlayerCard.CardButton no = new PlayerCard.CardButton("Decline", false);
                             yes.addActionListener(e -> friendAction(() -> Friends.accept(q.uid), q.name + " is now your friend."));
                             no.addActionListener(e -> friendAction(() -> Friends.decline(q.uid), null));
-                            list.add(friendRow(q.uid, q.name, "@" + q.username, null, false, yes, no));
+                            JComponent qRow = friendRow(q.uid, q.name, "@" + q.username, null, false, yes, no);
+                            addBlockReportMenu(qRow, q.uid, q.name);
+                            list.add(qRow);
                         }
                         list.add(Box.createVerticalStrut(s(10)));
                     }
                     list.add(listHeading(fr.isEmpty() ? "NO FRIENDS YET" : "YOUR FRIENDS"));
                     if (fr.isEmpty()) {
-                        JLabel hint = new JLabel("<html><div style='width:" + s(470) + "px'>Add a friend by their username above, "
+                        JLabel hint = new JLabel("<html><div style='width:" + (WIDE_W - s(40)) + "px'>Add a friend by their username above, "
                                 + "or with Add Friend on a player's card after an online game.</div></html>");
-                        hint.setFont(UiFonts.subtext(sf(16f)));
+                        hint.setFont(UiFonts.subtext(sf(19f)));
                         hint.setForeground(TEXT_MUTED);
                         hint.setAlignmentX(Component.LEFT_ALIGNMENT);
                         list.add(hint);
@@ -1304,8 +1388,10 @@ final class AccountPopup {
                             }
                         });
                         String rating = f.rating == null ? "" : " · " + AccountApiClient.displayRating(f.rating);
-                        list.add(friendRow(f.uid, f.name, "@" + f.username + rating + " · " + status,
-                                f.online ? (f.playing ? GOLD : GREEN) : null, true, ch, rm));
+                        JComponent fRow = friendRow(f.uid, f.name, "@" + f.username + rating + " · " + status,
+                                f.online ? (f.playing ? GOLD : GREEN) : null, true, ch, rm);
+                        addBlockReportMenu(fRow, f.uid, f.name);
+                        list.add(fRow);
                     }
                 } catch (Exception ex) {
                     loading.setText("Couldn't load your friends. " + FirebaseLink.friendlyError(ex));
@@ -1321,7 +1407,7 @@ final class AccountPopup {
             SoundManager.playExtraSound("tap.wav");
             setPage(profilePage());
         });
-        p.add(full(back, s(62)));
+        p.add(wide(back, s(66)));
         return p;
     }
 
@@ -1338,7 +1424,7 @@ final class AccountPopup {
         });
         row.add(friends);
         row.add(banned);
-        return full(row, s(56));
+        return wide(row, s(64));
     }
 
     /**
@@ -1357,17 +1443,17 @@ final class AccountPopup {
         Field who = new Field("username", false, "@");
         addRow.add(who, BorderLayout.CENTER);
         PlayerCard.CardButton block = new PlayerCard.CardButton("Block", true);
-        block.setPreferredSize(new Dimension(s(130), s(56)));
+        block.setPreferredSize(new Dimension(s(180), s(64)));
+        block.setFont(MainMenu.variantDisplayFont(sf(20f)));
         addRow.add(block, BorderLayout.EAST);
-        p.add(full(addRow, s(56)));
+        p.add(wide(addRow, s(64)));
         JLabel note = new JLabel(message == null
                 ? "Players you've blocked can't chat with you or be matched with you."
                 : message);
-        note.setFont(UiFonts.subtext(sf(15f)));
+        note.setFont(UiFonts.subtext(sf(17f)));
         note.setForeground(TEXT_MUTED);
-        note.setAlignmentX(Component.LEFT_ALIGNMENT);
         p.add(Box.createVerticalStrut(s(6)));
-        p.add(note);
+        p.add(wide(note, s(26)));
         p.add(Box.createVerticalStrut(s(12)));
         Runnable submit = () -> {
             String name = who.getText().trim();
@@ -1402,7 +1488,7 @@ final class AccountPopup {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.getVerticalScrollBar().setUnitIncrement(s(24));
-        p.add(full(scroll, s(318)));
+        p.add(wide(scroll, LIST_H));
         p.add(Box.createVerticalStrut(s(14)));
 
         new SwingWorker<java.util.Map<String, String>, Void>() {
@@ -1417,9 +1503,9 @@ final class AccountPopup {
                 try { blocked = get(); } catch (Exception ex) { blocked = java.util.Collections.emptyMap(); }
                 list.add(listHeading(blocked.isEmpty() ? "NOBODY BLOCKED" : "BLOCKED PLAYERS"));
                 if (blocked.isEmpty()) {
-                    JLabel hint = new JLabel("<html><div style='width:" + s(470) + "px'>Block someone by their username above, "
+                    JLabel hint = new JLabel("<html><div style='width:" + (WIDE_W - s(40)) + "px'>Block someone by their username above, "
                             + "or from their player card during or after an online game.</div></html>");
-                    hint.setFont(UiFonts.subtext(sf(16f)));
+                    hint.setFont(UiFonts.subtext(sf(19f)));
                     hint.setForeground(TEXT_MUTED);
                     hint.setAlignmentX(Component.LEFT_ALIGNMENT);
                     list.add(hint);
@@ -1444,7 +1530,7 @@ final class AccountPopup {
             SoundManager.playExtraSound("tap.wav");
             setPage(profilePage());
         });
-        p.add(full(back, s(62)));
+        p.add(wide(back, s(66)));
         return p;
     }
 
@@ -1466,11 +1552,104 @@ final class AccountPopup {
         }.execute();
     }
 
+    /** Right-click a friend (or a request): Block or Report them. */
+    private void addBlockReportMenu(JComponent row, String uid, String name) {
+        java.awt.event.MouseAdapter m = new java.awt.event.MouseAdapter() {
+            @Override public void mousePressed(java.awt.event.MouseEvent e) { maybe(e); }
+            @Override public void mouseReleased(java.awt.event.MouseEvent e) { maybe(e); }
+            private void maybe(java.awt.event.MouseEvent e) {
+                if (!e.isPopupTrigger() && !(SwingUtilities.isRightMouseButton(e) && e.getID() == java.awt.event.MouseEvent.MOUSE_PRESSED)) return;
+                if (e.getID() == java.awt.event.MouseEvent.MOUSE_RELEASED) return;   // shown on press
+                Point at = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), row);
+                showBlockReportMenu(row, at.x, at.y, uid, name);
+            }
+        };
+        attachAll(row, m);
+    }
+
+    private static void attachAll(Component c, java.awt.event.MouseListener m) {
+        c.addMouseListener(m);
+        if (c instanceof Container) for (Component k : ((Container) c).getComponents()) attachAll(k, m);
+    }
+
+    /** Right-click a player on the leaderboard: Add friend, Block (or Unblock), Report. */
+    private void addLeaderboardMenu(JComponent row, String uid, String name, String username) {
+        attachAll(row, new java.awt.event.MouseAdapter() {
+            @Override public void mousePressed(java.awt.event.MouseEvent e) {
+                if (!e.isPopupTrigger() && !SwingUtilities.isRightMouseButton(e)) return;
+                Point at = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), row);
+                showLeaderboardMenu(row, at.x, at.y, uid, name, username);
+            }
+        });
+    }
+
+    private void showLeaderboardMenu(JComponent row, int x, int y, String uid, String name, String username) {
+        java.util.List<AppMenu.Item> menu = new java.util.ArrayList<>();
+        boolean blocked = Moderation.isBlocked(uid);
+        menu.add(new AppMenu.Item("Add friend", PlayerCard.Glyph.ADD_FRIEND, false, !blocked, () -> {
+            new SwingWorker<String, Void>() {
+                @Override protected String doInBackground() {
+                    try { return Friends.add(uid, name); }
+                    catch (Exception ex) { return FirebaseLink.friendlyError(ex); }
+                }
+                @Override protected void done() {
+                    String msg;
+                    try { msg = get(); } catch (Exception ex) { msg = "Something went wrong."; }
+                    PlayerCard.confirmOnly(dialog, "Add friend", msg);
+                }
+            }.execute();
+        }));
+        menu.add(new AppMenu.Item(blocked ? "Unblock" : "Block", PlayerCard.Glyph.BLOCK, !blocked, true, () -> {
+            if (blocked) {
+                Moderation.setBlocked(uid, name, false);
+                PlayerCard.confirmOnly(dialog, "Unblocked", name + " is unblocked.");
+                return;
+            }
+            if (!PlayerCard.confirm(dialog, "Block " + name + "?",
+                    "If you're friends, that ends. They can't challenge you or send you requests, "
+                            + "and Join Game won't match you with them. You can unblock them in Friends > Blocked.",
+                    "Block")) return;
+            Moderation.setBlocked(uid, name, true);         // (also ends any friendship, in the background)
+        }));
+        menu.add(new AppMenu.Item("Report", PlayerCard.Glyph.REPORT, true, true, () -> {
+            PlayerCard.Info info = new PlayerCard.Info();
+            info.playerId = uid;
+            info.accountId = uid;
+            info.name = name;
+            ReportDialog.open(dialog, info);
+        }));
+        AppMenu.show(row, x, y, name, "@" + username, menu, blocked ? "You've blocked this player" : null);
+    }
+
+    private void showBlockReportMenu(JComponent row, int x, int y, String uid, String name) {
+        java.util.List<AppMenu.Item> menu = new java.util.ArrayList<>();
+        menu.add(new AppMenu.Item("Block", PlayerCard.Glyph.BLOCK, true, true, () -> {
+            if (!PlayerCard.confirm(dialog, "Block " + name + "?",
+                    "You'll stop being friends, they can't challenge you or send you requests, "
+                            + "and Join Game won't match you with them. You can unblock them in the Blocked tab.",
+                    "Block")) return;
+            friendAction(() -> {
+                Friends.cutTies(uid);
+                Moderation.setBlocked(uid, name, true);
+            }, name + " is blocked.");
+        }));
+        menu.add(new AppMenu.Item("Report", PlayerCard.Glyph.REPORT, true, true, () -> {
+            PlayerCard.Info info = new PlayerCard.Info();
+            info.playerId = uid;
+            info.accountId = uid;
+            info.name = name;
+            ReportDialog.open(dialog, info);
+            // "Also block" ticked: they're gone from the list now
+            if (Moderation.isBlocked(uid)) friendAction(() -> Friends.cutTies(uid), null);
+        }));
+        AppMenu.show(row, x, y, name, null, menu, null);
+    }
+
     private static JLabel listHeading(String text) {
         JLabel l = new JLabel(text);
-        l.setFont(MainMenu.variantDisplayFont(sf(15f)));
+        l.setFont(MainMenu.variantDisplayFont(sf(18f)));
         l.setForeground(TEXT_MUTED);
-        l.setBorder(new EmptyBorder(s(2), 0, s(6), 0));
+        l.setBorder(new EmptyBorder(s(4), 0, s(10), 0));
         l.setAlignmentX(Component.LEFT_ALIGNMENT);
         return l;
     }
@@ -1507,16 +1686,20 @@ final class AccountPopup {
     private static JComponent friendRow(String uid, String name, String details, Color dot, boolean showStatus,
                                         JButton a, JButton b) {
         JPanel row = new RoundPanel(UiTheme.c(255, 253, 248), CARD_BORDER, s(18));
-        row.setLayout(new BorderLayout(s(12), 0));
+        row.setLayout(new BorderLayout(s(16), 0));
         row.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
-        row.setBorder(new EmptyBorder(s(8), s(14), s(8), s(10)));
+        row.setBorder(new EmptyBorder(s(12), s(18), s(12), s(14)));
         Color rowBg = UiTheme.c(255, 253, 248);
         JComponent d = new JComponent() {
             @Override protected void paintComponent(Graphics g0) {
                 Graphics2D g = quality(g0);
                 g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                int size = Math.min(getWidth(), getHeight()) - s(2);
-                int x = (getWidth() - size) / 2, y = (getHeight() - size) / 2;
+                int box = Math.min(getWidth(), getHeight());
+                // with a status dot, the picture is a little smaller so the dot (and its ring)
+                // hanging off the bottom-right corner stays inside the box, not cut off
+                int size = showStatus ? (int) Math.floor((box - s(3) - 2) / 1.052f) : box - s(2);
+                int span = showStatus ? Math.round(size * 1.052f) + s(3) : size;
+                int x = (getWidth() - span) / 2, y = (getHeight() - span) / 2;
                 Ellipse2D.Float circle = new Ellipse2D.Float(x, y, size, size);
                 java.util.Optional<java.awt.image.BufferedImage> pic = uid == null ? java.util.Optional.empty() : FRIEND_PICS.get(uid);
                 if (pic != null && pic.isPresent()) {
@@ -1544,7 +1727,7 @@ final class AccountPopup {
                 g.dispose();
             }
         };
-        d.setPreferredSize(new Dimension(s(44), s(44)));
+        d.setPreferredSize(new Dimension(s(62), s(62)));
         if (uid != null && !FRIEND_PICS.containsKey(uid)) {
             new SwingWorker<java.awt.image.BufferedImage, Void>() {
                 @Override protected java.awt.image.BufferedImage doInBackground() {
@@ -1564,34 +1747,35 @@ final class AccountPopup {
         row.add(d, BorderLayout.WEST);
         JLabel text = new JLabel("<html><b>" + escape(name) + "</b><br><span style='color:#827562'>"
                 + escape(details) + "</span></html>");
-        text.setFont(UiFonts.subtext(sf(16f)));
+        text.setFont(UiFonts.subtext(sf(19f)));
         text.setForeground(TEXT_DARK);
         row.add(text, BorderLayout.CENTER);
-        JPanel btns = transparent(new GridLayout(1, b == null ? 1 : 2, s(8), 0));
-        a.setPreferredSize(new Dimension(s(120), s(44)));
-        a.setFont(MainMenu.variantDisplayFont(sf(15f)));
+        JPanel btns = transparent(new GridLayout(1, b == null ? 1 : 2, s(10), 0));
+        a.setPreferredSize(new Dimension(s(160), s(54)));
+        a.setFont(MainMenu.variantDisplayFont(sf(18f)));
         btns.add(a);
         if (b != null) {
-            b.setPreferredSize(new Dimension(s(110), s(44)));
-            b.setFont(MainMenu.variantDisplayFont(sf(15f)));
+            b.setPreferredSize(new Dimension(s(160), s(54)));
+            b.setFont(MainMenu.variantDisplayFont(sf(18f)));
             btns.add(b);
         }
         JPanel bw = transparent(new GridBagLayout());
         bw.add(btns);
         row.add(bw, BorderLayout.EAST);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(68)));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(88)));
         JPanel wrap = transparent(new BorderLayout());
-        wrap.setBorder(new EmptyBorder(0, 0, s(8), 0));
+        wrap.setBorder(new EmptyBorder(0, 0, s(10), 0));
         wrap.add(row);
         wrap.setAlignmentX(Component.LEFT_ALIGNMENT);
-        wrap.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(76)));
+        wrap.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(98)));
         return wrap;
     }
 
     /** The top 50 players by rating (Quick Match games between accounts). */
     private JComponent leaderboardPage() {
         JPanel p = column();
+        fillPage(p);
         JLabel heading = new JLabel("Leaderboard");
         heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
         heading.setForeground(TEXT_DARK);
@@ -1603,7 +1787,11 @@ final class AccountPopup {
         sub.setForeground(TEXT_MUTED);
         sub.setAlignmentX(Component.LEFT_ALIGNMENT);
         p.add(sub);
-        p.add(Box.createVerticalStrut(s(16)));
+        p.add(Box.createVerticalStrut(s(14)));
+        // search by username or profile name; close matches count too (typos, missing letters)
+        Field search = new Field("Search players", false);
+        p.add(full(search, s(54)));
+        p.add(Box.createVerticalStrut(s(12)));
 
         JPanel list = transparent();
         list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
@@ -1617,7 +1805,7 @@ final class AccountPopup {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.getVerticalScrollBar().setUnitIncrement(s(24));
-        p.add(full(scroll, s(420)));
+        p.add(stretch(scroll, s(200)));
         p.add(Box.createVerticalStrut(s(18)));
 
         String myId = AccountSession.get() == null || AccountSession.get().profile() == null
@@ -1625,29 +1813,78 @@ final class AccountPopup {
         new SwingWorker<java.util.List<java.util.Map<String, Object>>, Void>() {
             @Override
             protected java.util.List<java.util.Map<String, Object>> doInBackground() throws Exception {
-                return AccountApiClient.leaderboard(50);
+                // everyone (up to 1000) so search finds players outside the top 50 too
+                return AccountApiClient.leaderboard(1000);
             }
 
             @Override
             protected void done() {
                 list.removeAll();
+                java.util.List<java.util.Map<String, Object>> all;
                 try {
-                    java.util.List<java.util.Map<String, Object>> top = get();
-                    if (top.isEmpty()) {
-                        loading.setText("No rated games yet. Be the first!");
-                        list.add(loading);
+                    all = get();
+                } catch (Exception e) {
+                    loading.setText("Couldn't load the leaderboard. Check your internet connection.");
+                    list.add(loading);
+                    list.revalidate();
+                    list.repaint();
+                    return;
+                }
+                for (int i = 0; i < all.size(); i++) all.get(i).put("rank", i + 1);
+                Runnable show = () -> {
+                    String q = search.getText().trim();
+                    java.util.List<java.util.Map<String, Object>> shown;
+                    if (q.isEmpty()) {
+                        shown = all.subList(0, Math.min(50, all.size()));
+                    } else {
+                        shown = PlayerSearch.find(all, q);
                     }
-                    int rank = 1;
+                    fillLeaderboard(list, shown, myId, all.isEmpty(), q);
+                };
+                show.run();
+                Timer debounce = new Timer(140, e -> show.run());
+                debounce.setRepeats(false);
+                search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                    @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { debounce.restart(); }
+                    @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { debounce.restart(); }
+                    @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { debounce.restart(); }
+                });
+            }
+        }.execute();
+
+        Btn back = new Btn("BACK", Btn.GREY_STYLE);
+        back.addActionListener(e -> {
+            SoundManager.playExtraSound("tap.wav");
+            setPage(profilePage());
+        });
+        p.add(full(back, s(68)));
+        return p;
+    }
+
+    /** The leaderboard rows for these players (their real rank shown, even when searching). */
+    private void fillLeaderboard(JPanel list, java.util.List<java.util.Map<String, Object>> top, String myId,
+                                 boolean nobody, String query) {
+        list.removeAll();
+        if (top.isEmpty()) {
+            JLabel none = new JLabel(nobody ? "No rated games yet. Be the first!"
+                    : "No players match \"" + query + "\".");
+            none.setFont(UiFonts.subtext(sf(18f)));
+            none.setForeground(TEXT_MUTED);
+            list.add(none);
+        }
+        {
+            {
+                {
                     for (java.util.Map<String, Object> m : top) {
                         boolean me = myId.equals(m.get("uid"));
                         JPanel row = new RoundPanel(me ? CREAM : UiTheme.c(255, 253, 248), me ? GOLD : CARD_BORDER, s(18));
                         row.setLayout(new BorderLayout(s(14), 0));
                         row.putClientProperty(PopupCentring.KEEP_ALIGNMENT, Boolean.TRUE);
                         row.setBorder(new EmptyBorder(s(8), s(16), s(8), s(18)));
-                        JLabel r = new JLabel(String.valueOf(rank++));
+                        JLabel r = new JLabel(String.valueOf(m.get("rank")));
                         r.setFont(MainMenu.variantDisplayFont(sf(22f)));
                         r.setForeground(TEXT_DARK);
-                        r.setPreferredSize(new Dimension(s(40), s(10)));
+                        r.setPreferredSize(new Dimension(s(56), s(10)));
                         row.add(r, BorderLayout.WEST);
                         String name = String.valueOf(m.getOrDefault("name", "?"));
                         String user = String.valueOf(m.getOrDefault("username", ""));
@@ -1665,25 +1902,16 @@ final class AccountPopup {
                         row.add(elo, BorderLayout.EAST);
                         row.setAlignmentX(Component.LEFT_ALIGNMENT);
                         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, s(60)));
+                        Object uidObj = m.get("uid");
+                        if (!me && uidObj instanceof String) addLeaderboardMenu(row, (String) uidObj, name, user);
                         list.add(row);
                         list.add(Box.createVerticalStrut(s(8)));
                     }
-                } catch (Exception e) {
-                    loading.setText("Couldn't load the leaderboard. Check your internet connection.");
-                    list.add(loading);
                 }
-                list.revalidate();
-                list.repaint();
             }
-        }.execute();
-
-        Btn back = new Btn("BACK", Btn.GREY_STYLE);
-        back.addActionListener(e -> {
-            SoundManager.playExtraSound("tap.wav");
-            setPage(profilePage());
-        });
-        p.add(full(back, s(68)));
-        return p;
+        }
+        list.revalidate();
+        list.repaint();
     }
 
     private static String escape(String s) {
@@ -1693,7 +1921,7 @@ final class AccountPopup {
     private JComponent editPage() {
         Profile me = signedIn;
         JPanel p = column();
-        p.putClientProperty("centreInFrame", Boolean.TRUE);
+        fillPage(p);
         JLabel heading = new JLabel("Edit profile");
         heading.setFont(MainMenu.variantDisplayFont(sf(30f)));
         heading.setForeground(TEXT_DARK);
@@ -1718,7 +1946,7 @@ final class AccountPopup {
         hint.setForeground(TEXT_MUTED);
         hint.setAlignmentX(Component.LEFT_ALIGNMENT);
         p.add(hint);
-        p.add(Box.createVerticalStrut(s(26)));
+        p.add(gap(s(26)));
 
         JPanel actions = transparent(new GridLayout(1, 2, s(14), 0));
         Btn cancel = new Btn("CANCEL", Btn.GREY_STYLE);
@@ -1758,7 +1986,9 @@ final class AccountPopup {
     // =====================================================================
     private void pickAvatar(Profile me) {
         SoundManager.playExtraSound("tap.wav");
-        FileDialog chooser = new FileDialog(dialog, "Choose a profile picture", FileDialog.LOAD);
+        Window fo = BigPopup.realOwner(dialog);      // the app window while Account is shown inside it
+        FileDialog chooser = fo instanceof Frame ? new FileDialog((Frame) fo, "Choose a profile picture", FileDialog.LOAD)
+                : new FileDialog((Dialog) fo, "Choose a profile picture", FileDialog.LOAD);
         chooser.setFilenameFilter((dir, name) -> isImageName(name));
         chooser.setVisible(true);
         if (chooser.getFile() == null) return;
@@ -1995,7 +2225,7 @@ final class AccountPopup {
         block.setAlignmentX(Component.LEFT_ALIGNMENT);
         block.add(sectionLabel(label));
         block.add(Box.createVerticalStrut(s(6)));
-        block.add(full(field, s(56)));
+        block.add(full(field, s(62)));
         block.setMaximumSize(new Dimension(CONTENT_W, block.getPreferredSize().height));
         return block;
     }
@@ -2330,8 +2560,8 @@ final class AccountPopup {
         }
 
         private void refit() {
-            Window w = SwingUtilities.getWindowAncestor(this);
-            if (w != null) {
+            Window w = BigPopup.windowOf(this);    // the Account dialog (never the app window)
+            if (w != null && !(w instanceof JFrame)) {
                 Point centre = new Point(w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2);
                 w.pack();
                 try {
@@ -2812,7 +3042,7 @@ final class AccountPopup {
 
         static java.awt.image.BufferedImage open(Window owner, java.awt.image.BufferedImage img) {
             result = null;
-            JDialog d = new JDialog(owner, "Crop photo", Dialog.ModalityType.APPLICATION_MODAL);
+            JDialog d = new JDialog(BigPopup.realOwner(owner), "Crop photo", Dialog.ModalityType.APPLICATION_MODAL);
             d.setUndecorated(true);
             Card c = new Card();
             c.setLayout(new BorderLayout(0, s(22)));
@@ -3163,50 +3393,122 @@ final class AccountPopup {
             g.setColor(CARD_BORDER);
             g.setStroke(new BasicStroke(1.3f));
             g.drawRoundRect(1, 1, w - 3, h - 3, s(20), s(20));
-            g.setFont(MainMenu.variantDisplayFont(sf(38f)));
+            // big number, label under it: the pair centred in the tile
+            Font big = MainMenu.variantDisplayFont(sf(56f)), small = MainMenu.variantDisplayFont(sf(19f));
+            FontMetrics fm = g.getFontMetrics(big), sm = g.getFontMetrics(small);
+            int numH = fm.getAscent() - fm.getDescent() / 2, gapY = s(12), labH = sm.getAscent();
+            int top = (h - (numH + gapY + labH)) / 2;
+            g.setFont(big);
             g.setColor(valueColor == GREEN_EDGE ? winGreen() : valueColor == RED_EDGE ? lossRed() : valueColor);
-            FontMetrics fm = g.getFontMetrics();
-            g.drawString(value, (w - fm.stringWidth(value)) / 2, h / 2 + s(8));
-            g.setFont(MainMenu.variantDisplayFont(sf(15f)));
+            g.drawString(value, (w - fm.stringWidth(value)) / 2, top + numH);
+            g.setFont(small);
             g.setColor(TEXT_MUTED);
-            FontMetrics sm = g.getFontMetrics();
-            g.drawString(label, (w - sm.stringWidth(label)) / 2, h - s(16));
+            g.drawString(label, (w - sm.stringWidth(label)) / 2, top + numH + gapY + labH);
             g.dispose();
         }
     }
 
+    /**
+     * Win rate: the percentage, and a bar split into wins (green), draws (grey) and losses
+     * (red), glossy, growing in from the left when the page opens.
+     */
     private static final class WinRateBar extends JComponent {
-        private final int percent;
-        private final boolean noGames;
+        private final int wins, draws, losses;
+        private float grow = 0f;               // 0..1, the bar sliding in
+        private final long born = System.nanoTime();
+        private Timer anim;
 
-        WinRateBar(int percent, boolean noGames) {
-            this.percent = percent;
-            this.noGames = noGames;
+        WinRateBar(int wins, int draws, int losses) {
+            this.wins = wins;
+            this.draws = draws;
+            this.losses = losses;
+            anim = new Timer(15, e -> {
+                float t = Math.min(1f, (System.nanoTime() - born) / 1e6f / 900f);
+                grow = 1f - (float) Math.pow(1f - t, 3);            // ease-out
+                repaint();
+                if (t >= 1f) ((Timer) e.getSource()).stop();
+            });
+            anim.setInitialDelay(180);
+            anim.start();
         }
 
         @Override
         protected void paintComponent(Graphics g0) {
             Graphics2D g = quality(g0);
-            int w = getWidth();
-            g.setFont(MainMenu.variantDisplayFont(sf(17f)));
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int w = getWidth(), h = getHeight();
+            int games = wins + draws + losses;
+            boolean none = games == 0;
+            int percent = none ? 0 : Math.round(100f * wins / games);
+
+            // the heading line: WIN RATE ............ 62%
+            Font head = MainMenu.variantDisplayFont(sf(21f));
+            g.setFont(head);
             FontMetrics fm = g.getFontMetrics();
-            String left = "WIN RATE";
-            String right = noGames ? "No games yet" : percent + "%";
+            int base = fm.getAscent();
             g.setColor(TEXT_DARK);
-            g.drawString(left, 0, fm.getAscent());
-            g.setFont(noGames ? UiFonts.subtext(sf(16f)) : MainMenu.variantDisplayFont(sf(17f)));
-            FontMetrics rm = g.getFontMetrics();
-            g.setColor(noGames ? TEXT_MUTED : winGreen());
-            g.drawString(right, w - rm.stringWidth(right), fm.getAscent());
-            int barY = fm.getHeight() + s(4);
-            int barH = Math.max(s(8), getHeight() - barY - s(2));
-            g.setColor(UiTheme.c(238, 233, 222));
-            g.fillRoundRect(0, barY, w, barH, barH, barH);
-            if (!noGames && percent > 0) {
-                int fw = Math.max(barH, Math.round(w * percent / 100f));
-                g.setPaint(new GradientPaint(0, 0, GREEN_EDGE, fw, 0, GREEN));
-                g.fillRoundRect(0, barY, fw, barH, barH, barH);
+            g.drawString("WIN RATE", 0, base);
+            String right;
+            if (none) {
+                g.setFont(UiFonts.subtext(sf(19f)));
+                g.setColor(TEXT_MUTED);
+                right = "No games yet";
+            } else {
+                g.setFont(MainMenu.variantDisplayFont(sf(26f)));
+                g.setColor(winGreen());
+                right = Math.round(percent * grow) + "%";
             }
+            FontMetrics rm = g.getFontMetrics();
+            g.drawString(right, w - rm.stringWidth(right), base);
+
+            // the bar
+            int barH = s(18);
+            int barY = h - barH - s(2);
+            float arc = barH;
+            java.awt.geom.RoundRectangle2D track = new java.awt.geom.RoundRectangle2D.Float(0, barY, w, barH, arc, arc);
+            g.setColor(UiTheme.c(236, 230, 218));
+            g.fill(track);
+            // a soft inner shadow along the top of the groove
+            g.setPaint(new GradientPaint(0, barY, new Color(0, 0, 0, 34), 0, barY + barH * 0.55f, new Color(0, 0, 0, 0)));
+            g.fill(track);
+            Shape clip = g.getClip();
+            g.clip(track);
+            if (none) {
+                // empty: faint diagonal stripes
+                g.setColor(UiTheme.c(226, 219, 205));
+                g.setStroke(new BasicStroke(s(5)));
+                for (int x = -barH; x < w + barH; x += s(16)) g.drawLine(x, barY + barH, x + barH, barY);
+            } else {
+                float shown = w * grow;
+                float x = 0;
+                Color[][] parts = {
+                        {UiTheme.c(108, 186, 74), UiTheme.c(76, 150, 52)},     // wins
+                        {UiTheme.c(186, 180, 168), UiTheme.c(150, 144, 132)},  // draws
+                        {UiTheme.c(226, 98, 84), UiTheme.c(188, 64, 52)}};     // losses
+                int[] counts = {wins, draws, losses};
+                for (int i = 0; i < 3; i++) {
+                    if (counts[i] == 0) continue;
+                    float pw = w * counts[i] / (float) games;
+                    float visible = Math.min(pw, Math.max(0, shown - x));
+                    if (visible > 0) {
+                        g.setPaint(new GradientPaint(0, barY, parts[i][0], 0, barY + barH, parts[i][1]));
+                        g.fill(new java.awt.geom.Rectangle2D.Float(x, barY, visible, barH));
+                    }
+                    x += pw;
+                    // a thin light gap between the parts
+                    if (x < shown && x < w - 1) {
+                        g.setColor(new Color(255, 255, 255, 200));
+                        g.fill(new java.awt.geom.Rectangle2D.Float(x - 1, barY, 2, barH));
+                    }
+                }
+                // gloss along the top
+                g.setPaint(new GradientPaint(0, barY, new Color(255, 255, 255, 110), 0, barY + barH * 0.5f, new Color(255, 255, 255, 0)));
+                g.fill(new java.awt.geom.Rectangle2D.Float(0, barY, shown, barH * 0.5f));
+            }
+            g.setClip(clip);
+            g.setStroke(new BasicStroke(1.2f));
+            g.setColor(new Color(0, 0, 0, 28));
+            g.draw(new java.awt.geom.RoundRectangle2D.Float(0.6f, barY + 0.6f, w - 1.2f, barH - 1.2f, arc, arc));
             g.dispose();
         }
     }
@@ -3214,7 +3516,7 @@ final class AccountPopup {
     /** The app's close X (AnalysisTheme.CloseButton), in its light look, sized for this popup. */
     private static AnalysisTheme.CloseButton closeButton() {
         AnalysisTheme.CloseButton c = new AnalysisTheme.CloseButton(true, "Close", null);
-        c.setPreferredSize(new Dimension(s(44), s(44)));
+        c.setPreferredSize(new Dimension(s(58), s(58)));
         return c;
     }
 }

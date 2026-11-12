@@ -476,15 +476,14 @@ public class AnalysisGame extends JFrame {
         boardHost.setOpaque(false);
         boardHost.add(leftContentPanel, new GridBagConstraints());
 
-        leftPanel = new JPanel(new BorderLayout());
-        leftPanel.setOpaque(false);
-        leftPanel.add(boardHost, BorderLayout.CENTER);
-        leftPanel.addComponentListener(new java.awt.event.ComponentAdapter() {
-            @Override
-            public void componentResized(java.awt.event.ComponentEvent e) {
-                applyLeftPanelScale();
+        leftPanel = new JPanel(new BorderLayout() {
+            @Override public void layoutContainer(Container c) {
+                applyLeftPanelScale();   // same pass as the resize: no stale frame
+                super.layoutContainer(c);
             }
         });
+        leftPanel.setOpaque(false);
+        leftPanel.add(boardHost, BorderLayout.CENTER);
 
         // ---- RIGHT: one white card holding header, engine lines and the move list ----
         engineSection = wrapEngineSection(buildEngineSection());
@@ -577,6 +576,12 @@ public class AnalysisGame extends JFrame {
 
             @Override
             public void doLayout() {
+                // size the board in this same pass, so no frame shows the old size (no shake)
+                Dimension now = getSize();
+                if (now.width > 0 && now.height > 0 && !now.equals(lastFitSize)) {
+                    lastFitSize = now;
+                    applyFitToScreenScale(this, layoutRoot);
+                }
                 layoutRoot.setBounds(0, 0, getWidth(), getHeight());
                 if (backButton != null) {
                     int s = AnalysisTheme.backButtonSize();
@@ -591,12 +596,6 @@ public class AnalysisGame extends JFrame {
         windowPanel.putClientProperty(ProportionalUiScaler.SKIP_SUBTREE_PROPERTY, Boolean.TRUE);
         // (no back arrow in the corner: Esc leaves the screen, after asking)
         windowPanel.add(layoutRoot);
-        windowPanel.addComponentListener(new java.awt.event.ComponentAdapter() {
-            @Override
-            public void componentResized(java.awt.event.ComponentEvent e) {
-                applyFitToScreenScale(windowPanel, layoutRoot);
-            }
-        });
         fitViewport = windowPanel;
         fitLayout = layoutRoot;
         SwingUtilities.invokeLater(() -> applyFitToScreenScale(windowPanel, layoutRoot));
@@ -2532,8 +2531,14 @@ public class AnalysisGame extends JFrame {
     }
 
     /** Board, player chips and eval bar, all in proportion to the left area. */
+    private Dimension lastFitSize;
+    private Dimension lastLeftScaleSize;
+
     private void applyLeftPanelScale(int panelWidth, int panelHeight) {
         if (board == null || panelWidth <= 0 || panelHeight <= 0) return;
+        Dimension key = new Dimension(panelWidth, panelHeight);
+        if (key.equals(lastLeftScaleSize)) return;
+        lastLeftScaleSize = key;
         int pad = clamp(Math.round(panelHeight * 0.03f), 14, 32);
         int bar = clamp(Math.round(panelHeight * 0.086f), 52, 96);
         int evalW = clamp(Math.round(panelHeight * 0.044f), 32, 52);
@@ -2555,6 +2560,10 @@ public class AnalysisGame extends JFrame {
         evalBarColumn.setBorder(BorderFactory.createEmptyBorder(bar, 0, bar, evalGap));
         fixSize(evalBarColumn, evalW + evalGap, contentHeight);
         fixSize(leftContentPanel, boardPixels + evalW + evalGap, contentHeight);
+        for (JComponent c : new JComponent[]{boardWash, topPanel, bottomPanel, boardStackPanel,
+                evalBarColumn, leftContentPanel}) {
+            if (c != null) c.invalidate();
+        }
 
         leftPanel.revalidate();
         leftPanel.repaint();
@@ -3565,7 +3574,7 @@ public class AnalysisGame extends JFrame {
     private JDialog openWindow(JPanel card, Dimension size) {
         // no sound here: the button that opened the window has already clicked
         Window owner = overlayHost();
-        JDialog d = new JDialog(owner, "", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new BigPopup.InDialog(owner, "", Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         activeWindow = d;
         JPanel root = new JPanel(new BorderLayout()) {
@@ -3652,7 +3661,7 @@ public class AnalysisGame extends JFrame {
             JFileChooser fc = new JFileChooser(dir);
             fc.setDialogTitle("Save review picture");
             fc.setSelectedFile(new java.io.File(dir, "scaccomatto-review-" + stamp + ".png"));
-            if (fc.showSaveDialog(activeWindow) != JFileChooser.APPROVE_OPTION) return;
+            if (fc.showSaveDialog(BigPopup.realOwner(activeWindow)) != JFileChooser.APPROVE_OPTION) return;
             java.io.File f = fc.getSelectedFile();
             if (!f.getName().toLowerCase().endsWith(".png")) f = new java.io.File(f.getParentFile(), f.getName() + ".png");
             try {
@@ -3782,25 +3791,36 @@ public class AnalysisGame extends JFrame {
      * fast, Standard = adds Great/Brilliant detection). Clicking a tile starts it.
      */
     private void chooseReviewTier(java.util.function.Consumer<Boolean> onChoice) {
-        JPanel card = new JPanel(new BorderLayout(0, 30));
-        card.setBorder(BorderFactory.createEmptyBorder(48, 56, 46, 56));
+        // sized to almost fill the popup (a 16:9 card, 70% of the screen): everything is laid
+        // out for a 1344-wide card and scaled to the real one
+        Window host = overlayHost();
+        Rectangle screen = host != null && host.getGraphicsConfiguration() != null
+                ? host.getGraphicsConfiguration().getBounds()
+                : new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());
+        float k = Math.min(screen.width * 0.70f, screen.height * 0.70f * 16f / 9f) / 1344f;
+        java.util.function.IntUnaryOperator s = v -> Math.round(v * k);
+
+        JPanel card = new JPanel(new BorderLayout(0, s.applyAsInt(26)));
+        card.setBorder(BorderFactory.createEmptyBorder(s.applyAsInt(40), s.applyAsInt(56), s.applyAsInt(40), s.applyAsInt(56)));
         JPanel head = new JPanel();
         head.setOpaque(false);
         head.setLayout(new BoxLayout(head, BoxLayout.Y_AXIS));
-        JLabel t = AnalysisTheme.title("GAME REVIEW", 40f);
-        t.setAlignmentX(Component.LEFT_ALIGNMENT);
-        AnalysisTheme.WrapText m = new AnalysisTheme.WrapText("How deep should the engine look?", 640,
-                AnalysisTheme.text(22f), AnalysisTheme.TEXT_MUTED);
-        m.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel t = AnalysisTheme.title("GAME REVIEW", 58f * k);
+        t.setHorizontalAlignment(SwingConstants.CENTER);
+        t.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel m = new JLabel("How deep should the engine look?", SwingConstants.CENTER);
+        m.setFont(AnalysisTheme.text(30f * k));
+        m.setForeground(AnalysisTheme.TEXT_MUTED);
+        m.setAlignmentX(Component.CENTER_ALIGNMENT);
         head.add(t);
-        head.add(Box.createVerticalStrut(12));
+        head.add(Box.createVerticalStrut(s.applyAsInt(14)));
         head.add(m);
         card.add(head, BorderLayout.NORTH);
 
         final Boolean[] choice = {null};
-        JPanel options = new JPanel(new GridLayout(1, 2, 20, 0));
+        JPanel options = new JPanel(new GridLayout(1, 2, s.applyAsInt(28), 0));
         options.setOpaque(false);
-        options.setPreferredSize(new Dimension(760, 334));
+        options.setPreferredSize(new Dimension(s.applyAsInt(1148), s.applyAsInt(364)));
         options.add(new TierTile("CLASSIC", "QUICK", Review.MoveClass.BEST,
                 "Best to Blunder, Book, Forced and Miss.",
                 () -> { choice[0] = Boolean.FALSE; closeWindow(); }));
@@ -3810,11 +3830,11 @@ public class AnalysisGame extends JFrame {
         card.add(options, BorderLayout.CENTER);
 
         AnalysisTheme.Button cancel = new AnalysisTheme.Button("CANCEL", AnalysisTheme.Kind.MUTED, this::closeWindow);
-        cancel.setFont(AnalysisTheme.display(25f));
-        cancel.setPreferredSize(new Dimension(10, 78));
+        cancel.setFont(AnalysisTheme.display(32f * k));
+        cancel.setPreferredSize(new Dimension(10, s.applyAsInt(88)));
         card.add(cancel, BorderLayout.SOUTH);
 
-        openWindow(card, null);
+        openWindow(card, new Dimension(s.applyAsInt(1260), s.applyAsInt(690)));
         if (choice[0] != null) onChoice.accept(choice[0]);
     }
 
@@ -3846,12 +3866,14 @@ public class AnalysisGame extends JFrame {
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = AnalysisTheme.smooth(g);
             int w = getWidth(), h = getHeight();
+            // laid out for a 364-tall tile, scaled to the real one
+            float k = h / 364f;
             float t = hover.value();
             boolean rec = "RECOMMENDED".equalsIgnoreCase(tag);
-            int arc = 30;
+            int arc = Math.round(34 * k);
             // room above for the hover lift and below for the shadow, so nothing is cut off
-            int top = 6, bottom = 8;
-            int lift = Math.round(t * 4f);
+            int top = Math.round(6 * k), bottom = Math.round(8 * k);
+            int lift = Math.round(t * 4f * k);
             int bx = 1, by = top - lift, bw = w - 3, bh = h - top - bottom;
             g2.setColor(new Color(0, 0, 0, Math.round(40 + 40 * t)));
             g2.fillRoundRect(bx + 1, top + 4, bw, bh, arc, arc);
@@ -3862,16 +3884,16 @@ public class AnalysisGame extends JFrame {
             g2.setStroke(new BasicStroke(1.5f + 1f * t));
             g2.drawRoundRect(bx, by, bw, bh, arc, arc);
 
-            int pad = 28;
-            int logoSize = 64;
+            int pad = Math.round(34 * k);
+            int logoSize = Math.round(88 * k);
             Image logo = AnalysisTheme.logo(logoClass, logoSize);
 
             // tag pill centred on top, then the logo, name and copy centred under it
-            g2.setFont(AnalysisTheme.bold(15f));
+            g2.setFont(AnalysisTheme.bold(20f * k));
             FontMetrics fm = g2.getFontMetrics();
-            int ph = 32, pw = fm.stringWidth(tag) + 26;
+            int ph = Math.round(40 * k), pw = fm.stringWidth(tag) + Math.round(34 * k);
             int px = bx + (bw - pw) / 2, py = by + pad;
-            int cy = py + ph + 12;               // where the logo starts
+            int cy = py + ph + Math.round(14 * k);               // where the logo starts
             if (logo != null) g2.drawImage(logo, bx + (bw - logoSize) / 2, cy, logoSize, logoSize, null);
             if (rec) g2.setPaint(new GradientPaint(px, py, AnalysisTheme.PURPLE_TOP, px, py + ph, AnalysisTheme.PURPLE_BOTTOM));
             else g2.setColor(AnalysisTheme.SOFT_2);
@@ -3879,12 +3901,12 @@ public class AnalysisGame extends JFrame {
             g2.setColor(rec ? Color.WHITE : AnalysisTheme.TEXT_MUTED);
             AnalysisTheme.drawCentered(g2, tag, px + pw / 2, py + ph / 2);
 
-            g2.setFont(AnalysisTheme.display(34f));
+            g2.setFont(AnalysisTheme.display(46f * k));
             g2.setColor(AnalysisTheme.TEXT_DARK);
-            g2.drawString(name, bx + (bw - g2.getFontMetrics().stringWidth(name)) / 2, cy + logoSize + 52);
-            g2.setFont(AnalysisTheme.text(19f));
+            g2.drawString(name, bx + (bw - g2.getFontMetrics().stringWidth(name)) / 2, cy + logoSize + Math.round(62 * k));
+            g2.setFont(AnalysisTheme.text(25f * k));
             g2.setColor(AnalysisTheme.TEXT_MUTED);
-            drawWrapped(g2, copy, bx + pad, cy + logoSize + 90, bw - 2 * pad, 26);
+            drawWrapped(g2, copy, bx + pad, cy + logoSize + Math.round(106 * k), bw - 2 * pad, Math.round(34 * k));
             g2.dispose();
         }
 

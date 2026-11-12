@@ -590,13 +590,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         currentStateIndex = moveIndex;
         restoreTurnStateAt(moveIndex);
         
-        // When viewing history (not at latest), clear last move highlight
-        if (moveIndex < boardStates.size() - 1) {
-            lastMoveFromRow = -1;
-            lastMoveFromCol = -1;
-            lastMoveToRow = -1;
-            lastMoveToCol = -1;
-        }
+        // the highlight shows the move that led to the position on screen
+        highlightMoveInto(moveIndex);
         
         // Restore the board state at the given move index
         Piece[][] stateToRestore = boardStates.get(moveIndex);
@@ -715,6 +710,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private long lockWashStart;
     private Timer lockWashTimer;
     private static final int LOCK_WASH_MS = 520;
+    private int lockWashMs = LOCK_WASH_MS;       // the next fade's length (some fades sync with other animations)
+    private int lockWashDur = LOCK_WASH_MS;      // the running fade's length
 
     private void animateLockWash(float target) {
         if (target == lockWashTarget) return;
@@ -726,9 +723,10 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         }
         lockWashFrom = lockWash;
         lockWashStart = System.nanoTime();
+        lockWashDur = lockWashMs > 0 ? lockWashMs : LOCK_WASH_MS;
         if (lockWashTimer == null) {
             lockWashTimer = new Timer(12, e -> {
-                double t = Math.min(1.0, (System.nanoTime() - lockWashStart) / 1_000_000.0 / LOCK_WASH_MS);
+                double t = Math.min(1.0, (System.nanoTime() - lockWashStart) / 1_000_000.0 / Math.max(1, lockWashDur));
                 double eased = (1.0 - Math.cos(Math.PI * t)) / 2.0;
                 lockWash = (float) (lockWashFrom + (lockWashTarget - lockWashFrom) * eased);
                 repaint();
@@ -770,6 +768,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     // Animation
     private Piece animPiece;
     private int animX, animY;
+    /** The gliding piece's exact spot (fractions of a pixel kept, for a smooth glide). */
+    private float animXf, animYf, animRookXf, animRookYf;
     private boolean animating = false;
     private double animProgress = 0.0; // Track animation progress (0.0 to 1.0)
     // Viewing past position (not at latest)
@@ -1063,6 +1063,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     public void setDisplaySize(int boardPixels) {
         int size = Math.max(1, boardPixels);
         Dimension d = new Dimension(size, size);
+        if (isPreferredSizeSet() && d.equals(getPreferredSize())) return;
         setPreferredSize(d);
         setMinimumSize(d);
         setMaximumSize(d);
@@ -1600,9 +1601,31 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private javax.swing.Timer themeFade;
 
     public void setBoardTheme(String theme) {
+        lastMoveOverlay = themeHighlight(theme);
         Color[] to = themeSquares(theme);
         if (gameController != null) gameController.setUiTheme(theme);
         fadeSquaresTo(to[0], to[1]);
+    }
+
+    /** The last move's highlight colour for this board (laid over the squares at 50%). */
+    private Color lastMoveOverlay = themeHighlight(null);
+
+    /**
+     * Each board's highlight: its own colour family at full strength (all the grey taken
+     * out), leaning warm, so it's clearly part of the board yet the eye finds it at once.
+     * A board that's already yellow gets orange (yellow on yellow wouldn't show).
+     */
+    private static Color themeHighlight(String theme) {
+        switch (theme == null ? "" : theme) {
+            case "Green":  return new Color(243, 255, 0);     // lime
+            case "Gray":   return new Color(255, 214, 40);    // gold (a grey board has no colour of its own)
+            case "Purple": return new Color(186, 92, 255);    // bright violet
+            case "Red":    return new Color(255, 146, 34);    // warm orange
+            case "Orange": return new Color(255, 196, 0);     // amber
+            case "Yellow": return new Color(255, 122, 0);     // orange
+            case "Pink":   return new Color(255, 64, 170);    // hot magenta
+            default:       return new Color(34, 147, 255);    // sky blue (the blue board)
+        }
     }
 
     private static Color[] themeSquares(String theme) {
@@ -1657,15 +1680,17 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
     public void setAnimationSpeed(String speed) {
         animationsEnabled = AppSettings.animateMoves();   // Settings > Board & pieces > Animate moves
+        // a glide long enough to be seen as one smooth motion (it used to be 28-170 ms: just
+        // 2-10 frames, which read as a jump)
         if ("Slow".equals(speed)) {
-            moveAnimationSteps = 14;
-            moveAnimationDelayMs = 12;
+            moveAnimationSteps = 26;
+            moveAnimationDelayMs = 10;      // 260 ms
         } else if ("Fast".equals(speed)) {
-            moveAnimationSteps = 7;
-            moveAnimationDelayMs = 4;
+            moveAnimationSteps = 12;
+            moveAnimationDelayMs = 10;      // 120 ms
         } else {
-            moveAnimationSteps = 9;
-            moveAnimationDelayMs = 8;
+            moveAnimationSteps = 18;
+            moveAnimationDelayMs = 10;      // 180 ms
         }
     }
 
@@ -1747,6 +1772,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
     /** Switch this board to Chess960 position {@code n} (0-959), or back to normal chess (-1). */
     public void setChess960Position(int n) {
+        clearEndBadges();
         chess960Position = (n >= 0 && n < 960) ? n : -1;
         resetToStartPosition();
     }
@@ -1898,7 +1924,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private void ensureDuckImageLoaded() {
         if (duckImage != null) return;
         try {
-            java.net.URL url = getClass().getResource("/assets/multiplayer/duck.png");
+            // the see-through duck (the menu's duck.png has a white square behind it)
+            java.net.URL url = getClass().getResource("/assets/pieces/duck.png");
+            if (url == null) url = getClass().getResource("/assets/multiplayer/duck.png");
             if (url != null) {
                 duckImage = ImageIO.read(url);
             }
@@ -1906,6 +1934,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         }
         if (duckImage != null) return;
         String[] paths = {
+            "src/main/assets/pieces/duck.png",
             "src/assets/multiplayer/duck.png",
             "assets/multiplayer/duck.png"
         };
@@ -2674,6 +2703,31 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         long durationMs = getExplosionDurationMs();
         atomicExplosionFx.add(new AtomicExplosionFx(centerRow, centerCol, System.currentTimeMillis(), durationMs));
         ensureExplosionFxTimerRunning();
+    }
+
+    /** Three-check: the king that blew up (hidden, then fading back in), or null. */
+    private Piece threeCheckFadeKing;
+    /** When it started fading back in (0 = still hidden). */
+    private long threeCheckFadeStartMs;
+    private static final int THREE_CHECK_KING_FADE_MS = 450;
+
+    private boolean threeCheckKingHidden(Piece p) {
+        return p != null && p == threeCheckFadeKing && threeCheckFadeStartMs == 0L;
+    }
+
+    /** The exploded king coming back: fading in (and settling from a touch smaller). */
+    private void drawFadingThreeCheckKing(Graphics g, Piece king, int x, int y) {
+        float t = Math.min(1f, (System.currentTimeMillis() - threeCheckFadeStartMs) / (float) THREE_CHECK_KING_FADE_MS);
+        float e = 1f - (1f - t) * (1f - t);
+        if (e >= 0.999f) { king.draw(g, x, y); return; }
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, e)));
+        float sc = 0.88f + 0.12f * e;
+        g2.translate(x + SQUARE_SIZE / 2f, y + SQUARE_SIZE / 2f);
+        g2.scale(sc, sc);
+        king.draw(g2, -SQUARE_SIZE / 2, -SQUARE_SIZE / 2);
+        g2.dispose();
     }
 
     private long getTotalPieceExplosionDurationMs() {
@@ -5133,6 +5187,37 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         return "" + file + rank;
     }
 
+    /**
+     * "Which one?" for a spell with several targets: one button per target on the big popup
+     * (inside the game window). Null = cancelled. (The old system list box is gone.)
+     */
+    private String pickSpellTarget(String spellId, String[] options) {
+        String title = "Cast " + spellId;
+        if (options.length <= 3) {
+            int i = BigPopup.show(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.QUESTION, title,
+                    "Choose a target", null, options, 0, -1);
+            return i < 0 ? null : options[i];
+        }
+        String[] chosen = {null};
+        BigPopup.Handle[] handle = {null};
+        JPanel grid = new JPanel(new GridLayout(0, 2, 14, 12));
+        grid.setOpaque(false);
+        for (String o : options) {
+            AnalysisTheme.Button b = new AnalysisTheme.Button(o, AnalysisTheme.Kind.MUTED, () -> {
+                chosen[0] = o;
+                if (handle[0] != null) handle[0].closeWith(0);
+            });
+            b.setFont(AnalysisTheme.display(20f));
+            b.setPreferredSize(new Dimension(300, 54));
+            grid.add(b);
+        }
+        BigPopup.Options opts = new BigPopup.Options();
+        opts.onOpen = h -> handle[0] = h;
+        int i = BigPopup.show(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.QUESTION, title,
+                "Choose a target", grid, new String[] {"Cancel"}, -1, -1, opts);
+        return i < 0 ? null : chosen[0];
+    }
+
     private String describeTarget(String spellId, SpellTarget t) {
         if (SpellManager.ENDERMAN.equals(spellId)) {
             return toSquareName(t.sourceRow, t.sourceCol) + " -> " + toSquareName(t.destRow, t.destCol);
@@ -6335,15 +6420,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             for (int i = 0; i < legalTargets.size(); i++) {
                 options[i] = describeTarget(spellId, legalTargets.get(i));
             }
-            String pick = (String) JOptionPane.showInputDialog(
-                    this,
-                    "Choose target:",
-                    "Cast " + spellId,
-                    JOptionPane.PLAIN_MESSAGE,
-                    null,
-                    options,
-                    options[0]
-            );
+            String pick = pickSpellTarget(spellId, options);
             if (pick == null) return "Cancelled.";
             int idx = -1;
             for (int i = 0; i < options.length; i++) {
@@ -7250,13 +7327,22 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         duckPressedOnDuck = false;
 
         if (fromRow >= 0 && fromCol >= 0 && animationsEnabled) {
-            duckAnimMs = duckPlacementIsMine() ? DUCK_MOVE_ANIM_MS : REMOTE_DUCK_MOVE_ANIM_MS;
+            // thrown, not slid: a longer throw takes a little longer; the opponent's is a bit slower
+            double squares = Math.hypot(row - fromRow, col - fromCol);
+            long throwMs = Math.min(480L, Math.round(240 + 35 * squares));
+            duckAnimMs = duckPlacementIsMine() ? throwMs : Math.round(throwMs * 1.25);
+            duckThrowBend = Math.random() < 0.5 ? -1f : 1f;
             duckMoveAnimating = true;
             duckAnimFromRow = fromRow;
             duckAnimFromCol = fromCol;
             duckAnimToRow = row;
             duckAnimToCol = col;
             duckAnimStartMs = System.currentTimeMillis();
+            // a soft rubber thud, the moment it touches down (before its small hop)
+            Timer land = new Timer(Math.round(duckAnimMs * 0.80f), ev -> SoundManager.playExtraSound("duck_land.wav"));
+            land.setRepeats(false);
+            land.start();
+            duckLandSoundDone = true;
 
             Timer timer = new Timer(AnimationTiming.FRAME_DELAY_MS, null);
             timer.addActionListener(ev -> {
@@ -7274,17 +7360,135 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         finalizeDuckPlacementAndEndTurn(row, col);
     }
 
+    /** The landing sound is already timed by the throw animation. */
+    private boolean duckLandSoundDone;
+
+    /** Which way this throw's path bends (+1 / -1, picked at random each time). */
+    private float duckThrowBend = 1f;
+
+    /**
+     * The duck being thrown to its new square: it flies up in an arc that bends a little to
+     * one side, slow off the hand, fast in the middle, slowing into the landing; it leans
+     * into the throw and rocks as it flies, stretches with the speed, lands with a squash,
+     * hops once and settles. Its shadow stays on the board, shrinking while it's high.
+     */
+    private void drawDuckThrow(Graphics g, float t) {
+        final float S = SQUARE_SIZE;
+        int fr = boardFlipped ? 7 - duckAnimFromRow : duckAnimFromRow, fc = boardFlipped ? 7 - duckAnimFromCol : duckAnimFromCol;
+        int tr = boardFlipped ? 7 - duckAnimToRow : duckAnimToRow, tc = boardFlipped ? 7 - duckAnimToCol : duckAnimToCol;
+        float fromX = fc * S, fromY = fr * S, toX = tc * S, toY = tr * S;
+        float dx = toX - fromX, dy = toY - fromY;
+        float len = (float) Math.max(1.0, Math.hypot(dx, dy));
+        float dist = len / S;
+        float dir = dx != 0 ? Math.signum(dx) : (dy >= 0 ? 1f : -1f);   // which way it leans
+        final float flight = 0.80f;                // the rest is the landing hop
+
+        float px, py, lift, tilt, sx = 1f, sy = 1f;
+        if (t < flight) {
+            float u = t / flight;
+            // speeds up off the hand, slows as it comes down (not one steady speed)
+            float e = u < 0.5f ? 2 * u * u : 1 - (float) Math.pow(-2 * u + 2, 2) / 2;
+            px = fromX + dx * e;
+            py = fromY + dy * e;
+            // a gentle sideways curve, so the path isn't a straight line
+            float bend = S * 0.24f * Math.min(1f, dist / 2f) * duckThrowBend * (float) Math.sin(Math.PI * e);
+            px += -dy / len * bend;
+            py += dx / len * bend;
+            // up and over in an arc -- higher for longer throws
+            lift = S * Math.min(1.5f, 0.5f + 0.13f * dist) * 4 * e * (1 - e);
+            // leans into the throw, tips back as it comes down, with a little rocking on top
+            tilt = dir * (float) Math.toRadians(26 * Math.sin(Math.PI * 2 * e) * (1 - 0.35f * e)
+                    + 7 * Math.sin(e * 5 * Math.PI) * (1 - e));
+            // stretched while it's fast
+            float speed = (float) Math.sin(Math.PI * e);
+            sx = 1f - 0.07f * speed;
+            sy = 1f + 0.09f * speed;
+        } else {
+            float v = (t - flight) / (1 - flight);
+            px = toX;
+            py = toY;
+            // one small hop after landing
+            lift = S * 0.15f * (float) Math.sin(Math.PI * v) * (1 - 0.4f * v);
+            // squashed as it hits, springing back
+            float hit = Math.max(0f, 1 - v / 0.35f);
+            sx = 1f + 0.20f * hit;
+            sy = 1f - 0.17f * hit;
+            tilt = dir * (float) Math.toRadians(-9 * Math.sin(Math.PI * v) * (1 - v));
+        }
+
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        // its shadow on the board
+        float high = Math.min(1f, lift / (S * 1.5f));
+        float shW = S * 0.62f * (1 - 0.45f * high), shH = S * 0.16f * (1 - 0.45f * high);
+        g2.setColor(new Color(0, 0, 0, Math.round(70 * (1 - 0.6f * high))));
+        g2.fill(new java.awt.geom.Ellipse2D.Float(px + S / 2 - shW / 2, py + S * 0.88f - shH / 2, shW, shH));
+        // the duck, pivoting on its base
+        g2.translate(px + S / 2, py + S * 0.92f - lift);
+        g2.rotate(tilt);
+        g2.scale(sx, sy);
+        g2.drawImage(duckImage, Math.round(-S / 2), Math.round(-S * 0.92f), Math.round(S), Math.round(S), null);
+        g2.dispose();
+    }
+
     /** When the duck first came onto the board (0 = not popping). */
     private long duckPopStartMs;
-    private static final float DUCK_POP_MS = 240f;
+    private static final float DUCK_POP_MS = 620f;
 
-    /** The duck's size while it pops in for the first time: 0 -> ~1.15 -> 1. Always 1 after. */
-    private float duckPopScale() {
-        if (duckPopStartMs == 0L) return 1f;
+    /** 0..1 through the duck's first pop, or -1 when it isn't popping. */
+    private float duckPopT() {
+        if (duckPopStartMs == 0L) return -1f;
         float t = (System.currentTimeMillis() - duckPopStartMs) / DUCK_POP_MS;
-        if (t >= 1f) { duckPopStartMs = 0L; return 1f; }
-        float c1 = 2.2f, c3 = c1 + 1, x = t - 1;               // ease-out-back: quick, with a small bounce
-        return Math.max(0f, 1 + c3 * x * x * x + c1 * x * x);
+        if (t >= 1f) { duckPopStartMs = 0L; return -1f; }
+        return t;
+    }
+
+    /** The duck's size while it pops in for the first time (1 when it isn't). */
+    private float duckPopScale() {
+        float t = duckPopT();
+        if (t < 0f) return 1f;
+        // springy: shoots up past full size, then wobbles in to rest
+        return (float) (1 - Math.exp(-7.5 * t) * Math.cos(t * 3.3 * Math.PI));
+    }
+
+    /**
+     * Draws the duck popping in: it springs up from nothing with a squash-and-stretch wobble,
+     * a little tilt that rocks back and forth, and a gold ring bursting out behind it.
+     */
+    private void drawDuckPop(Graphics g, int x, int y) {
+        float t = duckPopT();
+        float s = duckPopScale();
+        Graphics2D gp = (Graphics2D) g.create();
+        gp.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        gp.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        float cx = x + SQUARE_SIZE / 2f, cy = y + SQUARE_SIZE / 2f;
+        // the burst ring (behind the duck)
+        if (t >= 0f && t < 0.55f) {
+            float k = t / 0.55f;
+            float r = SQUARE_SIZE * (0.25f + 0.55f * (1 - (1 - k) * (1 - k)));
+            gp.setColor(new Color(255, 205, 70, Math.round(170 * (1 - k))));
+            gp.setStroke(new BasicStroke(Math.max(1.5f, 6f * (1 - k))));
+            gp.draw(new java.awt.geom.Ellipse2D.Float(cx - r, cy - r, 2 * r, 2 * r));
+            // little sparkles flying out
+            for (int i = 0; i < 6; i++) {
+                double a = Math.toRadians(i * 60 + 15);
+                float d = r * 1.08f, sp = 5f * (1 - k);
+                float px = cx + (float) Math.cos(a) * d, py = cy + (float) Math.sin(a) * d;
+                gp.fill(new java.awt.geom.Ellipse2D.Float(px - sp / 2, py - sp / 2, sp, sp));
+            }
+        }
+        // squash and stretch: wide when it's small, tall as it shoots past full size
+        float wob = t < 0f ? 0f : (float) (Math.exp(-6 * t) * Math.sin(t * 4.2 * Math.PI));
+        float sx = Math.max(0f, s * (1 + 0.16f * wob)), sy = Math.max(0f, s * (1 - 0.16f * wob));
+        double tilt = t < 0f ? 0 : Math.toRadians(14 * Math.exp(-5 * t) * Math.sin(t * 5 * Math.PI));
+        // it pops from the bottom of the square, like springing up out of the board
+        float baseY = y + SQUARE_SIZE * 0.92f;
+        gp.translate(cx, baseY);
+        gp.rotate(tilt);
+        gp.scale(sx, sy);
+        gp.drawImage(duckImage, Math.round(-SQUARE_SIZE / 2f), Math.round(-SQUARE_SIZE * 0.92f), SQUARE_SIZE, SQUARE_SIZE, null);
+        gp.dispose();
     }
 
     private void startDuckPop() {
@@ -7303,7 +7507,13 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     }
 
     private void finalizeDuckPlacementAndEndTurn(int row, int col) {
-        if (duckRow < 0 || duckCol < 0) startDuckPop();     // its very first appearance
+        if (duckRow < 0 || duckCol < 0) {
+            startDuckPop();                                   // its very first appearance
+            SoundManager.playExtraSound("duck_pop.wav");
+        } else if (!duckLandSoundDone) {
+            SoundManager.playExtraSound("duck_land.wav");     // moved without the throw animation
+        }
+        duckLandSoundDone = false;
         // online: tell the other side where our duck went (theirs came to us the same way)
         if (onlineMode && gameController != null && duckPlacementIsMine()) {
             gameController.onLocalSpellPhase(DUCK_PHASE, pendingDuckPlacementSideWhite, row, col);
@@ -7488,8 +7698,369 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         if (!right && rook instanceof Rook) ((Rook) rook).setMoved(true);
     }
 
+    // ── end-of-game badges on the kings (like chess.com) ────────────────────
+
+    /** Why the game ended, as shown on the losing king's badge. */
+    private enum EndBadge { MATE, RESIGN, TIME, ABANDON, BLAST, CAPTURED, THREE_CHECK, HILL, OTHER, DRAW }
+
+    /** The losing king's badge (null = none showing). */
+    private EndBadge endBadge;
+    /** Who won (null = a draw: both kings get the ½). */
+    private Boolean endBadgeWhiteWon;
+    private long endBadgeStartMs;
+
+    /**
+     * When the game ends: a small round badge on the corner of each king's square -- the
+     * winner gets a gold crown, the loser a red badge saying how (# checkmate, a flag for
+     * resigning, a clock for time, a door for leaving...), and a draw puts a grey ½ on both.
+     * {@code title}/{@code message} are the result's.
+     */
+    public void showEndBadges(Boolean whiteWon, String title, String message) {
+        String t = title == null ? "" : title.toLowerCase(java.util.Locale.ROOT);
+        String m = message == null ? "" : message.toLowerCase(java.util.Locale.ROOT);
+        EndBadge b;
+        if (whiteWon == null) b = EndBadge.DRAW;
+        else if (m.contains("forfeit") || m.contains("disconnect") || m.contains("left the game") || t.contains("left")) b = EndBadge.ABANDON;
+        else if (t.contains("checkmate")) b = EndBadge.MATE;
+        else if (t.contains("resign")) b = EndBadge.RESIGN;
+        else if (t.contains("time") || m.contains("time")) b = EndBadge.TIME;
+        else if (t.contains("three")) b = EndBadge.THREE_CHECK;
+        else if (t.contains("hill")) b = EndBadge.HILL;
+        else if (t.contains("king")) b = isAtomicMode() ? EndBadge.BLAST : EndBadge.CAPTURED;
+        else b = EndBadge.OTHER;
+        endBadge = b;
+        endBadgeWhiteWon = whiteWon;
+        endBadgeStartMs = System.currentTimeMillis();
+        endBadgeAtFinal = true;
+        kickEndBadgeTimer(END_BADGE_POP_MS + 60);
+        if (clearWashAfterBadges) {
+            clearWashAfterBadges = false;
+            // once the symbol has shrunk into its corner, the pale "locked" wash slowly clears
+            final long startedAt = endBadgeStartMs;
+            Timer washTimer = new Timer(Math.round(END_BADGE_POP_MS), e -> {
+                if (endBadge == null || endBadgeStartMs != startedAt) return;   // new game meanwhile
+                lockWashMs = WASH_CLEAR_AFTER_BADGE_MS;
+                setInputEnabled(inputEnabled, false);
+                lockWashMs = LOCK_WASH_MS;
+            });
+            washTimer.setRepeats(false);
+            washTimer.start();
+        }
+        repaint();
+    }
+
+    /** Three-check: clear the pale wash after the badge lands (not straight away). */
+    private boolean clearWashAfterBadges;
+    private static final int WASH_CLEAR_AFTER_BADGE_MS = 1100;
+
+    /** The end-of-game badges are up and the final position is on the board. */
+    private boolean endBadgesOnFinalPosition() {
+        return endBadge != null && !viewingPast && currentStateIndex == boardStates.size() - 1;
+    }
+
+    /** A new game (or a takeback): the badges go. */
+    public void clearEndBadges() {
+        if (endBadge == null) return;
+        endBadge = null;
+        endBadgeWhiteWon = null;
+        repaint();
+    }
+
+    private static final float END_BADGE_IN_MS = 200f, END_BADGE_HOLD_MS = 1100f, END_BADGE_OUT_MS = 260f;
+    private static final float END_BADGE_POP_MS = END_BADGE_IN_MS + END_BADGE_HOLD_MS + END_BADGE_OUT_MS;
+
+    /** Where a king is (row, col) -- or, if it's gone (captured, blown up), where it last stood. */
+    private int[] kingSquareForBadge(boolean white) {
+        for (int r = 0; r < 8; r++)
+            for (int c = 0; c < 8; c++)
+                if (board[r][c] instanceof King && board[r][c].isWhite() == white) return new int[] {r, c};
+        for (int i = boardStates.size() - 2; i >= 0 && i >= boardStates.size() - 3; i--) {
+            Piece[][] st = boardStates.get(i);
+            for (int r = 0; r < 8; r++)
+                for (int c = 0; c < 8; c++)
+                    if (st[r][c] instanceof King && st[r][c].isWhite() == white) return new int[] {r, c};
+        }
+        return null;
+    }
+
+    /** Whether the badges were last drawn on the final position (they fade off the others). */
+    private boolean endBadgeAtFinal = true;
+    private long endBadgeFadeMs;
+    private static final float END_BADGE_FADE_MS = 130f;
+
+    /** Keeps the board redrawing for {@code ms} (an animation of the badges is playing). */
+    private Timer endBadgeTimer;
+    private long endBadgeTimerUntil;
+
+    private void kickEndBadgeTimer(float ms) {
+        endBadgeTimerUntil = Math.max(endBadgeTimerUntil, System.currentTimeMillis() + Math.round(ms));
+        if (endBadgeTimer != null && endBadgeTimer.isRunning()) return;     // one ticker, not one per call
+        endBadgeTimer = new Timer(AnimationTiming.FRAME_DELAY_MS, null);
+        endBadgeTimer.setCoalesce(true);
+        endBadgeTimer.addActionListener(ev -> {
+            // only the two king corners are redrawn each frame (not the whole board), and the
+            // frame goes to the screen right away -- smooth, even on a slow computer
+            java.util.List<Rectangle> rs = endBadgeDirtyAreas();
+            if (!rs.isEmpty() && isShowing()) {
+                for (Rectangle r : rs) paintImmediately(r);
+                Toolkit.getDefaultToolkit().sync();
+            } else {
+                repaint();
+            }
+            if (endBadge == null || System.currentTimeMillis() > endBadgeTimerUntil) {
+                ((Timer) ev.getSource()).stop();
+                repaint();
+            }
+        });
+        endBadgeTimer.start();
+    }
+
+    /** The part of the board the badges can touch (both kings' squares and a margin), in pixels. */
+    private java.util.List<Rectangle> endBadgeDirtyAreas() {
+        java.util.List<Rectangle> out = new java.util.ArrayList<>();
+        double sc = renderScale();
+        for (int side = 0; side < 2; side++) {
+            int[] sq = kingSquareForBadge(side == 0);
+            if (sq == null) continue;
+            int dr = boardFlipped ? 7 - sq[0] : sq[0], dc = boardFlipped ? 7 - sq[1] : sq[1];
+            // the square, plus room for the label (up and to the right) and the badge's shadow
+            double x = (dc - 0.6) * SQUARE_SIZE, y = (dr - 0.5) * SQUARE_SIZE;
+            Rectangle r = new Rectangle((int) Math.floor(x * sc), (int) Math.floor(y * sc),
+                    (int) Math.ceil(2.4 * SQUARE_SIZE * sc), (int) Math.ceil(2.0 * SQUARE_SIZE * sc));
+            r = r.intersection(new Rectangle(0, 0, getWidth(), getHeight()));
+            if (!r.isEmpty()) out.add(r);
+        }
+        return out;
+    }
+
+    /** How long until the squares have filled in (the result window opens after that). */
+    public int endBadgeTakeoverMs() {
+        return endBadge == null ? 0 : Math.round(END_BADGE_IN_MS + 120);
+    }
+
+    /** How long the whole badge sequence takes (the result window waits for it). */
+    public int endBadgeSequenceMs() {
+        return endBadge == null ? 0 : Math.round(END_BADGE_POP_MS);
+    }
+
+    private void drawEndBadges(Graphics gIn) {
+        if (endBadge == null) return;
+        long now = System.currentTimeMillis();
+        // stepping through the moves: off the final position the badges fade away quickly;
+        // back on it, the whole sequence plays again
+        boolean atFinal = !viewingPast && currentStateIndex == boardStates.size() - 1;
+        if (atFinal != endBadgeAtFinal) {
+            endBadgeAtFinal = atFinal;
+            if (atFinal) {
+                endBadgeStartMs = now;
+                kickEndBadgeTimer(END_BADGE_POP_MS + 60);
+            } else {
+                endBadgeFadeMs = now;
+                kickEndBadgeTimer(END_BADGE_FADE_MS + 40);
+            }
+        }
+        long el;
+        float fade = 1f;
+        if (atFinal) {
+            if (animating) return;
+            el = now - endBadgeStartMs;
+        } else {
+            fade = 1f - (now - endBadgeFadeMs) / END_BADGE_FADE_MS;
+            if (fade <= 0f) return;
+            el = Math.max(now - endBadgeStartMs, Math.round(END_BADGE_POP_MS));   // the small badges, fading
+        }
+        Graphics2D g0 = (Graphics2D) gIn.create();
+        if (fade < 1f) g0.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fade));
+        // the sequence (like chess.com's): the square fills with the colour and a big symbol
+        // with a label, holds, then it all shrinks into the small badge on the corner
+        float in = Math.min(1f, el / END_BADGE_IN_MS);
+        float out = el <= END_BADGE_IN_MS + END_BADGE_HOLD_MS ? 0f
+                : Math.min(1f, (el - END_BADGE_IN_MS - END_BADGE_HOLD_MS) / END_BADGE_OUT_MS);
+        float inE = 1f - (1f - in) * (1f - in);                           // ease-out
+        float outE = out < 0.5f ? 2 * out * out : 1 - (float) Math.pow(-2 * out + 2, 2) / 2;   // ease-in-out
+        for (int side = 0; side < 2; side++) {
+            boolean white = side == 0;
+            int[] sq = kingSquareForBadge(white);
+            if (sq == null) continue;
+            EndBadge kind;
+            if (endBadge == EndBadge.DRAW) kind = EndBadge.DRAW;
+            else if (endBadgeWhiteWon != null && endBadgeWhiteWon == white) kind = null;   // the winner
+            else kind = endBadge;
+            Color fill = kind == null ? new Color(98, 170, 64) : kind == EndBadge.DRAW ? new Color(122, 124, 138) : new Color(214, 76, 64);
+            int dr = boardFlipped ? 7 - sq[0] : sq[0], dc = boardFlipped ? 7 - sq[1] : sq[1];
+            float s = SQUARE_SIZE, x0 = dc * s, y0 = dr * s;
+            Graphics2D g = (Graphics2D) g0.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            // 1. the square takes the colour (covering the king), and gives it back at the end
+            float squareA = inE * (1f - Math.min(1f, out * 2.2f));
+            if (squareA > 0.01f) {
+                g.setColor(new Color(fill.getRed(), fill.getGreen(), fill.getBlue(), Math.round(255 * squareA)));
+                g.fill(new java.awt.geom.Rectangle2D.Float(x0, y0, s, s));
+            }
+
+            // 2. the symbol: big in the middle of the square, then shrinking into the corner badge
+            float in2 = -s * 0.012f, small = s * 0.40f;       // right in the corner
+            float bigCx = x0 + s / 2, bigCy = y0 + s / 2, big = s * 0.78f;
+            // centred exactly on the square's top-right corner (kept on the board at the edges)
+            float endCx = x0 + s - s * 0.03f, endCy = y0 + s * 0.035f;
+            endCx = Math.max(small / 2 + 1, Math.min(BOARD_SIZE - small / 2 - 1, endCx));
+            endCy = Math.max(small / 2 + 1, Math.min(BOARD_SIZE - small / 2 - 1, endCy));
+            float cx = bigCx + (endCx - bigCx) * outE, cy = bigCy + (endCy - bigCy) * outE;
+            float d = big + (small - big) * outE;
+            // a little spring as it first appears
+            float pop = in >= 1f ? 1f : (float) (1 - Math.exp(-6 * in) * Math.cos(in * 3.0 * Math.PI));
+            Graphics2D gb = (Graphics2D) g.create();
+            gb.translate(cx, cy);
+            gb.scale(pop, pop);
+            // the round disc grows in under the symbol as it shrinks (none while it's big:
+            // the coloured square is its background then)
+            if (outE > 0.01f) {
+                gb.setColor(new Color(0, 0, 0, Math.round(55 * outE)));
+                gb.fill(new java.awt.geom.Ellipse2D.Float(-d / 2 + 0.5f, -d / 2 + 2f, d, d));
+                gb.setColor(new Color(fill.getRed(), fill.getGreen(), fill.getBlue(), Math.round(255 * outE)));
+                gb.fill(new java.awt.geom.Ellipse2D.Float(-d / 2, -d / 2, d, d));
+            }
+            drawBadgeGlyph(gb, kind, d);
+            gb.dispose();
+
+            // 3. the label pill on the square's top-right corner ("Resign", "Winner"...)
+            float labelA = inE * (1f - Math.min(1f, outE * 1.8f));
+            if (labelA > 0.01f) {
+                String label = badgeLabel(kind);
+                g.setFont(AnalysisTheme.display(s * 0.19f));
+                FontMetrics fm = g.getFontMetrics();
+                float ph = s * 0.27f, pw = fm.stringWidth(label) + ph * 0.9f;
+                float px = x0 + s - pw * 0.42f, py = y0 - ph * 0.30f;
+                px = Math.max(1, Math.min(BOARD_SIZE - pw - 1, px));
+                py = Math.max(1, py);
+                Graphics2D gl = (Graphics2D) g.create();
+                gl.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.min(1f, labelA)));
+                float lp = pop;                                   // springs in with the symbol
+                gl.translate(px + pw / 2, py + ph / 2);
+                gl.scale(lp, lp);
+                gl.setColor(new Color(0, 0, 0, 50));
+                gl.fill(new java.awt.geom.RoundRectangle2D.Float(-pw / 2, -ph / 2 + 1.5f, pw, ph, ph, ph));
+                gl.setColor(Color.WHITE);
+                gl.fill(new java.awt.geom.RoundRectangle2D.Float(-pw / 2, -ph / 2, pw, ph, ph, ph));
+                gl.setColor(fill);
+                gl.drawString(label, -fm.stringWidth(label) / 2f, (fm.getAscent() - fm.getDescent()) / 2f);
+                gl.dispose();
+            }
+            g.dispose();
+        }
+        g0.dispose();
+    }
+
+    /** The word on the pill while the big symbol shows. */
+    private static String badgeLabel(EndBadge kind) {
+        if (kind == null) return "Winner";
+        switch (kind) {
+            case MATE: return "Checkmate";
+            case RESIGN: return "Resign";
+            case TIME: return "Timeout";
+            case ABANDON: return "Abandon";
+            case BLAST: return "Exploded";
+            case CAPTURED: return "Captured";
+            case THREE_CHECK: return "3 checks";
+            case HILL: return "Hill";
+            case DRAW: return "Draw";
+            default: return "Lost";
+        }
+    }
+
+    /** The white symbol inside a badge, centred on (0, 0); {@code kind} null = the winner's crown. */
+    private void drawBadgeGlyph(Graphics2D g, EndBadge kind, float d) {
+        g.setColor(Color.WHITE);
+        float u = d / 28f;                                         // drawn on a 28-unit badge
+        g.setStroke(new BasicStroke(2.6f * u, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        java.awt.geom.Path2D.Float p = new java.awt.geom.Path2D.Float();
+        if (kind == null) {                                        // crown
+            p.moveTo(-8 * u, 5 * u); p.lineTo(-9 * u, -5 * u); p.lineTo(-4 * u, -1 * u); p.lineTo(0, -7 * u);
+            p.lineTo(4 * u, -1 * u); p.lineTo(9 * u, -5 * u); p.lineTo(8 * u, 5 * u); p.closePath();
+            g.fill(p);
+            g.fill(new java.awt.geom.RoundRectangle2D.Float(-8 * u, 6 * u, 16 * u, 2.6f * u, 2 * u, 2 * u));
+            return;
+        }
+        switch (kind) {
+            case MATE: {                                           // #
+                g.draw(new java.awt.geom.Line2D.Float(-2.5f * u, -7.5f * u, -4.5f * u, 7.5f * u));
+                g.draw(new java.awt.geom.Line2D.Float(4.5f * u, -7.5f * u, 2.5f * u, 7.5f * u));
+                g.draw(new java.awt.geom.Line2D.Float(-7.5f * u, -2.8f * u, 7.5f * u, -2.8f * u));
+                g.draw(new java.awt.geom.Line2D.Float(-8 * u, 2.8f * u, 7 * u, 2.8f * u));
+                break;
+            }
+            case RESIGN: {                                         // a flag on a pole
+                g.draw(new java.awt.geom.Line2D.Float(-5 * u, -8 * u, -5 * u, 8.5f * u));
+                p.moveTo(-5 * u, -8 * u); p.curveTo(-1 * u, -10 * u, 2 * u, -5 * u, 7 * u, -7 * u);
+                p.lineTo(7 * u, 1 * u); p.curveTo(2 * u, 3 * u, -1 * u, -2 * u, -5 * u, 0); p.closePath();
+                g.fill(p);
+                break;
+            }
+            case TIME: {                                           // a clock
+                g.draw(new java.awt.geom.Ellipse2D.Float(-8 * u, -8 * u, 16 * u, 16 * u));
+                g.draw(new java.awt.geom.Line2D.Float(0, 0, 0, -5 * u));
+                g.draw(new java.awt.geom.Line2D.Float(0, 0, 3.5f * u, 2.5f * u));
+                break;
+            }
+            case ABANDON: {                                        // a door frame with an arrow leaving it
+                p.moveTo(-1 * u, -8 * u); p.lineTo(-7.5f * u, -8 * u); p.lineTo(-7.5f * u, 8 * u); p.lineTo(-1 * u, 8 * u);
+                g.draw(p);
+                g.draw(new java.awt.geom.Line2D.Float(-3 * u, 0, 8 * u, 0));
+                java.awt.geom.Path2D.Float a = new java.awt.geom.Path2D.Float();
+                a.moveTo(4 * u, -4 * u); a.lineTo(8 * u, 0); a.lineTo(4 * u, 4 * u);
+                g.draw(a);
+                break;
+            }
+            case BLAST: {                                          // a burst
+                int n = 8;
+                for (int i = 0; i < n * 2; i++) {
+                    double ang = Math.PI * i / n - Math.PI / 2;
+                    float r = (i % 2 == 0 ? 9f : 4.2f) * u;
+                    float x = (float) Math.cos(ang) * r, y = (float) Math.sin(ang) * r;
+                    if (i == 0) p.moveTo(x, y); else p.lineTo(x, y);
+                }
+                p.closePath();
+                g.fill(p);
+                break;
+            }
+            case THREE_CHECK: {                                    // 3+
+                g.setFont(AnalysisTheme.display(15 * u));
+                FontMetrics fm = g.getFontMetrics();
+                String s = "3+";
+                g.drawString(s, -fm.stringWidth(s) / 2f, (fm.getAscent() - fm.getDescent()) / 2f);
+                break;
+            }
+            case HILL: {                                           // a hill with a little flag
+                p.moveTo(-9 * u, 7 * u); p.lineTo(0, -3 * u); p.lineTo(9 * u, 7 * u); p.closePath();
+                g.fill(p);
+                g.setStroke(new BasicStroke(1.8f * u, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                g.draw(new java.awt.geom.Line2D.Float(0, -3 * u, 0, -9 * u));
+                java.awt.geom.Path2D.Float f = new java.awt.geom.Path2D.Float();
+                f.moveTo(0, -9 * u); f.lineTo(5 * u, -7.5f * u); f.lineTo(0, -6 * u); f.closePath();
+                g.fill(f);
+                break;
+            }
+            case DRAW: {                                           // ½
+                g.setFont(AnalysisTheme.display(17 * u));
+                FontMetrics fm = g.getFontMetrics();
+                String s = "½";
+                g.drawString(s, -fm.stringWidth(s) / 2f, (fm.getAscent() - fm.getDescent()) / 2f);
+                break;
+            }
+            default: {                                             // CAPTURED / OTHER: an X
+                g.draw(new java.awt.geom.Line2D.Float(-6 * u, -6 * u, 6 * u, 6 * u));
+                g.draw(new java.awt.geom.Line2D.Float(6 * u, -6 * u, -6 * u, 6 * u));
+            }
+        }
+    }
+
     public void resetToStartPosition() {
+        threeCheckFadeKing = null;
         cancelScheduledSpellSounds();
+        clearEndBadges();
         resetPremoveState();
         dropSelection();
         if (hintMove != null) { hintMove = null; moveHintFade.show(null); }
@@ -7752,6 +8323,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     // For bot games: takes back 2 moves (player's move + bot's response)
     // For analysis: takes back 1 move
     public void takebackMove() {
+        clearEndBadges();
         if (boardStates.size() <= 1) return; // Can't take back from starting position
         resetPremoveState();
         dropSelection();
@@ -7875,6 +8447,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
         final int fr = sr, fc = sc, trr = tr, tcc = tc;
         final Piece mv = moving;
+        // stepping through the moves: the highlight follows, showing the move that led to
+        // the position being shown (not the game's latest move)
+        highlightMoveInto(toIdx);
         boolean isCastling = mv instanceof King && Math.abs(fc - tcc) == 2;
         final boolean forwardInHistory = toIdx > fromIdx;
 
@@ -7962,6 +8537,24 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         }
 
         SoundManager.playMoveSound(isCapture, isCastling, isPromotion, check);
+    }
+
+    /** Highlights the move that led to state {@code idx} (none for the starting position). */
+    private void highlightMoveInto(int idx) {
+        int[] m = null;
+        if (idx > 0 && idx < boardStates.size()) {
+            try {
+                m = inferTransitionMove(boardStates.get(idx - 1), boardStates.get(idx));
+            } catch (RuntimeException ignored) {
+            }
+        }
+        if (m == null) {
+            lastMoveFromRow = lastMoveFromCol = lastMoveToRow = lastMoveToCol = -1;
+            repaint();
+        } else {
+            lastMoveFromRow = -2;                 // (forces the repaint below)
+            setLastMoveSquares(m[0], m[1], m[2], m[3]);
+        }
     }
 
     private int[] inferTransitionMove(Piece[][] fromState, Piece[][] toState) {
@@ -8500,6 +9093,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                 boolean kingInCheckSquare =
                         board[r][c] instanceof King &&
                         !fogRulesActive &&
+                        !endBadgesOnFinalPosition() &&      // game over: the badge says it, no red square
                         ((board[r][c].isWhite() && whiteInCheck) ||
                          (!board[r][c].isWhite() && blackInCheck));
                 
@@ -8541,10 +9135,11 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
                 if (!fogRulesActive && AppSettings.lastMoveHighlight() && ((r == lastMoveFromRow && c == lastMoveFromCol)
                         || (r == lastMoveToRow && c == lastMoveToCol))) {
-                    // chess.com-style yellow on both the from- and to-square, in review too.
-                    // Warm and strong enough to win over the blue: a pale see-through
-                    // yellow mixed with blue squares and came out green.
-                    Color lastMoveTint = new Color(255, 226, 92, 192);
+                    // the board's own colour, made vivid, laid over the square at exactly half
+                    // strength (how chess.com does it): it belongs to the board, the square
+                    // underneath still shows through, and a light square stays lighter than a dark one
+                    Color lastMoveTint = new Color(lastMoveOverlay.getRed(), lastMoveOverlay.getGreen(),
+                            lastMoveOverlay.getBlue(), 128);
                     targetSquareColor = overlayColor(targetSquareColor, lastMoveTint);
                 }
                 for (int i = 0; i < premoveQueue.size(); i++) {
@@ -8589,6 +9184,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                     (!dragging || sq != draggedPiece) &&
                     !isBomberCaptureSourcePiece(sq, r, c) &&
                     !isPieceInActivePreExplosionAt(r, c, sq) &&
+                    !threeCheckKingHidden(sq) &&
                     !isPieceHandledByEndermanPop(sq, r, c, fogFrameTimeMs) &&
                     !isPieceHandledByEndermanPhasePoof(sq, r, c) &&
                     !isPieceInUrielReveal(sq, r, c)) {  // Don't draw pieces handled by an active effect.
@@ -8603,7 +9199,11 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                             sq.draw(gp, displayCol * SQUARE_SIZE, displayRow * SQUARE_SIZE);
                             gp.dispose();
                         } else {
-                            sq.draw(g, displayCol * SQUARE_SIZE, displayRow * SQUARE_SIZE);
+                            if (sq == threeCheckFadeKing) {
+                                drawFadingThreeCheckKing(g, sq, displayCol * SQUARE_SIZE, displayRow * SQUARE_SIZE);
+                            } else {
+                                sq.draw(g, displayCol * SQUARE_SIZE, displayRow * SQUARE_SIZE);
+                            }
                         }
                         if (endermanSelectionPiece) {
                             drawEndermanPhaseOutline(
@@ -8629,18 +9229,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                 boolean animDuck = isDuckPlacementAnimating();
                 if (animDuck) {
                     float t = (float) (System.currentTimeMillis() - duckAnimStartMs) / (float) duckAnimMs;
-                    t = Math.max(0f, Math.min(1f, t));
-                    // yours: quick ease-out; the opponent's: speeds up, then slows into place
-                    float eased = duckAnimMs == DUCK_MOVE_ANIM_MS
-                            ? (float) (1.0 - Math.pow(1.0 - t, 3))
-                            : (t < 0.5f ? 4 * t * t * t : 1 - (float) Math.pow(-2 * t + 2, 3) / 2);
-                    int fromDisplayRow = boardFlipped ? (7 - duckAnimFromRow) : duckAnimFromRow;
-                    int fromDisplayCol = boardFlipped ? (7 - duckAnimFromCol) : duckAnimFromCol;
-                    int toDisplayRow = boardFlipped ? (7 - duckAnimToRow) : duckAnimToRow;
-                    int toDisplayCol = boardFlipped ? (7 - duckAnimToCol) : duckAnimToCol;
-                    int x = Math.round((fromDisplayCol + (toDisplayCol - fromDisplayCol) * eased) * SQUARE_SIZE);
-                    int y = Math.round((fromDisplayRow + (toDisplayRow - fromDisplayRow) * eased) * SQUARE_SIZE);
-                    g.drawImage(duckImage, x, y, SQUARE_SIZE, SQUARE_SIZE, null);
+                    drawDuckThrow(g, Math.max(0f, Math.min(1f, t)));
                 } else if (!duckDragging) {
                     int displayDuckRow = boardFlipped ? (7 - duckRow) : duckRow;
                     int displayDuckCol = boardFlipped ? (7 - duckCol) : duckCol;
@@ -8653,16 +9242,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                         gd.fillRoundRect(x + 4, y + 4, SQUARE_SIZE - 8, SQUARE_SIZE - 8, 14, 14);
                         gd.dispose();
                     }
-                    float pop = duckPopScale();
-                    if (pop < 0.999f) {
-                        // the duck's first appearance: pops up from nothing, a touch past full size, and settles
-                        Graphics2D gp = (Graphics2D) g.create();
-                        gp.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                        float sz = SQUARE_SIZE * pop;
-                        gp.translate(x + SQUARE_SIZE / 2f - sz / 2f, y + SQUARE_SIZE / 2f - sz / 2f);
-                        gp.scale(pop, pop);
-                        gp.drawImage(duckImage, 0, 0, SQUARE_SIZE, SQUARE_SIZE, null);
-                        gp.dispose();
+                    if (duckPopT() >= 0f) {
+                        // the duck's first appearance: a playful springy pop
+                        drawDuckPop(g, x, y);
                     } else {
                         g.drawImage(duckImage, x, y, SQUARE_SIZE, SQUARE_SIZE, null);
                     }
@@ -8740,8 +9322,12 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                 }
             } else if (!tabSelectedSpellTarget && !pendingUrielPlacement) {
                 int dotSize = 20;
+                Color dotPrev = g2d.getColor();
+                // Premove dots: a soft whitish grey so they read as "queued", not live.
+                if (premoveSelectionShown) g2d.setColor(new Color(214, 214, 214));
                 g2d.fillOval(displayCol * SQUARE_SIZE + SQUARE_SIZE/2 - dotSize/2, 
                             displayRow * SQUARE_SIZE + SQUARE_SIZE/2 - dotSize/2, dotSize, dotSize);
+                g2d.setColor(dotPrev);
             }
         }
 
@@ -8814,12 +9400,14 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
         // Draw animated piece with enhanced visual effects
         if (animPiece != null && (!fogRulesActive || animPiece.isWhite() == fogViewerIsWhite)) {
-            animPiece.draw(g, animX, animY);
+            drawPieceAt(g, animPiece, animXf, animYf);
         }
         
+        drawEndBadges(g);
+
         // Draw animated rook during castling
         if (animRook != null && (!fogRulesActive || animRook.isWhite() == fogViewerIsWhite)) {
-            animRook.draw(g, animRookX, animRookY);
+            drawPieceAt(g, animRook, animRookXf, animRookYf);
         }
         
         if (dragging && draggedPiece != null && (!fogRulesActive || draggedPiece.isWhite() == fogViewerIsWhite)) {
@@ -9255,6 +9843,8 @@ g2.dispose();
     }
     
     private void rotateCheckmatedKing(int kingRow, int kingCol) {
+        // the checkmated king no longer tips over: the end-of-game badges show the mate now
+        if (true) return;
         rotatingKingRow = kingRow;
         rotatingKingCol = kingCol;
         kingRotating = true;
@@ -9348,6 +9938,48 @@ g2.dispose();
         return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
     }
     
+    /**
+     * One frame of a move's glide, drawn right now: just the piece's old and new spots and
+     * the two squares of the move (not the whole board), then pushed to the screen -- the
+     * way a browser only moves the piece's own layer.
+     */
+    private void paintMoveFrame(float oldX, float oldY, float oldRX, float oldRY,
+                                int fromRow, int fromCol, int toRow, int toCol, int rookFromX, int rookToX) {
+        if (!isShowing()) { repaint(); return; }
+        double sc = renderScale();
+        int pad = 3;
+        java.util.List<Rectangle> areas = new java.util.ArrayList<>();
+        // the piece: where it was and where it is now
+        Rectangle piece = new Rectangle(Math.round(Math.min(oldX, animXf)), Math.round(Math.min(oldY, animYf)),
+                Math.round(Math.abs(animXf - oldX)) + SQUARE_SIZE, Math.round(Math.abs(animYf - oldY)) + SQUARE_SIZE);
+        areas.add(piece);
+        areas.add(new Rectangle(fromCol * SQUARE_SIZE, fromRow * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE));
+        areas.add(new Rectangle(toCol * SQUARE_SIZE, toRow * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE));
+        if (!Float.isNaN(oldRX)) {
+            areas.add(new Rectangle(Math.round(Math.min(oldRX, animRookXf)), Math.round(oldRY),
+                    Math.round(Math.abs(animRookXf - oldRX)) + SQUARE_SIZE, SQUARE_SIZE));
+            if (rookFromX >= 0) areas.add(new Rectangle(rookFromX, Math.round(oldRY), SQUARE_SIZE, SQUARE_SIZE));
+            if (rookToX >= 0) areas.add(new Rectangle(rookToX, Math.round(oldRY), SQUARE_SIZE, SQUARE_SIZE));
+        }
+        Rectangle all = new Rectangle(0, 0, getWidth(), getHeight());
+        for (Rectangle a : areas) {
+            Rectangle d = new Rectangle((int) Math.floor(a.x * sc) - pad, (int) Math.floor(a.y * sc) - pad,
+                    (int) Math.ceil(a.width * sc) + pad * 2, (int) Math.ceil(a.height * sc) + pad * 2).intersection(all);
+            if (!d.isEmpty()) paintImmediately(d);
+        }
+        Toolkit.getDefaultToolkit().sync();
+    }
+
+    /** Draws a piece at an exact (fractional) spot, smoothly. */
+    private void drawPieceAt(Graphics g, Piece p, float x, float y) {
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g2.translate(x, y);
+        p.draw(g2, 0, 0);
+        g2.dispose();
+    }
+
     private void animateMove(Piece p, int sr, int sc, int tr, int tc, boolean isCastling, Runnable done) {
         animateMove(p, sr, sc, tr, tc, isCastling, done, false);
     }
@@ -9366,8 +9998,8 @@ g2.dispose();
         animToCol = tc;
         
         // Keep history navigation quick; let user settings control live move speed.
-        final int steps = forceAnimate ? 7 : moveAnimationSteps;
-        final int delay = forceAnimate ? 7 : moveAnimationDelayMs;
+        final int steps = forceAnimate ? 14 : moveAnimationSteps;      // stepping through moves: 140 ms
+        final int delay = forceAnimate ? 10 : moveAnimationDelayMs;
         final long durationNanos = (overrideAnimMs > 0 && !forceAnimate)
                 ? overrideAnimMs * 1_000_000L
                 : Math.max(1L, (long) steps * delay) * 1_000_000L;
@@ -9395,6 +10027,22 @@ g2.dispose();
         final int finalRookSx = rookSx;
         final int finalRookEx = rookEx;
 
+        // Put the piece at its starting square right away. A repaint can come before the
+        // first tick below, and until then animX/animY still held where the PREVIOUS move
+        // ended -- so the moving piece flashed for a frame on that other square (e.g. your
+        // queen showing up where the opponent's pawn had just landed).
+        animProgress = 0.0;
+        animX = sx;
+        animY = sy;
+        animXf = sx;
+        animYf = sy;
+        if (isCastling) {
+            animRookX = finalRookSx;
+            animRookY = displaySr * SQUARE_SIZE;
+            animRookXf = animRookX;
+            animRookYf = animRookY;
+        }
+
         Timer timer = new Timer(AnimationTiming.FRAME_DELAY_MS, null);
         final long startedAtNanos = System.nanoTime();
 
@@ -9409,15 +10057,25 @@ g2.dispose();
             // Store animation progress for visual effects
             animProgress = linearT;
             
-            animX = (int) (sx + t * (ex - sx));
-            animY = (int) (sy + t * (ey - sy));
+            // where the piece was last frame (that spot is redrawn too)
+            float oldX = animXf, oldY = animYf, oldRX = animRookXf, oldRY = animRookYf;
+            // fractions of a pixel are kept: the piece glides instead of stepping pixel by pixel
+            animXf = (float) (sx + t * (ex - sx));
+            animYf = (float) (sy + t * (ey - sy));
+            animX = Math.round(animXf);
+            animY = Math.round(animYf);
             
             if (isCastling) {
-                animRookX = (int) (finalRookSx + t * (finalRookEx - finalRookSx));
-                animRookY = (int) (displaySr * SQUARE_SIZE);
+                animRookXf = (float) (finalRookSx + t * (finalRookEx - finalRookSx));
+                animRookYf = displaySr * SQUARE_SIZE;
+                animRookX = Math.round(animRookXf);
+                animRookY = Math.round(animRookYf);
             }
             
-            repaint();
+            // only the bits that change are redrawn (the piece's old and new spot, both
+            // squares of the move), and the frame goes to the screen straight away
+            paintMoveFrame(oldX, oldY, isCastling ? oldRX : Float.NaN, oldRY, displaySr, displaySc, displayTr, displayTc,
+                    isCastling ? finalRookSx : -1, isCastling ? finalRookEx : -1);
 
             if (linearT >= 1.0) {
                 timer.stop();
@@ -9733,6 +10391,7 @@ g2.dispose();
             vibrateCol = selectedCol;
             vibratePiece = board[selectedRow][selectedCol];
             vibrateCount = 0;
+            if (!triedShieldCapture) SoundManager.playExtraSound("illegal_soft.wav");   // a soft "uh-uh" (the shield has its own sound)
             vibrateIllegalMove();
             selectedPiece = null; possibleMoves.clear();
             wasDragged = false;
@@ -10187,7 +10846,7 @@ g2.dispose();
     private String showPromotionPicker(boolean whitePiece, int promotionRow, int promotionCol) {
         final String[] picked = { "Q" };
         Window owner = SwingUtilities.getWindowAncestor(this);
-        JDialog dialog = new JDialog(owner, "Pawn Promotion", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new BigPopup.InDialog(owner, "Pawn Promotion", Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setUndecorated(true);
         dialog.getRootPane().putClientProperty(PopupSound.SILENT, Boolean.TRUE);   // part of the move, not a popup
         dialog.getRootPane().setBorder(BorderFactory.createLineBorder(Color.BLACK, 1, false));
@@ -10241,6 +10900,8 @@ g2.dispose();
         if (dialogY < screenTop) dialogY = screenTop;
         if (dialogY + dialog.getHeight() > screenBottom) dialogY = Math.max(screenTop, screenBottom - dialog.getHeight());
         dialog.setLocation(dialogX, dialogY);
+        // drawn inside the game window, right over the square (not a separate window)
+        ((BigPopup.InDialog) dialog).inPlace = true;
         dialog.setVisible(true);
         return picked[0];
     }
@@ -10609,8 +11270,31 @@ g2.dispose();
                     repaint();
                 };
                 if (explodedKing != null) {
+                    // the king stays out of sight while it blows up, fades back in once the
+                    // explosion is over, and the end-of-game badges play at that same moment
+                    threeCheckFadeKing = explodedKing;
+                    threeCheckFadeStartMs = 0L;
+                    clearWashAfterBadges = true;      // the pale wash goes once the 3+ badge has landed
+                    final Piece fadeKing = explodedKing;
+                    final int kingRow = explodedKingPos[0], kingCol = explodedKingPos[1];
                     Timer delay = new Timer((int) getTotalPieceExplosionDurationMs() + THREE_CHECK_RESULT_EXTRA_DELAY_MS, ev -> {
                         ((Timer) ev.getSource()).stop();
+                        // the shatter takes the piece off the board: put the king back to fade in
+                        if (inBounds(kingRow, kingCol) && board[kingRow][kingCol] == null) {
+                            board[kingRow][kingCol] = fadeKing;
+                        }
+                        threeCheckFadeStartMs = System.currentTimeMillis();
+                        Timer fade = new Timer(AnimationTiming.FRAME_DELAY_MS, null);
+                        fade.setCoalesce(true);
+                        fade.addActionListener(fe -> {
+                            repaint();
+                            if (threeCheckFadeKing == null
+                                    || System.currentTimeMillis() - threeCheckFadeStartMs > THREE_CHECK_KING_FADE_MS + 40) {
+                                ((Timer) fe.getSource()).stop();
+                            }
+                        });
+                        fade.start();
+                        // the red square and 3+ come in together with the king (same moment)
                         showResult.run();
                     });
                     delay.setRepeats(false);

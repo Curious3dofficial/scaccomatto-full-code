@@ -58,21 +58,42 @@ final class MuteIndicator {
 
     /** Show the mute/unmute toast over the given window. */
     public static void show(Window window, boolean muted) {
+        show(window, muted, 100);
+    }
+
+    private static Toast current;
+    /** Far above every layer the app uses (the highest elsewhere is DRAG_LAYER + 100). */
+    private static final Integer TOP_LAYER = Integer.valueOf(1_000_000);
+
+    /** The toast with the master volume in the pill (0% when muted). */
+    public static void show(Window window, boolean muted, int volumePercent) {
         if (window == null || !window.isShowing() || !(window instanceof RootPaneContainer)) return;
         RootPaneContainer rpc = (RootPaneContainer) window;
         JLayeredPane layered = rpc.getLayeredPane();
         if (layered == null) return;
 
+        // pressed again while it's still up (volume steps): update that one, no stacking
+        if (current != null && current.getParent() == layered) {
+            layered.moveToFront(current);      // something may have opened above it meanwhile
+            current.update(muted, volumePercent);
+            return;
+        }
+
         int winW = window.getWidth(), winH = window.getHeight();
         Toast toast = new Toast(muted, winH);
+        toast.percent = Math.max(0, Math.min(100, volumePercent));
+        current = toast;
         int x = 0, y = 0, w = winW, h = winH;
         toast.setBounds(x, y, w, h);
 
-        layered.add(toast, JLayeredPane.DRAG_LAYER);
+        // the very top layer of the window: above popups, toasts, drag images, everything
+        layered.add(toast, TOP_LAYER);
+        layered.moveToFront(toast);
         layered.revalidate();
         layered.repaint(x, y, w, h);
 
         toast.play(() -> {
+            if (current == toast) current = null;
             layered.remove(toast);
             layered.revalidate();
             layered.repaint(x, y, w, h);
@@ -80,7 +101,9 @@ final class MuteIndicator {
     }
 
     private static final class Toast extends JComponent {
-        private final boolean muted;
+        private boolean muted;
+        int percent = 100;
+        private long start;
         private final int pillW, pillH, circleD;
         private final int pillCy, circleCy;
         private float alpha = 0f;
@@ -99,8 +122,18 @@ final class MuteIndicator {
 
         private static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 
+        /** New value while showing: stay fully visible and hold again from now. */
+        void update(boolean nowMuted, int volumePercent) {
+            muted = nowMuted;
+            percent = Math.max(0, Math.min(100, volumePercent));
+            long now = System.currentTimeMillis();
+            // fading in: keep going; otherwise jump back to the start of the hold
+            if (now - start > FADE_IN_MS) start = now - FADE_IN_MS;
+            repaint();
+        }
+
         void play(Runnable onDone) {
-            final long start = System.currentTimeMillis();
+            start = System.currentTimeMillis();
             final int total = FADE_IN_MS + HOLD_MS + FADE_OUT_MS;
             timer = new Timer(15, null);
             timer.addActionListener(e -> {
@@ -145,7 +178,7 @@ final class MuteIndicator {
             g.fill(new RoundRectangle2D.Float(pillX, pillY, pillW, pillH, pillRadius, pillRadius));
             g.setColor(Color.WHITE);
             g.setFont(UiFonts.uiRegular(pillH * 0.42f));
-            String pct = muted ? "0%" : "100%";
+            String pct = muted ? "0%" : percent + "%";
             FontMetrics fm = g.getFontMetrics();
             int tx = pillX + Math.round((pillW - fm.stringWidth(pct)) / 2f);
             int ty = pillY + Math.round((pillH - fm.getHeight()) / 2f) + fm.getAscent();
@@ -156,7 +189,7 @@ final class MuteIndicator {
             // middle rather than tucked just under the pill.
             int circleX = (w - circleD) / 2;
             int circleY = circleCy - circleD / 2;
-            drawSvgBadge(g, circleX, circleY, circleD, muted);
+            drawSvgBadge(g, circleX, circleY, circleD, muted || percent == 0);
             g.dispose();
         }
 

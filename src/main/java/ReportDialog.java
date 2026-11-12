@@ -19,7 +19,12 @@ final class ReportDialog {
     private static final Color GOLD = UiTheme.c(205, 150, 54);
 
     static void open(Window owner, PlayerCard.Info info) {
-        JDialog d = new JDialog(owner, "Report", Dialog.ModalityType.APPLICATION_MODAL);
+        int wait = Moderation.reportWaitMinutes(info.playerId);
+        if (wait > 0) {                       // reported them less than 10 minutes ago
+            PlayerCard.confirmOnly(owner, "Already reported", Moderation.cooldownMessage(info.name, wait));
+            return;
+        }
+        JDialog d = new BigPopup.InDialog(owner, "Report", Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         JPanel c = PlayerCard.roundPanel();
         c.setLayout(new BorderLayout(0, 14));
@@ -161,6 +166,8 @@ final class ReportDialog {
                                 info.moves == null ? null : info.moves.get(),
                                 info.chat == null ? null : info.chat.get(), alsoBlock);
                         return null;
+                    } catch (Moderation.CooldownException ex) {
+                        return ex.getMessage();
                     } catch (Exception ex) {
                         return "The report couldn't be sent. Check your internet connection and try again.";
                     }

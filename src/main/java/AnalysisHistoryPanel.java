@@ -876,6 +876,46 @@ public final class AnalysisHistoryPanel extends JPanel {
 
     public void setOnStart(Runnable r)     { onStart = r; }
     public void setOnBack(Runnable r)      { onBack = r; }
+
+    private java.awt.KeyEventDispatcher arrowKeys;
+
+    /**
+     * The arrow keys press the four buttons under the moves (left / right one move, up the
+     * start, down the latest) -- the buttons themselves, so a key does exactly what a click
+     * does. Caught before anything else in the window can take the arrows (the screen's
+     * split panes used to swallow them). Off while typing, while a popup's open, while
+     * {@code active} says no, and when this panel isn't on screen.
+     */
+    public void enableArrowKeys(java.util.function.BooleanSupplier active) {
+        if (arrowKeys != null) return;
+        arrowKeys = e -> {
+            if (e.getID() != java.awt.event.KeyEvent.KEY_PRESSED || e.getModifiersEx() != 0) return false;
+            int k = e.getKeyCode();
+            JButton b = k == java.awt.event.KeyEvent.VK_LEFT ? prevButton
+                    : k == java.awt.event.KeyEvent.VK_RIGHT ? nextButton
+                    : k == java.awt.event.KeyEvent.VK_UP ? firstButton
+                    : k == java.awt.event.KeyEvent.VK_DOWN ? lastButton : null;
+            if (b == null || !isShowing()) return false;
+            java.awt.Component focus = e.getComponent();
+            if (focus instanceof javax.swing.text.JTextComponent) return false;          // typing (chat)
+            java.awt.Window here = SwingUtilities.getWindowAncestor(this);
+            java.awt.Window there = focus == null ? null
+                    : focus instanceof java.awt.Window ? (java.awt.Window) focus : SwingUtilities.getWindowAncestor(focus);
+            if (here == null || there != here) return false;                            // another window's keys
+            if (BigPopup.modalOpen()) return false;                                     // a popup has the keys
+            if (active != null && !active.getAsBoolean()) return false;
+            if (b.isEnabled()) b.doClick(0);
+            return true;
+        };
+        java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(arrowKeys);
+    }
+
+    /** The arrow keys go back to normal (the game screen closed). */
+    public void disableArrowKeys() {
+        if (arrowKeys == null) return;
+        java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(arrowKeys);
+        arrowKeys = null;
+    }
     public void setOnForward(Runnable r)   { onForward = r; }
     public void setOnEnd(Runnable r)       { onEnd = r; }
     public void setOnReset(Runnable r)     { onReset = r; }

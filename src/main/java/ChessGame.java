@@ -512,6 +512,15 @@ public class ChessGame extends JFrame {
     // Settings > Gameplay > Default time control
     private TimePreset selectedPreset = defaultPreset();
 
+    /** "5 days", "1 hr", "3 min", "3 | 2" -- a name for a time control. */
+    private static String presetLabel(int seconds, int increment) {
+        if (seconds % 86_400 == 0) return (seconds / 86_400) + (seconds == 86_400 ? " day" : " days");
+        if (seconds % 3600 == 0) return (seconds / 3600) + " hr";
+        if (increment > 0 && seconds % 60 == 0) return (seconds / 60) + " | " + increment;
+        if (seconds % 60 == 0) return (seconds / 60) + " min";
+        return seconds + " sec";
+    }
+
     private static TimePreset defaultPreset() {
         String label = AppSettings.defaultTimeControl();
         int[] t = AppSettings.parseTime(label);
@@ -995,9 +1004,18 @@ public class ChessGame extends JFrame {
         return null;
     }
 
+    /** Waits {@code ms} here while everything else keeps running (animations, clicks). */
+    private static void waitWhileAppRuns(int ms) {
+        if (ms <= 0 || !SwingUtilities.isEventDispatchThread()) return;
+        SecondaryLoop loop = Toolkit.getDefaultToolkit().getSystemEventQueue().createSecondaryLoop();
+        Timer t = new Timer(ms, e -> loop.exit());
+        t.setRepeats(false);
+        t.start();
+        loop.enter();
+    }
+
     private void showResultWindow(String title, String message) {
         if (resultWindowOpen) return;
-        if (onlineMode && message != null && !message.isBlank()) chatEvent(message.trim().replace("\n", " "));
         resultWindowOpen = true;
         try {
             String t = title == null ? "" : title.trim().toLowerCase();
@@ -1030,6 +1048,14 @@ public class ChessGame extends JFrame {
             else if (ml.contains("forfeit") || ml.contains("disconnect")) r.title = "Opponent Left";
             else r.title = "Game Over";
 
+            // the little badges on the kings (crown, #, flag, clock, ½ ...)
+            if (board != null) {
+                board.showEndBadges(r.whiteWon, r.title, m);
+                // the squares fill in first (opening the window at that same moment made it
+                // stutter); the window then opens while the badges hold, about 0.3 s in
+                waitWhileAppRuns(board.endBadgeTakeoverMs());
+                if (!board.isShowing()) return;           // left the game meanwhile
+            }
             String[] names = playerNames();
             r.whiteName = names[0];
             r.blackName = names[1];
@@ -1039,9 +1065,9 @@ public class ChessGame extends JFrame {
                 String winner = r.whiteWon ? r.whiteName : r.blackName;
                 boolean meWon = (isBotGame || onlineMode) && !spectateMode
                         && r.whiteWon == (onlineMode ? localIsWhite : playerIsWhite);
-                r.detail = (isBotGame || onlineMode) && !spectateMode
-                        ? (meWon ? "You won!" : winner + " won")
-                        : (r.whiteWon ? "White" : "Black") + " wins";
+                // always the winner's name, never just "White" / "Black"
+                r.detail = meWon ? "You won!" : winner + " won";
+                if ((isBotGame || onlineMode) && !spectateMode) r.youWon = meWon;
             } else {
                 r.detail = ml.contains("stalemate") ? "by stalemate"
                         : ml.contains("repetition") ? "by repetition"
@@ -1051,16 +1077,33 @@ public class ChessGame extends JFrame {
                         : ml.contains("both kings") ? m
                         : "";
             }
+            if (onlineMode) {
+                // the chat's line about the result, with names: "test3 won by resignation"
+                String how = r.title.equals("Checkmate") ? " by checkmate"
+                        : r.title.equals("Resignation") ? " by resignation"
+                        : r.title.equals("Time Out") ? " on time"
+                        : r.title.equals("Opponent Left") ? " (opponent left)" : "";
+                String line;
+                if (r.whiteWon == null) {
+                    line = r.detail == null || r.detail.isEmpty() ? "Draw" : "Draw · " + r.detail;
+                } else {
+                    boolean meWon = r.whiteWon == localIsWhite;
+                    String who = meWon ? "You" : opponentChatName();
+                    line = (meWon ? "You won" : who + " won") + how;
+                }
+                chatEvent(line);
+            }
             r.canReview = canReviewGame();
             r.canNewGame = !onlineMode;
             r.newGameLabel = isBotGame ? "PLAY AGAIN" : "NEW GAME";
-            r.canRematch = onlineMode && !spectateMode && networkManager != null;
+            r.canRematch = onlineMode && !spectateMode && (networkManager != null || opponentLeft);
             r.onRematch = this::requestOnlineRematch;
             r.rated = !spectateMode && onlineMode && !isBotGame && AccountSession.get() != null
                     && networkManager != null && networkManager.isRated();
 
             GameDialogs.Choice choice = GameDialogs.result(dialogAnchor(), r, w -> {
                 openResultWindow = w;
+                if (opponentLeft) w.setOpponentLeft();
                 if (lastRatingUpdate != null) {
                     w.setRating(lastRatingUpdate.newRating(), lastRatingUpdate.ratingDelta());
                 } else if (lastRatingFailed) {
@@ -1079,6 +1122,26 @@ public class ChessGame extends JFrame {
         } finally {
             resultWindowOpen = false;
         }
+    }
+
+    /** The other player is gone (left the board after the game): no rematch. */
+    private boolean opponentLeft;
+
+    private void onOpponentLeftAfterGame() {
+        if (opponentLeft) return;
+        opponentLeft = true;
+        String who = opponentChatName();
+        rematchRequested = false;
+        if (rematchPopup != null) {
+            rematchPopup.dispose();
+            rematchPopup = null;
+        }
+        if (networkManager != null) {
+            networkManager.close();
+            networkManager = null;
+        }
+        chatEvent(who + " left the game");
+        if (openResultWindow != null) openResultWindow.setOpponentLeft();
     }
 
     private void requestOnlineRematch() {
@@ -1407,10 +1470,10 @@ public class ChessGame extends JFrame {
                     }
                     @Override public void onPlayerInfo() {
                         SwingUtilities.invokeLater(() -> {
+                            // not built yet: the board picks the names up itself when it is
                             if (bottomPlayerLabel == null || topPlayerLabel == null) return;
                             setupPlayerLabels();
-                            if (topPanel != null) topPanel.repaint();
-                            if (bottomPanel != null) bottomPanel.repaint();
+                            refreshPlayerRows();
                         });
                     }
                     @Override public void onOpponentTyping() {
@@ -1419,6 +1482,11 @@ public class ChessGame extends JFrame {
                 });
                 this.onlineInitialSeconds = initialTime;
                 this.networkManager.setResumeEnabled(true);   // a dropped link is retried, not game over
+            }
+            // the time control picked in the online screen (building the board used to reset the
+            // clocks to the default 10 minutes, whatever was chosen; a rematch did the same)
+            if (net != null && initialTime > 0) {
+                this.selectedPreset = new TimePreset(presetLabel(initialTime, increment), initialTime, increment);
             }
 
             initializeGame();
@@ -1432,16 +1500,17 @@ public class ChessGame extends JFrame {
                     board.flipBoard();
                 }
             }
-            // Update player labels to indicate local/remote
-            if (localIsWhite) {
-                bottomPlayerLabel.setText("White");
-                topPlayerLabel.setText("Black");
-            } else {
-                // Board has been flipped for local black; bottom shows the local player
-                // the rows themselves trade places when the board flips: names stay with their colour
-                bottomPlayerLabel.setText("White");
-                topPlayerLabel.setText("Black");
-            }
+            // Both players' real names and pictures. (This used to write plain "White" /
+            // "Black" here, and if the other player's name had already arrived -- it often
+            // does while the board is still opening -- nothing ever replaced them.)
+            setupPlayerLabels();
+            refreshPlayerRows();
+            // your own picture may still be loading (signing in at start-up): redraw when it's in
+            java.lang.ref.WeakReference<ChessGame> self = new java.lang.ref.WeakReference<>(this);
+            AccountPopup.addAvatarListener(() -> {
+                ChessGame g = self.get();
+                if (g != null) SwingUtilities.invokeLater(g::refreshPlayerRows);
+            });
         }
         
         // Bot constructor
@@ -2095,21 +2164,15 @@ public class ChessGame extends JFrame {
             JSplitPane centerRightSplitPane,
             JSplitPane leftMainSplitPane
         ) {
-            java.awt.event.ComponentAdapter adapter = new java.awt.event.ComponentAdapter() {
-                @Override
-                public void componentResized(java.awt.event.ComponentEvent e) {
-                    applyFitToScreenScale(
-                        viewport,
-                        mainPanel,
-                        leftPanel,
-                        centerPanel,
-                        rightPanel,
-                        centerRightSplitPane,
-                        leftMainSplitPane
-                    );
-                }
-            };
-            viewport.addComponentListener(adapter);
+            // Size everything inside the same layout pass that resizes the window, so Swing
+            // never paints a frame with the old sizes in the new space (that was the shake).
+            viewport.setLayout(new SyncedLayout(viewport.getLayout(), () -> {
+                Dimension now = viewport.getSize();
+                if (now.width <= 0 || now.height <= 0 || now.equals(lastFitSize)) return;
+                lastFitSize = now;
+                applyFitToScreenScale(viewport, mainPanel, leftPanel, centerPanel, rightPanel,
+                        centerRightSplitPane, leftMainSplitPane);
+            }));
             SwingUtilities.invokeLater(() -> applyFitToScreenScale(
                 viewport,
                 mainPanel,
@@ -2168,7 +2231,8 @@ public class ChessGame extends JFrame {
             if (centerPanel != null) setFlexibleSplitChildSize(centerPanel, 0, availableH);
             rightPanel.setPreferredSize(new Dimension(sidebarWidth, availableH));
             leftMainSplitPane.setDividerLocation(leftWidth);
-            applyLeftPanelScale(leftPanel);
+            lastFitSize = viewport.getSize();
+            applyLeftPanelScale(leftPanel, leftWidth, availableH);
             viewport.revalidate();
             viewport.repaint();
         }
@@ -2225,16 +2289,41 @@ public class ChessGame extends JFrame {
 
         private void installLeftPanelScaling(JPanel leftPanel) {
             captureLeftPanelFonts(leftPanel);
-            leftPanel.addComponentListener(new java.awt.event.ComponentAdapter() {
-                @Override
-                public void componentResized(java.awt.event.ComponentEvent e) {
-                    applyLeftPanelScale(leftPanel);
-                }
-            });
-            leftMainSplitPane.addPropertyChangeListener(
-                JSplitPane.DIVIDER_LOCATION_PROPERTY,
-                e -> applyLeftPanelScale(leftPanel)
-            );
+            // sized from inside its own layout pass (old listeners ran a frame late, with
+            // the previous width, which made the board jump back and forth while resizing)
+            leftPanel.setLayout(new SyncedLayout(leftPanel.getLayout(), () -> applyLeftPanelScale(leftPanel)));
+        }
+
+        private Dimension lastFitSize;
+        private Dimension lastLeftScaleSize;
+
+        /** Runs a sizing step right before the real layout, in the same pass. */
+        private final class SyncedLayout implements LayoutManager2 {
+            private final LayoutManager inner;
+            private final Runnable before;
+            SyncedLayout(LayoutManager inner, Runnable before) { this.inner = inner; this.before = before; }
+            @Override public void layoutContainer(Container c) { before.run(); inner.layoutContainer(c); }
+            @Override public void addLayoutComponent(String n, Component c) { inner.addLayoutComponent(n, c); }
+            @Override public void removeLayoutComponent(Component c) { inner.removeLayoutComponent(c); }
+            @Override public Dimension preferredLayoutSize(Container c) { return inner.preferredLayoutSize(c); }
+            @Override public Dimension minimumLayoutSize(Container c) { return inner.minimumLayoutSize(c); }
+            @Override public void addLayoutComponent(Component c, Object k) {
+                if (inner instanceof LayoutManager2) ((LayoutManager2) inner).addLayoutComponent(c, k);
+                else inner.addLayoutComponent(k instanceof String ? (String) k : null, c);
+            }
+            @Override public Dimension maximumLayoutSize(Container c) {
+                return inner instanceof LayoutManager2 ? ((LayoutManager2) inner).maximumLayoutSize(c)
+                        : new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE);
+            }
+            @Override public float getLayoutAlignmentX(Container c) {
+                return inner instanceof LayoutManager2 ? ((LayoutManager2) inner).getLayoutAlignmentX(c) : 0.5f;
+            }
+            @Override public float getLayoutAlignmentY(Container c) {
+                return inner instanceof LayoutManager2 ? ((LayoutManager2) inner).getLayoutAlignmentY(c) : 0.5f;
+            }
+            @Override public void invalidateLayout(Container c) {
+                if (inner instanceof LayoutManager2) ((LayoutManager2) inner).invalidateLayout(c);
+            }
         }
 
         private int getMaximumLeftPanelWidth(JPanel leftPanel) {
@@ -2278,9 +2367,14 @@ public class ChessGame extends JFrame {
         }
 
         private void applyLeftPanelScale(JPanel leftPanel) {
-            int panelWidth = leftPanel.getWidth();
-            int panelHeight = leftPanel.getHeight();
+            applyLeftPanelScale(leftPanel, leftPanel.getWidth(), leftPanel.getHeight());
+        }
+
+        private void applyLeftPanelScale(JPanel leftPanel, int panelWidth, int panelHeight) {
             if (panelWidth <= 0 || panelHeight <= 0) return;
+            Dimension key = new Dimension(panelWidth, panelHeight);
+            if (key.equals(lastLeftScaleSize)) return;   // nothing changed: skip (keeps layout passes cheap)
+            lastLeftScaleSize = key;
 
             int pad = Math.max(14, Math.min(32, Math.round(panelHeight * 0.03f)));
             int nominalBar = Math.max(52, Math.min(96, Math.round(panelHeight * 0.086f)));
@@ -2311,6 +2405,10 @@ public class ChessGame extends JFrame {
                 scaled(8, scale), 0, scaled(8, scale), scaled(10, scale)
             ));
 
+            for (JComponent c : new JComponent[]{topPanel, bottomPanel, boardStackPanel,
+                    evalBarLanePanel, evalBarColumnPanel, leftContentPanel}) {
+                if (c != null) c.invalidate();
+            }
             leftPanel.revalidate();
             leftPanel.repaint();
         }
@@ -2782,6 +2880,13 @@ public class ChessGame extends JFrame {
         // Format seconds into MM:SS
         private String formatTime(int totalSeconds) {
             if (totalSeconds < 0) totalSeconds = 0;
+            // long games: days and hours ("4d 23h"), then hours ("1:05:09"), then MM:SS
+            if (totalSeconds >= 86_400) {
+                return (totalSeconds / 86_400) + "d " + ((totalSeconds % 86_400) / 3600) + "h";
+            }
+            if (totalSeconds >= 3600) {
+                return String.format("%d:%02d:%02d", totalSeconds / 3600, (totalSeconds % 3600) / 60, totalSeconds % 60);
+            }
             int minutes = totalSeconds / 60;
             int seconds = totalSeconds % 60;
             return String.format("%02d:%02d", minutes, seconds);
@@ -2986,6 +3091,9 @@ public class ChessGame extends JFrame {
                 });
                 themedGameHistoryPanel.setOnStart(() -> { if (board != null) board.animateToState(0); });
                 themedGameHistoryPanel.setOnBack(() -> { if (board != null) board.stepBackAnimated(); });
+                // the arrow keys press the four buttons under the moves (not before a
+                // two-player game starts: there they move around the time-control picker)
+                themedGameHistoryPanel.enableArrowKeys(() -> !isTimeControlHotkeyScreenActive());
                 themedGameHistoryPanel.setOnForward(() -> { if (board != null) board.stepForwardAnimated(); });
                 themedGameHistoryPanel.setOnEnd(() -> {
                     if (board != null) board.animateToState(board.getLatestStateIndex());
@@ -3102,7 +3210,8 @@ public class ChessGame extends JFrame {
                         if (showGameConfirm("Exit Game", "Exit to main menu?", "Yes", "No")) exitToMenuQuickly();
                     }, AnalysisTheme.TEXT_DARK},
             };
-            boolean canAct = gameStarted && !gameOver;
+            // greyed out once the game is over in any way (mate, draw, time, resignation...)
+            boolean canAct = gameStarted && !isGameOver();
             for (Object[] it : items) {
                 String label = (String) it[0];
                 Runnable action = (Runnable) it[1];
@@ -3505,7 +3614,13 @@ public class ChessGame extends JFrame {
         }
 
         private void handleNetworkDisconnect(String message) {
-            if (!onlineMode || gameOver) return;
+            if (!onlineMode) return;
+            // the game was already over: they just left the board (or lost the connection),
+            // so there's nobody to rematch any more
+            if (gameOver || gameFinished) {
+                onOpponentLeftAfterGame();
+                return;
+            }
             setGameOverState();
             botMoveInProgress = false;
             if (board != null) board.setInputEnabled(false);
@@ -3887,15 +4002,27 @@ public class ChessGame extends JFrame {
 
     private volatile java.awt.image.BufferedImage opponentPicture;
     private volatile boolean opponentPictureAsked;
+    private int opponentPictureTries;
 
     /** An online opponent's account picture: fetched once in the background, null until then (or if none). */
     private java.awt.image.BufferedImage opponentPicture() {
         if (!opponentPictureAsked && networkManager != null && networkManager.opponentUid() != null) {
             opponentPictureAsked = true;
             final String uid = networkManager.opponentUid();
+            opponentPictureTries++;
             Thread t = new Thread(() -> {
                 byte[] bytes = AccountApiClient.avatarOf(uid);
-                if (bytes == null) return;
+                if (bytes == null) {
+                    // didn't come (slow connection?): try again in a few seconds, a few times
+                    if (opponentPictureTries < 4) {
+                        SwingUtilities.invokeLater(() -> {
+                            Timer again = new Timer(4000, e -> { opponentPictureAsked = false; refreshPlayerRows(); });
+                            again.setRepeats(false);
+                            again.start();
+                        });
+                    }
+                    return;
+                }
                 try {
                     opponentPicture = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
                 } catch (Exception ignored) {
@@ -5420,6 +5547,22 @@ public class ChessGame extends JFrame {
         if (board != null) board.repaint();
     }
 
+    /**
+     * The arrow keys step through the game's moves (the same as the buttons under the move
+     * list): left / right one move, up to the start, down to the latest move. (They used to
+     * do nothing outside the time-control picker, which had taken them.)
+     */
+    private void navigateMovesByKey(int key) {
+        if (board == null || !board.isShowing()) return;
+        switch (key) {
+            case java.awt.event.KeyEvent.VK_LEFT: board.stepBackAnimated(); break;
+            case java.awt.event.KeyEvent.VK_RIGHT: board.stepForwardAnimated(); break;
+            case java.awt.event.KeyEvent.VK_UP: board.animateToState(0); break;
+            case java.awt.event.KeyEvent.VK_DOWN: board.animateToState(board.getLatestStateIndex()); break;
+            default: break;
+        }
+    }
+
     private void bindGameHotkeys() {
         if (board == null) return;
         JComponent hotkeyTarget = appHost == null ? getRootPane() : embeddedHotkeyTarget;
@@ -5506,6 +5649,7 @@ public class ChessGame extends JFrame {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 if (isTimeControlHotkeyScreenActive()) navigateTimePresetGrid(-1, 0);
+                else navigateMovesByKey(java.awt.event.KeyEvent.VK_UP);
             }
         });
         im.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_DOWN, 0), "presetGridDownHotkey");
@@ -5513,6 +5657,7 @@ public class ChessGame extends JFrame {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 if (isTimeControlHotkeyScreenActive()) navigateTimePresetGrid(1, 0);
+                else navigateMovesByKey(java.awt.event.KeyEvent.VK_DOWN);
             }
         });
         im.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_LEFT, 0), "presetGridLeftHotkey");
@@ -5520,6 +5665,7 @@ public class ChessGame extends JFrame {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 if (isTimeControlHotkeyScreenActive()) navigateTimePresetGrid(0, -1);
+                else navigateMovesByKey(java.awt.event.KeyEvent.VK_LEFT);
             }
         });
         im.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_RIGHT, 0), "presetGridRightHotkey");
@@ -5527,6 +5673,7 @@ public class ChessGame extends JFrame {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
                 if (isTimeControlHotkeyScreenActive()) navigateTimePresetGrid(0, 1);
+                else navigateMovesByKey(java.awt.event.KeyEvent.VK_RIGHT);
             }
         });
         im.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0), "startGameHotkey");
@@ -6313,6 +6460,20 @@ public class ChessGame extends JFrame {
         bottomClockLabel.setForeground(Color.WHITE);
         topClockLabel.setText(formatTime(blackTimeRemaining));
         bottomClockLabel.setText(formatTime(whiteTimeRemaining));
+        fitClocksTo(initialSeconds);
+    }
+
+    /** Hour- and day-long games show longer times ("1:05:09", "4d 23h"): the clocks get wider. */
+    private void fitClocksTo(int initialSeconds) {
+        int w = initialSeconds >= 3600 ? 196 : 156;
+        for (JLabel l : new JLabel[] {topClockLabel, bottomClockLabel}) {
+            if (l == null || l.getPreferredSize().width == w) continue;
+            Dimension d = new Dimension(w, 62);
+            l.setMinimumSize(d);
+            l.setPreferredSize(d);
+            l.setMaximumSize(d);
+            if (l.getParent() != null) { l.getParent().revalidate(); l.getParent().repaint(); }
+        }
     }
 
     // ── time control fold / unfold (Start Game / Reset) ─────────────────────
@@ -6585,7 +6746,8 @@ public class ChessGame extends JFrame {
     if (session != null && session.profile() != null) {
         me += " (" + AccountApiClient.displayRating(session.profile().rating()) + ")";
     }
-    String them = opponentNameOr(localIsWhite ? "Black" : "White");
+    // never a bare "White" / "Black": until their name arrives they're just "Opponent"
+    String them = opponentNameOr("Opponent");
     if (knownOpponentRating != null && !AppSettings.focusMode()) {
         them += " (" + AccountApiClient.displayRating(knownOpponentRating) + ")";
     }
@@ -6643,6 +6805,7 @@ public class ChessGame extends JFrame {
     }
 
     private void cleanupEmbeddedGame() {
+        if (themedGameHistoryPanel != null) themedGameHistoryPanel.disableArrowKeys();
         LocalPlayers.removeListener(localPlayersListener);
         AppSettings.removeListener(takebackSettingListener);
         stopTimer();
@@ -6809,9 +6972,28 @@ public class ChessGame extends JFrame {
             }
         }
         refreshSpellUI();
+        // a rematch / new game on the same board: the names and pictures stay the players' own
+        // (and ours goes over again, in case theirs missed it the first time)
+        if (onlineMode && networkManager != null) {
+            try {
+                AccountApiClient.Session me = AccountSession.get();
+                networkManager.sendPlayerInfo(me != null && me.profile() != null ? me.profile().rating() : null, onlineName());
+            } catch (Exception ignored) {
+            }
+        }
+        if (bottomPlayerLabel != null && topPlayerLabel != null) {
+            setupPlayerLabels();
+            refreshPlayerRows();
+        }
         refreshCapturedMaterialUI();
         refreshOpeningTitle();
         syncThemedGameHistory();
+    }
+
+    /** Redraws both player rows (names, pictures) -- e.g. once the other player's picture arrives. */
+    private void refreshPlayerRows() {
+        if (topPanel != null) { topPanel.revalidate(); topPanel.repaint(); }
+        if (bottomPanel != null) { bottomPanel.revalidate(); bottomPanel.repaint(); }
     }
 
     private boolean shouldShowMoveHistory() {

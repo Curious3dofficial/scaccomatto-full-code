@@ -204,6 +204,29 @@ final class Achievements {
         CloudSave.achievementsChanged();
     }
 
+    /**
+     * Wipes every achievement and all progress -- on this computer, and in the account when
+     * signed in (otherwise signing in again would bring it all back). Runs off the screen's
+     * thread (it can wait on the internet); the screens are told when it's done.
+     */
+    static void resetAll() {
+        synchronized (Achievements.class) {
+            try {
+                for (String k : PREFS.keys()) PREFS.remove(k);
+                PREFS.flush();
+            } catch (Exception ignored) { }
+        }
+        if (FirebaseLink.signedInToAccount()) {
+            try { FirebaseLink.delete("saves/" + FirebaseLink.uid() + "/ach"); }
+            catch (Exception e) { System.err.println("Couldn't clear saved achievements: " + e.getMessage()); }
+        }
+        SwingUtilities.invokeLater(() -> {
+            for (Runnable r : new ArrayList<>(LISTENERS)) {
+                try { r.run(); } catch (Exception ignored) { }
+            }
+        });
+    }
+
     private static void add(String counter, int by) { setCount(counter, count(counter) + by); }
 
     private static void raise(String counter, int value) { if (value > count(counter)) setCount(counter, value); }

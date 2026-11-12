@@ -84,6 +84,7 @@ final class Friends {
     static String add(String uid, String shownName) throws IOException {
         String me = me();
         if (uid.equals(me)) return "That's you!";
+        if (Moderation.isBlocked(uid)) return "You've blocked " + shownName + ". Unblock them in the Blocked tab first.";
         if (isFriend(uid)) return "You're already friends with " + shownName + ".";
         if (FirebaseLink.get("friendRequests/" + me + "/" + uid) instanceof Map) {
             accept(uid);
@@ -106,6 +107,10 @@ final class Friends {
     static List<Request> requests() throws IOException {
         List<Request> out = new ArrayList<>();
         for (Map.Entry<String, Object> e : FirebaseLink.asMap(FirebaseLink.get("friendRequests/" + me())).entrySet()) {
+            if (Moderation.isBlocked(e.getKey())) {           // blocked: their request quietly goes
+                try { decline(e.getKey()); } catch (Exception ignored) { }
+                continue;
+            }
             Map<String, Object> m = FirebaseLink.asMap(e.getValue());
             Request r = new Request();
             r.uid = e.getKey();
@@ -127,6 +132,17 @@ final class Friends {
 
     static void decline(String uid) throws IOException {
         FirebaseLink.delete("friendRequests/" + me() + "/" + uid);
+    }
+
+    /**
+     * After blocking someone: not friends any more, their request to me is gone and so is
+     * mine to them. Each step on its own (one failing doesn't stop the rest).
+     */
+    static void cutTies(String uid) {
+        if (uid == null || !FirebaseLink.signedInToAccount()) return;
+        try { remove(uid); } catch (Exception ignored) { }
+        try { decline(uid); } catch (Exception ignored) { }
+        try { FirebaseLink.delete("friendRequests/" + uid + "/" + me()); } catch (Exception ignored) { }
     }
 
     /** Did I already ask them? (for the player card's "Request sent") */
@@ -153,6 +169,10 @@ final class Friends {
         List<Friend> out = new ArrayList<>();
         long now = FirebaseLink.serverNow();
         for (String uid : FirebaseLink.asMap(FirebaseLink.get("friends/" + me)).keySet()) {
+            if (Moderation.isBlocked(uid)) {                  // blocked: no longer a friend
+                try { remove(uid); } catch (Exception ignored) { }
+                continue;
+            }
             Map<String, Object> p = FirebaseLink.asMap(FirebaseLink.get("players/" + uid));
             if (p.isEmpty()) continue;      // their account is gone
             Friend f = new Friend();

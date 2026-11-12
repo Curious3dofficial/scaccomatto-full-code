@@ -1023,6 +1023,12 @@ public class OnlinePanel extends JPanel {
         });
         joinGameHeader.setShowChevron(false);
         matchmakingHeader = joinGameHeader;
+        // the countdown ran out: stop, just like tapping Searching
+        joinGameHeader.onSearchTimeout = () -> {
+            if (!matchmaking) return;
+            stopMatchmaking();
+            setProgressStatus("No one found -- tap Join Game to look again");
+        };
         // Tap: find any open game on the local network with the same
         // variant + time control and join it -- or, if there isn't one,
         // open one and wait for someone else to find it. Tap again to stop.
@@ -1419,7 +1425,12 @@ public class OnlinePanel extends JPanel {
 
     private Timer cardDimTimer;
 
+    /** Games that failed to connect during this search (not tried again until a new search). */
+    private final java.util.Set<String> failedMatchCodes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private void startMatchmaking() {
+        // a new search (not a retry while one is running): every game may be tried again
+        if (!matchmaking) failedMatchCodes.clear();
         closeCurrentConnection();
         matchmaking = true;
         myPublicCode = null;
@@ -1484,6 +1495,17 @@ public class OnlinePanel extends JPanel {
                 }
             }
             if (!matchmaking || run != matchmakingRun) return;
+            // Our own game on the internet (the same account signed in on another copy of the
+            // app): it can't be joined over the internet -- you can't play yourself there --
+            // so it's left out, and its copy on this network (if any) is used instead.
+            String myUid = null;
+            try { myUid = OnlineRelay.available() ? FirebaseLink.uid() : null; } catch (Exception ignored) { }
+            if (myUid != null) {
+                final String me = myUid;
+                lobbies.removeIf(l -> OnlineRelay.isOnline(l) && me.equals(l.hostName()));
+            }
+            // and games that just failed to connect aren't tried again in this search
+            lobbies.removeIf(l -> l.code() != null && failedMatchCodes.contains(l.code()));
             // Signed in: a game that's on both this network and the internet is joined over
             // the internet, because only internet games can be rated (the database checks
             // both players' results). Guests still take the faster local connection.
@@ -1549,7 +1571,10 @@ public class OnlinePanel extends JPanel {
         final ChessGame[] gameRef = new ChessGame[1];
         final List<Runnable> pendingEvents = new ArrayList<>();
         onHostConnected = () -> finishMatchmaking(run);
-        onHostFailed = () -> restartMatchmaking(run); // e.g. someone else got there first
+        onHostFailed = () -> {                          // e.g. someone else got there first
+            if (target.code() != null) failedMatchCodes.add(target.code());
+            restartMatchmaking(run);
+        };
         setProgressStatus("Found a game. Connecting...");
         if (OnlineRelay.isOnline(target)) {
             net.joinOnline(target.code(), createNetworkListener(gameRef, pendingEvents, false));
@@ -1785,7 +1810,7 @@ public class OnlinePanel extends JPanel {
         final boolean[][] hostingFromPopupRef = { null };
         SoundManager.playExtraSound("tap.wav");
         Window owner = SwingUtilities.getWindowAncestor(this);
-        JDialog dialog = new JDialog(owner, "Private Game", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new BigPopup.InDialog(owner, "Private Game", Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setUndecorated(true);
 
         // Was doubled per "make this popup bigger (like twice) all
@@ -2137,12 +2162,24 @@ public class OnlinePanel extends JPanel {
         card.add(popupStatus, BorderLayout.SOUTH);
         popupStatusLabel = popupStatus;
 
+        // Esc = the page's CANCEL, Enter = HOST GAME / JOIN GAME (whichever page is showing)
+        final boolean[] onJoinPage = { false };
+        dialog.getRootPane().registerKeyboardAction(e -> {
+            JButton b = onJoinPage[0] ? joinCancel : cancelAction;
+            if (b.isEnabled()) b.doClick(0);
+        }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
+        dialog.getRootPane().registerKeyboardAction(e -> {
+            JButton b = onJoinPage[0] ? joinAction : hostAction;
+            if (b.isEnabled()) b.doClick(0);
+        }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
+
         hostTab.addActionListener(event -> {
             // Can't switch away while a join is in progress.
             if (joiningFromPopup[0]) return;
             hostTab.setSelectedPreset(true);
             joinTab.setSelectedPreset(false);
             pageLayout.show(pages, "host");
+            onJoinPage[0] = false;
         });
         joinTab.addActionListener(event -> {
             // Can't switch away while already hosting and waiting.
@@ -2150,6 +2187,7 @@ public class OnlinePanel extends JPanel {
             hostTab.setSelectedPreset(false);
             joinTab.setSelectedPreset(true);
             pageLayout.show(pages, "join");
+            onJoinPage[0] = true;
             joinCode.requestFocusInWindow();
         });
 
@@ -2238,7 +2276,7 @@ public class OnlinePanel extends JPanel {
     // in a 2-column grid, smaller. Picking one selects it and closes the
     // popup straight away, then runs onPicked.
     private void showVariantPickerDialog(Window owner, Runnable onPicked) {
-        JDialog picker = new JDialog(owner, "Select Variant", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog picker = new BigPopup.InDialog(owner, "Select Variant", Dialog.ModalityType.APPLICATION_MODAL);
         picker.setUndecorated(true);
 
         CreamCard card = new CreamCard();
@@ -2289,7 +2327,7 @@ public class OnlinePanel extends JPanel {
     // shows (Bullet / Blitz / Rapid / Daily / Custom). Picking anything
     // closes it straight away and runs onPicked.
     private void showTimePickerDialog(Window owner, Runnable onPicked) {
-        JDialog picker = new JDialog(owner, "Select Time Control", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog picker = new BigPopup.InDialog(owner, "Select Time Control", Dialog.ModalityType.APPLICATION_MODAL);
         picker.setUndecorated(true);
 
         CreamCard card = new CreamCard();
@@ -2369,7 +2407,7 @@ public class OnlinePanel extends JPanel {
 
     private boolean showLaunchDialog(String mode, boolean supported) {
         Window owner = SwingUtilities.getWindowAncestor(this);
-        JDialog dialog = new JDialog(owner, mode, Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new BigPopup.InDialog(owner, mode, Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setUndecorated(true);
 
         CreamCard card = new CreamCard();
@@ -2448,8 +2486,8 @@ public class OnlinePanel extends JPanel {
         label.setText(show ? message : " ");
         if (label.isVisible() != show) {
             label.setVisible(show);
-            Window w = SwingUtilities.getWindowAncestor(label);
-            if (w != null) w.pack();
+            Window w = BigPopup.windowOf(label);     // the popup it's in (never the app window)
+            if (w != null && !(w instanceof JFrame)) w.pack();
         }
     }
 
@@ -3178,7 +3216,7 @@ public class OnlinePanel extends JPanel {
 
         // the waiting popup
         Window owner = SwingUtilities.getWindowAncestor(this);
-        JDialog wait = new JDialog(owner, "Challenge", Dialog.ModalityType.MODELESS);
+        JDialog wait = new BigPopup.InDialog(owner, "Challenge", Dialog.ModalityType.MODELESS);
         waitRef[0] = wait;
         wait.setUndecorated(true);
         JPanel c = PlayerCard.roundPanel();
@@ -3646,6 +3684,10 @@ public class OnlinePanel extends JPanel {
         private boolean searching;
         private long searchStart;
         private Timer searchTimer;
+        /** How long a search runs before it stops by itself (the countdown on the right). */
+        static final float SEARCH_MS = 60_000f;
+        /** Runs once when the countdown reaches zero (same as tapping the tile to stop). */
+        Runnable onSearchTimeout;
 
         void setShowChevron(boolean show) {
             showChevron = show;
@@ -3653,10 +3695,20 @@ public class OnlinePanel extends JPanel {
         }
 
         void setSearching(boolean searching) {
+            boolean wasSearching = this.searching;
             this.searching = searching;
             if (searching) {
-                searchStart = System.nanoTime();
-                if (searchTimer == null) searchTimer = AnimationTiming.createUiTimer(e -> repaint());
+                // a retry inside the same search keeps the countdown going (it used to jump
+                // back to 1:00 on every retry)
+                if (!wasSearching) searchStart = System.nanoTime();
+                if (searchTimer == null) searchTimer = AnimationTiming.createUiTimer(e -> {
+                    repaint();
+                    if (this.searching && AnimationTiming.elapsedMillis(searchStart) >= SEARCH_MS) {
+                        this.searching = false;
+                        searchTimer.stop();
+                        if (onSearchTimeout != null) onSearchTimeout.run();
+                    }
+                });
                 searchTimer.start();
             } else if (searchTimer != null) {
                 searchTimer.stop();
@@ -3741,6 +3793,29 @@ public class OnlinePanel extends JPanel {
                     g2.setColor(UiTheme.c(28, 22, 14, Math.round(95 + 160 * pulse)));
                     g2.fillOval(dx + i * (dot + gap), cy + dot / 2 - dot - hop + Math.round(4 * hRatio), dot, dot);
                 }
+                // on the right: how long the search has left -- a ring that empties, and the time
+                float left = Math.max(0f, SEARCH_MS - AnimationTiming.elapsedMillis(searchStart));
+                int secs = (int) Math.ceil(left / 1000f);
+                String txt = (secs / 60) + ":" + String.format("%02d", secs % 60);
+                // the time sits inside the ring
+                int ring = Math.max(44, Math.round(74 * hRatio));
+                int rx = w - Math.round(30 * hRatio) - ring;
+                Graphics2D gr = (Graphics2D) g2.create();
+                gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                gr.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                gr.setStroke(new BasicStroke(Math.max(3f, 5f * hRatio), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                gr.setColor(UiTheme.raw(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 55));
+                gr.drawOval(rx, cy - ring / 2, ring, ring);
+                gr.setColor(GOLD);
+                gr.draw(new java.awt.geom.Arc2D.Float(rx, cy - ring / 2f, ring, ring, 90, 360f * left / SEARCH_MS,
+                        java.awt.geom.Arc2D.OPEN));
+                Font tf = MainMenu.variantDisplayFont(20f * hRatio);
+                gr.setFont(tf);
+                FontMetrics fm = gr.getFontMetrics();
+                gr.setColor(UiTheme.c(28, 22, 14));
+                gr.drawString(txt, rx + (ring - fm.stringWidth(txt)) / 2f,
+                        cy + (fm.getAscent() - fm.getDescent()) / 2f);
+                gr.dispose();
             }
             if (!showChevron) {
                 g2.dispose();

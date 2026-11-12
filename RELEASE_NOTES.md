@@ -14,7 +14,6 @@
 - The music now keeps playing during games and Analysis too.
 - Settings > Audio has a new Output device option, so you can switch to headphones or earphones without restarting.
 - Back buttons and sliding screens have their own sounds, and changing the board colour blends smoothly.
-- Settings now changes size with Settings > General > Interface size.
 - Argus, the chess engine, now keeps itself up to date. New versions download quietly and take over the next time you open the game.
 
 
@@ -41,7 +40,7 @@
 **Everything else**
 - Achievements, three piece sets, board themes, and light and dark mode.
 - Four menu themes that play in turn, or pick your favourite.
-- Keyboard shortcuts throughout: arrow keys on the menus, Esc to go back, Ctrl + and Ctrl − to change the interface size, M to mute.
+- Keyboard shortcuts throughout: arrow keys on the menus, Esc to go back, M to mute.
 - No ads and no tracking. The privacy page in Settings > About says exactly what an account keeps.
 
 **Install**

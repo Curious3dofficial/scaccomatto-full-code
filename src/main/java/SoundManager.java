@@ -264,6 +264,7 @@ public class SoundManager {
             long pressedAt = System.nanoTime();
             javax.swing.SwingUtilities.invokeLater(() -> {
                 if (PopupSound.newDialogSince(before)) return;
+                if (BigPopup.openedSince(pressedAt)) return;      // a popup inside the window, too
                 // a back press that makes a screen slide away: only the slide's whoosh plays
                 if (BACK.equals(name) && lastSlideNanos - pressedAt >= 0) return;
                 File f = resolveFileFromExtra(name);

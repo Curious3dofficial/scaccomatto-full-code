@@ -72,7 +72,9 @@ final class FriendsUi {
     }
 
     private static void show(MainMenu mm, Friends.Challenge c) {
-        JDialog d = new JDialog(mm, "Challenge", Dialog.ModalityType.MODELESS);
+        // drawn inside the app window, top right; the menu behind stays usable
+        BigPopup.InDialog d = new BigPopup.InDialog(mm, "Challenge", Dialog.ModalityType.MODELESS);
+        d.floating = true;
         open = d;
         d.setUndecorated(true);
         // Another popup (like Account) blocks every other window while it's open -- this one
@@ -129,6 +131,7 @@ final class FriendsUi {
         for (Window w : Window.getWindows()) {
             if (w != keep && w instanceof Dialog && ((Dialog) w).isModal() && w.isShowing()) w.dispose();
         }
+        BigPopup.closeAllModal();          // and the popups drawn inside the window
     }
 
     private static void answerLater(Friends.Challenge c) {

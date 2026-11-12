@@ -25,7 +25,9 @@ public class Duck extends Piece {
     public void draw(Graphics g, int x, int y) {
         if (duckImg == null) {
             try {
-                java.net.URL url = Duck.class.getResource("/assets/multiplayer/duck.png");
+                // the see-through duck (the menu's duck.png has a white square behind it)
+                java.net.URL url = Duck.class.getResource("/assets/pieces/duck.png");
+                if (url == null) url = Duck.class.getResource("/assets/multiplayer/duck.png");
                 if (url != null) duckImg = ImageIO.read(url);
             } catch (Exception ignored) {
             }

@@ -116,6 +116,28 @@
         ".validate": "$name.matches(/^[a-z0-9_]{3,20}$/)"
       }
     },
+    "loginKeys": {
+      "$name": {
+        ".read": "auth != null",
+        ".write": "auth != null && !root.child('banned/' + auth.uid).exists() && root.child('usernames/' + $name).val() === auth.uid",
+        ".validate": "$name.matches(/^[a-z0-9_]{3,20}$/) && newData.hasChildren(['s', 'i', 'd', 'n'])",
+        "s": {
+          ".validate": "newData.isString() && newData.val().length <= 64"
+        },
+        "i": {
+          ".validate": "newData.isString() && newData.val().length <= 32"
+        },
+        "d": {
+          ".validate": "newData.isString() && newData.val().length <= 400"
+        },
+        "n": {
+          ".validate": "newData.isNumber() && newData.val() >= 100000"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
     "avatars": {
       "$uid": {
         ".read": "auth != null",
@@ -140,7 +162,7 @@
     "reports": {
       "$reported": {
         "$reporter": {
-          ".write": "auth != null && auth.uid === $reporter && !root.child('banned/' + auth.uid).exists() && $reported !== $reporter && $reported.matches(/^[A-Za-z0-9_-]{1,128}$/)",
+          ".write": "auth != null && auth.uid === $reporter && !root.child('banned/' + auth.uid).exists() && $reported !== $reporter && $reported.matches(/^[A-Za-z0-9_-]{1,128}$/) && (!data.exists() || now - data.child('at').val() >= 600000)",
           ".validate": "newData.hasChildren(['reason', 'at']) && newData.child('at').val() === now && newData.child('reason').isString() && newData.child('reason').val().matches(/^(abuse|threats|spam|cheating|stalling|sandbagging|name|other)$/)",
           "name": {
             ".validate": "newData.isString() && newData.val().length <= 60"

@@ -49,6 +49,12 @@ final class Moderation {
         else blocked().remove(playerId);
         try { blocked().flush(); } catch (Exception ignored) { }
         saveBlockListToAccount();
+        if (block) {
+            // blocking also ends the friendship and any friend requests between you
+            Thread t = new Thread(() -> Friends.cutTies(playerId), "block-cut-ties");
+            t.setDaemon(true);
+            t.start();
+        }
     }
 
     /** Everyone blocked: id -> name, for Settings > Privacy > Blocked players. */
@@ -131,10 +137,36 @@ final class Moderation {
      * Sends a report to the studio, with the game's moves and chat as evidence. Blocking
      * runs too when {@code alsoBlock}. Throws if it couldn't be sent.
      */
+    // ── report cooldown: the same player once every 10 minutes ─────────────
+    static final long REPORT_COOLDOWN_MS = 10 * 60 * 1000L;
+
+    /** Too soon to report this player again. */
+    static final class CooldownException extends java.io.IOException {
+        CooldownException(String message) { super(message); }
+    }
+
+    private static Preferences reportTimes() { return BASE.node(profileKey()).node("reported"); }
+
+    /** Minutes until this player can be reported again (0 = now). */
+    static int reportWaitMinutes(String playerId) {
+        if (!validId(playerId)) return 0;
+        long last = reportTimes().getLong(playerId, 0L);
+        long left = last + REPORT_COOLDOWN_MS - System.currentTimeMillis();
+        return left <= 0 ? 0 : (int) Math.max(1, (left + 59_999) / 60_000);
+    }
+
+    static String cooldownMessage(String name, int minutes) {
+        return "You reported " + (name == null || name.isBlank() ? "this player" : name)
+                + " a few minutes ago. You can report them again in "
+                + minutes + (minutes == 1 ? " minute." : " minutes.");
+    }
+
     static void report(String playerId, String playerName, String reasonId, String note,
                        String gameCode, String variant, List<String> uciMoves, List<ChatLog.Entry> chat,
                        boolean alsoBlock) throws java.io.IOException {
         if (!validId(playerId)) throw new java.io.IOException("This player can't be reported.");
+        int wait = reportWaitMinutes(playerId);
+        if (wait > 0) throw new CooldownException(cooldownMessage(playerName, wait));
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("reason", reasonId);
         r.put("name", clip(playerName, 60));
@@ -152,7 +184,15 @@ final class Moderation {
         }
         r.put("app", AppVersion.CURRENT);
         r.put("at", FirebaseLink.SERVER_TIME);
-        FirebaseLink.put("reports/" + playerId + "/" + FirebaseLink.uid(), r);
+        try {
+            FirebaseLink.put("reports/" + playerId + "/" + FirebaseLink.uid(), r);
+        } catch (FirebaseLink.FirebaseException e) {
+            // the database also holds to the 10 minutes (e.g. reported from another computer)
+            if (e.permissionDenied()) throw new CooldownException(cooldownMessage(playerName, 10));
+            throw e;
+        }
+        reportTimes().putLong(playerId, System.currentTimeMillis());
+        try { reportTimes().flush(); } catch (Exception ignored) { }
         if (alsoBlock) setBlocked(playerId, playerName, true);
     }
 

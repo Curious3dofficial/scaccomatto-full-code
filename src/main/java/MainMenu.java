@@ -313,6 +313,11 @@ public class MainMenu extends JFrame implements ActionListener {
     /** A board (game or analysis) is opening or open: no menu music until back on the menus. */
     private boolean boardLaunching;
 
+    /** A game or the analysis board is on screen (their popups stay dark in light mode). */
+    boolean gameOnScreen() {
+        return boardOnScreen();
+    }
+
     private boolean boardOnScreen() {
         return boardLaunching || (activeScreen != null && activeScreenCleanup != null);
     }

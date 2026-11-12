@@ -21,7 +21,7 @@ final class PhotoCrop {
     static BufferedImage open(Window owner, BufferedImage img) {
         result = null;
         if (img == null) return null;
-        JDialog d = new JDialog(owner, "Crop picture", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new JDialog(BigPopup.realOwner(owner), "Crop picture", Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
 
         JPanel card = new JPanel(new BorderLayout(0, 22)) {

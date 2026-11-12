@@ -48,6 +48,31 @@ final class BigPopup {
     private static final Color CARD_EDGE = new Color(62, 60, 72);
     private static final Color TITLE = new Color(240, 238, 245);
     private static final Color TEXT = new Color(160, 156, 174);
+
+    // the light look: over the app's own light screens (menus, Settings...) in light mode,
+    // in the same ivory as the screen behind
+    private static final Color L_CARD_TOP = new Color(255, 253, 248);
+    private static final Color L_CARD_BOTTOM = new Color(246, 241, 231);
+    private static final Color L_CARD_EDGE = new Color(224, 214, 196);
+    private static final Color L_TITLE = new Color(28, 22, 14);
+    private static final Color L_TEXT = new Color(122, 110, 94);
+
+    /** Whether the popup being made right now is the light one (read by its card's parts). */
+    private static boolean pendingLight;
+
+    /**
+     * Light popups over the app's light screens in light mode; dark over the game and the
+     * analysis board (always dark), and everywhere in dark mode.
+     */
+    private static boolean lightFor(Window owner) {
+        try {
+            if (UiTheme.DARK) return false;
+            if (owner instanceof MainMenu) return !((MainMenu) owner).gameOnScreen();
+            return false;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
     private static final Color HINT = new Color(110, 106, 124);
 
     // ── simple uses ─────────────────────────────────────────────────────────
@@ -61,6 +86,80 @@ final class BigPopup {
     static boolean confirm(Component anchor, Tone tone, Icon icon, String title, String message, String yes, String no) {
         return show(anchor, tone, icon, title, message, null,
                 new String[] {no == null ? "CANCEL" : no, yes == null ? "OK" : yes}, 1, 0) == 1;
+    }
+
+    /** Client property: an extra that draws itself to any size, so it's scaled with the popup (and shrunk to fit). */
+    static final String SCALES = "bigpopup.scalesWithCard";
+
+    /** Extras for one popup (the result window uses these). */
+    static final class Options {
+        /** An X in the top-right corner (does what Esc does). */
+        boolean closeButton;
+        /** Per button: its colour (null = grey, except the main one, which gets the popup's colour). */
+        Color[] fills;
+        /** Asked before a button closes the popup: true keeps it open (e.g. Rematch waits). */
+        java.util.function.IntPredicate keepOpen;
+        /** Per button: shows a small PAID tag (Scaccomatto Free). */
+        boolean[] paid;
+        /** Gets a handle to change the buttons while it's open. */
+        java.util.function.Consumer<Handle> onOpen;
+    }
+
+    /** Changes an open popup's buttons, or closes it (any thread). */
+    static final class Handle {
+        private final Card card;
+        private Handle(Card card) { this.card = card; }
+
+        void setLabel(int i, String text) {
+            SwingUtilities.invokeLater(() -> { if (i >= 0 && i < card.buttons.size()) card.buttons.get(i).setLabel(text); });
+        }
+
+        void setEnabled(int i, boolean on) {
+            SwingUtilities.invokeLater(() -> { if (i >= 0 && i < card.buttons.size()) card.buttons.get(i).setEnabled(on); });
+        }
+
+        void setFill(int i, Color fill) {
+            SwingUtilities.invokeLater(() -> { if (i >= 0 && i < card.buttons.size()) card.buttons.get(i).setFill(fill); });
+        }
+
+        /** Button {@code i} shows {@code text} in {@code fill}, full colour, but can't be pressed any more. */
+        void setLocked(int i, String text, Color fill) {
+            SwingUtilities.invokeLater(() -> {
+                if (i < 0 || i >= card.buttons.size()) return;
+                PopButton b = card.buttons.get(i);
+                b.setEnabled(true);
+                b.setLabel(text);
+                b.setFill(fill);
+                b.setLocked(true);
+            });
+        }
+
+        /** Closes it as if button {@code i} had been chosen. */
+        void closeWith(int i) {
+            SwingUtilities.invokeLater(() -> card.finishWith(i));
+        }
+    }
+
+    /** The options for the popup being made right now (read once by its card). */
+    private static Options pendingOptions;
+
+    /** {@link #show} with extras. */
+    static int show(Component anchor, Tone tone, Icon icon, String title, String message, JComponent extra,
+                    String[] labels, int primary, int cancel, Options options) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            int[] r = {cancel};
+            try {
+                SwingUtilities.invokeAndWait(() -> r[0] = show(anchor, tone, icon, title, message, extra, labels, primary, cancel, options));
+            } catch (Exception ignored) {
+            }
+            return r[0];
+        }
+        pendingOptions = options;
+        try {
+            return show(anchor, tone, icon, title, message, extra, labels, primary, cancel);
+        } finally {
+            pendingOptions = null;
+        }
     }
 
     /**
@@ -78,13 +177,14 @@ final class BigPopup {
             }
             return r[0];
         }
-        Window owner = anchor == null ? null
-                : anchor instanceof Window ? (Window) anchor : SwingUtilities.getWindowAncestor(anchor);
+        Window owner = realOwner(anchor == null ? null
+                : anchor instanceof Window ? (Window) anchor : SwingUtilities.getWindowAncestor(anchor));
         if (owner == null) {
             for (Window w : Window.getWindows()) if (w.isShowing() && w instanceof Frame) { owner = w; break; }
         }
         Tone t = tone == null ? Tone.PRIMARY : tone;
         Icon i = icon == null ? Icon.NONE : icon;
+        pendingLight = lightFor(owner);
         String ti = title == null ? "" : title, me = message == null ? "" : message;
         // part of the app's own window (drawn on its top layer); a separate window only when
         // there's no app window to draw in (e.g. before it has opened)
@@ -101,8 +201,8 @@ final class BigPopup {
      */
     static boolean showPanel(Component anchor, JComponent panel, Dimension size, float arc,
                              boolean closeOnOutsideClick, Runnable[] closer) {
-        Window owner = anchor == null ? null
-                : anchor instanceof Window ? (Window) anchor : SwingUtilities.getWindowAncestor(anchor);
+        Window owner = realOwner(anchor == null ? null
+                : anchor instanceof Window ? (Window) anchor : SwingUtilities.getWindowAncestor(anchor));
         if (!(owner instanceof JFrame) || !owner.isShowing() || blockedByWindow(owner)) return false;
         InWindow.showPanel((JFrame) owner, panel, size, arc, closeOnOutsideClick, closer);
         return true;
@@ -136,7 +236,7 @@ final class BigPopup {
                 : GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().getBounds();
         Dimension size = cardSize(screen, screen.width, screen.height);
         card.setOpaque(true);
-        card.setBackground(CARD_BOTTOM);
+        card.setBackground(card.light ? L_CARD_BOTTOM : CARD_BOTTOM);
         card.setPreferredSize(size);
         d.setContentPane(card);
         d.pack();
@@ -165,9 +265,23 @@ final class BigPopup {
      * behind it can be clicked or typed into, and the caller waits for the answer.
      */
     private static final class InWindow extends JComponent {
-        static final float OPEN_MS = 120f, CLOSE_MS = 120f;
-        static final float OPEN_FROM = 0.94f, CLOSE_TO = 0.88f;
+        // closing is a bit longer and shrinks further than Mint's, so you can see it go
+        // (at Mint's 0.12 s it just looked like the panel vanished)
+        static final float OPEN_MS = 120f, CLOSE_MS = 220f;
+        static final float OPEN_FROM = 0.94f, CLOSE_TO = 0.80f;
         private static final java.util.ArrayDeque<InWindow> OPEN = new java.util.ArrayDeque<>();
+        /** Every one on screen (floating corner cards too): each new one goes on top of them all. */
+        private static final List<InWindow> ALL = new ArrayList<>();
+
+        /** A small card in a corner (challenge, rematch offer, player card): the game stays usable. */
+        private boolean floating() { return host != null && host.dialog.floating; }
+
+        /** A floating card only takes the mouse over itself; everything else goes to the game. */
+        @Override
+        public boolean contains(int x, int y) {
+            if (floating()) return card.isVisible() && card.getBounds().contains(x, y);
+            return super.contains(x, y);
+        }
 
         private final JFrame frame;
         private final JComponent card;
@@ -189,6 +303,14 @@ final class BigPopup {
         private Timer anim;
         private Component focusBefore;
         private KeyEventDispatcher keys;
+        /** A whole dialog shown in here (see {@link InDialog}), or null for the popups. */
+        private Host host;
+        /** The app window's own key shortcuts, switched off while a dialog in here takes typing. */
+        private final List<Object[]> parked = new ArrayList<>();
+        private ComponentAdapter follow;
+        /** In-place dialogs: distance from the window edges it's anchored to. */
+        private Point place;
+        private boolean placeRight, placeBottom;
 
         static int show(JFrame frame, Tone tone, Icon icon, String title, String message, JComponent extra,
                         String[] labels, int primary, int cancel) {
@@ -197,7 +319,7 @@ final class BigPopup {
             Card card = new Card(() -> self[0].close(), tone, icon, title, message, extra, labels, primary, cancel, choice);
             self[0] = new InWindow(frame, card, choice);
             self[0].onEnter = () -> card.press(primary);
-            self[0].open(cancel);
+            self[0].open(cancel, true);
             return choice[0];
         }
 
@@ -217,7 +339,7 @@ final class BigPopup {
             self[0].fixedSize = size;
             self[0].cornerArc = arc;
             if (closer != null && closer.length > 0) closer[0] = () -> self[0].close();
-            self[0].open(-1);
+            self[0].open(-1, true);
         }
 
         private InWindow(JFrame frame, JComponent card, int[] choice) {
@@ -237,18 +359,24 @@ final class BigPopup {
             setFocusable(true);
         }
 
-        private void open(int cancel) {
+        private void open(int cancel, boolean block) {
             JLayeredPane layers = frame.getLayeredPane();
+            if (host != null) {
+                fixedSize = host.cardSize(frame, layers);
+                cornerArc = host.dialog.inPlace ? host.shapeArc() : 56 * fixedSize.width / 1344f;
+                if (!floating()) park(frame.getRootPane());
+            }
             Rectangle screen = frame.getGraphicsConfiguration() != null
                     ? frame.getGraphicsConfiguration().getBounds() : new Rectangle(0, 0, layers.getWidth(), layers.getHeight());
             Dimension size = fixedSize != null ? fixedSize : cardSize(screen, layers.getWidth(), layers.getHeight());
             card.setSize(size);
             setBounds(0, 0, layers.getWidth(), layers.getHeight());
-            layers.add(this, Integer.valueOf(JLayeredPane.POPUP_LAYER.intValue() + 60 + OPEN.size()));
+            layers.add(this, Integer.valueOf(JLayeredPane.POPUP_LAYER.intValue() + 60 + ALL.size()));
+            ALL.add(this);
             centre();
             card.doLayout();
             card.validate();
-            ComponentAdapter follow = new ComponentAdapter() {
+            follow = new ComponentAdapter() {
                 @Override public void componentResized(ComponentEvent e) {
                     setBounds(0, 0, layers.getWidth(), layers.getHeight());
                     centre();
@@ -256,8 +384,8 @@ final class BigPopup {
             };
             layers.addComponentListener(follow);
             focusBefore = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-            OPEN.push(this);
-            keys = e -> handleKey(e, cancel);
+            if (!floating()) OPEN.push(this);
+            keys = floating() ? this::floatingKey : e -> handleKey(e, cancel);
             KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(keys);
             // the app window going away also ends the popup
             addHierarchyListener(e -> {
@@ -266,7 +394,10 @@ final class BigPopup {
                 }
             });
             makeShadow();
-            SoundManager.playExtraSound("popup.wav");
+            lastOpenNanos = System.nanoTime();
+            if (host == null || !Boolean.TRUE.equals(host.root.getClientProperty(PopupSound.SILENT))) {
+                SoundManager.playExtraSound("popup.wav");
+            }
             // open: grow from 94% and fade in
             shot = snapshot();
             card.setVisible(false);
@@ -280,14 +411,59 @@ final class BigPopup {
                 alpha = 1f;
                 endFrames();
                 card.setVisible(true);
-                requestFocusInWindow();
+                if (floating()) {
+                    if (host.dialog.isAutoRequestFocus()) host.focusFirst();   // (the rematch offer never takes the keys)
+                } else if (host != null) {
+                    host.focusFirst();
+                } else {
+                    requestFocusInWindow();
+                }
                 paintNow();
             });
-            try {
-                loop.enter();                                       // waits here, the app keeps running
-            } finally {
-                layers.removeComponentListener(follow);
+            if (block) loop.enter();                                // waits here, the app keeps running
+        }
+
+        /** A dialog in here changed size (packed again): the card follows. */
+        void refit() {
+            if (host == null || finished) return;
+            JLayeredPane layers = frame.getLayeredPane();
+            Dimension size = host.cardSize(frame, layers);
+            if (!size.equals(card.getSize())) {
+                fixedSize = size;
+                cornerArc = host.dialog.inPlace ? host.shapeArc() : 56 * size.width / 1344f;
+                card.setSize(size);
+                centre();
+                if (!animating) makeShadow();
             }
+            card.doLayout();
+            card.validate();
+            repaint();
+        }
+
+        /** Switches off the app window's shortcut keys (they'd fire while typing in the dialog). */
+        private void park(Component c) {
+            if (c == this) return;
+            if (c instanceof JComponent) {
+                JComponent jc = (JComponent) c;
+                InputMap m = jc.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+                KeyStroke[] all = m == null ? null : m.allKeys();
+                if (all != null && all.length > 0) {
+                    parked.add(new Object[] {jc, m});
+                    jc.setInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW, new ComponentInputMap(jc));
+                }
+            }
+            if (c instanceof Container) for (Component k : ((Container) c).getComponents()) park(k);
+        }
+
+        private void unpark() {
+            for (int i = parked.size() - 1; i >= 0; i--) {
+                Object[] p = parked.get(i);
+                try {
+                    ((JComponent) p[0]).setInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW, (InputMap) p[1]);
+                } catch (RuntimeException ignored) {
+                }
+            }
+            parked.clear();
         }
 
         /** Closes with the shrink-and-fade, then hands the answer back. */
@@ -296,14 +472,16 @@ final class BigPopup {
             closing = true;
             if (anim != null) anim.stop();
             if (animating) endFrames();              // closed while still opening: carry on from here
+            makeShadow();
             shot = snapshot();
             card.setVisible(false);
             startFrames();
             float fromScale = scale, fromAlpha = alpha;
             run(CLOSE_MS, t -> {
-                float e = 1f - (1f - t) * (1f - t);                 // ease-out-quad
+                float e = 1f - (1f - t) * (1f - t);                 // ease-out-quad: shrinks right away
                 scale = fromScale + (CLOSE_TO - fromScale) * e;
-                alpha = fromAlpha * (1f - e);
+                // the fade lags behind the shrink a little, so it's seen getting smaller first
+                alpha = fromAlpha * (1f - (float) Math.pow(t, 1.6));
             }, this::finish);
         }
 
@@ -313,14 +491,39 @@ final class BigPopup {
             if (anim != null) anim.stop();
             KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(keys);
             OPEN.remove(this);
+            ALL.remove(this);
             Container p = getParent();
             if (p != null) {
                 Rectangle r = getBounds();
                 p.remove(this);
                 p.repaint(r.x, r.y, r.width, r.height);
             }
-            if (focusBefore != null && focusBefore.isShowing()) focusBefore.requestFocusInWindow();
+            if (follow != null) frame.getLayeredPane().removeComponentListener(follow);
+            unpark();
+            boolean hadKeys = false;
+            Component f = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            if (f != null && SwingUtilities.isDescendingFrom(f, this)) hadKeys = true;
+            if (host != null) host.done();
+            // give the keys back -- a floating card that never took them leaves them alone
+            if ((!floating() || hadKeys) && focusBefore != null && focusBefore.isShowing()) focusBefore.requestFocusInWindow();
             loop.exit();
+        }
+
+        /**
+         * Keys while a floating card has them (it was clicked or opened with them): its own
+         * shortcuts (Esc to close...) come first; nothing else is held back from the game.
+         */
+        private boolean floatingKey(KeyEvent e) {
+            if (finished || e.getID() != KeyEvent.KEY_PRESSED) return false;
+            Component src = e.getComponent();
+            if (src == null || !SwingUtilities.isDescendingFrom(src, card)) return false;
+            KeyStroke ks = KeyStroke.getKeyStrokeForEvent(e);
+            InputMap im = host.root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+            Object name = im == null ? null : im.get(ks);
+            javax.swing.Action a = name == null ? null : host.root.getActionMap().get(name);
+            if (a == null || !a.isEnabled()) return false;
+            a.actionPerformed(new java.awt.event.ActionEvent(host.root, java.awt.event.ActionEvent.ACTION_PERFORMED, null));
+            return true;
         }
 
         private boolean handleKey(KeyEvent e, int cancel) {
@@ -329,6 +532,12 @@ final class BigPopup {
             Component src = e.getComponent();
             Window srcWin = src instanceof Window ? (Window) src : src == null ? null : SwingUtilities.getWindowAncestor(src);
             if (srcWin != w) return false;                         // another window's keys are its own
+            if (host != null) {
+                // a dialog in here: its own keys (Esc, Enter, typing) work as they always did
+                if (src != null && SwingUtilities.isDescendingFrom(src, card)) return false;
+                if (e.getID() == KeyEvent.KEY_PRESSED && !closing && !animating) host.focusFirst();
+                return true;
+            }
             if (e.getID() == KeyEvent.KEY_PRESSED && !closing) {
                 if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {             // even while it's still opening
                     choice[0] = cancel;
@@ -409,6 +618,28 @@ final class BigPopup {
         }
 
         private void centre() {
+            if (host != null && host.dialog.inPlace) {
+                if (place == null) {
+                    // where the dialog was put on the screen; remembered as a distance from the
+                    // nearest window edges, so a corner card stays in its corner if the window
+                    // is resized
+                    Point p = host.dialog.getLocation();
+                    Rectangle v = host.visible();
+                    p.translate(v.x, v.y);
+                    SwingUtilities.convertPointFromScreen(p, frame.getLayeredPane());
+                    int w = Math.max(1, getWidth()), h = Math.max(1, getHeight());
+                    placeRight = p.x + card.getWidth() / 2 > w / 2;
+                    placeBottom = p.y + card.getHeight() / 2 > h / 2;
+                    place = new Point(placeRight ? w - p.x - card.getWidth() : p.x,
+                            placeBottom ? h - p.y - card.getHeight() : p.y);
+                }
+                int x = placeRight ? getWidth() - place.x - card.getWidth() : place.x;
+                int y = placeBottom ? getHeight() - place.y - card.getHeight() : place.y;
+                x = Math.max(0, Math.min(getWidth() - card.getWidth(), x));
+                y = Math.max(0, Math.min(getHeight() - card.getHeight(), y));
+                card.setLocation(x, y);
+                return;
+            }
             card.setLocation((getWidth() - card.getWidth()) / 2, (getHeight() - card.getHeight()) / 2);
         }
 
@@ -436,8 +667,14 @@ final class BigPopup {
         /** This frame now (just the card and its shadow), not whenever Swing gets to it. */
         private void paintNow() {
             if (animating && animPane.getParent() == this) {
-                if (animPane.isShowing()) animPane.paintImmediately(0, 0, animPane.getWidth(), animPane.getHeight());
-                else animPane.repaint();
+                if (animPane.isShowing()) {
+                    animPane.paintImmediately(0, 0, animPane.getWidth(), animPane.getHeight());
+                    // push the frame to the screen now: on Linux the frames can otherwise be
+                    // held back and shown all at once, so the animation is never seen
+                    Toolkit.getDefaultToolkit().sync();
+                } else {
+                    animPane.repaint();
+                }
                 return;
             }
             Rectangle r = card.getBounds();
@@ -492,7 +729,9 @@ final class BigPopup {
          * Kept for the next popup of the same size.
          */
         private void makeShadow() {
-            float u = card.getWidth() / 1344f;
+            // a small thing kept in place gets the same soft shadow as a full-size popup
+            float u = host != null && host.dialog.inPlace
+                    ? Math.max(0.6f, frame.getLayeredPane().getWidth() * 0.7f / 1344f) : card.getWidth() / 1344f;
             shadowPad = Math.round(60 * u);
             int w = card.getWidth() + shadowPad * 2, h = card.getHeight() + shadowPad * 2;
             if (cachedShadow != null && cachedShadowW == w && cachedShadowH == h && cachedShadowArc == cornerArc) {
@@ -634,10 +873,16 @@ final class BigPopup {
         private final List<PopButton> buttons = new ArrayList<>();
         private final int primary, cancel;
         private final int[] choice;
+        private final Options options;
+        private final JComponent closeX;
+        /** The light look (see {@link #lightFor}). */
+        final boolean light = pendingLight;
 
         Card(Runnable closer, Tone tone, Icon icon, String title, String message, JComponent extra,
              String[] labels, int primary, int cancel, int[] choice) {
             super(null);
+            this.options = pendingOptions;
+            pendingOptions = null;
             this.closer = closer;
             this.tone = tone;
             this.icon = icon;
@@ -656,19 +901,46 @@ final class BigPopup {
             scroll.getVerticalScrollBar().setUnitIncrement(24);
             scroll.getVerticalScrollBar().setOpaque(false);
             scroll.getVerticalScrollBar().setPreferredSize(new Dimension(12, 10));
-            scroll.getVerticalScrollBar().setUI(new ThinBar());
+            scroll.getVerticalScrollBar().setUI(new ThinBar(light));
             add(scroll);
             if (extra != null) add(extra);
             for (int i = 0; i < labels.length; i++) {
                 final int idx = i;
-                PopButton b = new PopButton(labels[i], i == primary ? tone.color : null, () -> press(idx));
+                Color fill = options != null && options.fills != null && i < options.fills.length && options.fills[i] != null
+                        ? options.fills[i] : (i == primary ? tone.color : null);
+                PopButton b = new PopButton(labels[i], fill, () -> press(idx));
+                b.paid = options != null && options.paid != null && i < options.paid.length && options.paid[i];
                 buttons.add(b);
                 add(b);
             }
+            if (options != null && options.closeButton) {
+                closeX = new AnalysisTheme.CloseButton(light, "Close", () -> finishWith(cancel));
+                add(closeX);
+            } else {
+                closeX = null;
+            }
+            if (options != null && options.onOpen != null) options.onOpen.accept(new Handle(this));
         }
 
+        private boolean closingSoon;
+
         void press(int idx) {
+            if (closingSoon) return;
+            if (idx >= 0 && idx < buttons.size() && buttons.get(idx).locked) return;   // (Enter on a locked one)
             SoundManager.playExtraSound("tap.wav");
+            if (options != null && options.keepOpen != null && options.keepOpen.test(idx)) return;
+            choice[0] = idx;
+            // the click sound gets going first: starting the close animation in the same
+            // instant (it redraws the whole window) made the click stutter into what
+            // sounded like two clicks
+            closingSoon = true;
+            Timer later = new Timer(45, e -> closer.run());
+            later.setRepeats(false);
+            later.start();
+        }
+
+        /** Closes with this answer (no click sound: whatever asked for it already made one). */
+        void finishWith(int idx) {
             choice[0] = idx;
             closer.run();
         }
@@ -681,8 +953,11 @@ final class BigPopup {
 
         private float badgeD() { return icon == Icon.NONE ? 0 : 150 * u() * badgeScale; }
         private float badgeY() { return 92 * u() * Math.max(0.55f, badgeScale); }
-        private float titleSize() { return 84 * u(); }
+        /** The result window (players' pictures): title and line under it a bit bigger and higher. */
+        private boolean hero() { return extra != null && Boolean.TRUE.equals(extra.getClientProperty(SCALES)); }
+        private float titleSize() { return (hero() ? 96 : 84) * u(); }
         private float titleBaseline() {
+            if (hero() && (icon == Icon.NONE || badgeScale <= 0f)) return 168 * u();
             return icon == Icon.NONE || badgeScale <= 0f ? 190 * u() : badgeY() + badgeD() + 118 * u();
         }
         private float buttonH() { return 112 * u(); }
@@ -712,10 +987,14 @@ final class BigPopup {
             // buttons
             int n = buttons.size();
             float gap = 32 * u;
-            float bw = n <= 2 ? 470 * u : (w * 0.78f - gap * (n - 1)) / n;
+            float bw = n <= 2 ? 470 * u : (w * 0.90f - gap * (n - 1)) / n;
             float total = bw * n + gap * (n - 1);
             float x = (w - total) / 2f;
             int by = Math.round(buttonsTop());
+            if (closeX != null) {
+                int d = Math.round(64 * u), m = Math.round(28 * u);
+                closeX.setBounds(w - m - d, m, d, d);
+            }
             for (PopButton b : buttons) {
                 b.setFont(MainMenu.variantDisplayFont(40 * u));
                 b.setBounds(Math.round(x), by, Math.round(bw), Math.round(buttonH()));
@@ -723,18 +1002,32 @@ final class BigPopup {
             }
             // message (+ extra): the block sits halfway between the title and the buttons
             int textW = Math.round(w * 0.78f);
-            text.layoutFor(textW, 34 * u);
-            int extraH = extra == null ? 0 : extra.getPreferredSize().height;
-            int extraW = extra == null ? 0 : Math.min(textW, extra.getPreferredSize().width);
-            float between = extra != null && text.hasText() ? 26 * u : 0;
+            text.layoutFor(textW, (hero() ? 40 : 34) * u);
+            boolean scales = extra != null && Boolean.TRUE.equals(extra.getClientProperty(SCALES));
+            Dimension ep = extra == null ? new Dimension(0, 0) : extra.getPreferredSize();
+            float es = scales ? u : 1f;
+            int extraH = Math.round(ep.height * es);
+            int extraW = Math.min(textW, Math.round(ep.width * es));
+            float between = extra != null && text.hasText() ? (scales ? 12 : 26) * u : 0;
+            // a scaling extra (the players' pictures) gets the room the side margins would take
+            float padTop = (scales ? 20 : 34) * u, padBottom = (scales ? 14 : 34) * u;
             float textH = text.hasText() ? text.contentHeight() : 0;
+            if (scales && ep.height > 0) {
+                // it shrinks to fit rather than pushing the words out of sight
+                float room = buttonsTop() - padBottom - (titleBottom() + padTop) - textH - between;
+                if (extraH > room) {
+                    es = Math.max(0.35f * u, room / ep.height);
+                    extraH = Math.round(ep.height * es);
+                    extraW = Math.min(textW, Math.round(ep.width * es));
+                }
+            }
             // not enough room: the badge gets smaller (or goes) before anything has to scroll
             badgeScale = 1f;
             for (float s : new float[] {1f, 0.7f, 0.45f, 0f}) {
                 badgeScale = s;
-                if (buttonsTop() - 34 * u - (titleBottom() + 34 * u) >= textH + between + extraH) break;
+                if (buttonsTop() - padBottom - (titleBottom() + padTop) >= textH + between + extraH) break;
             }
-            float top = titleBottom() + 34 * u, bottom = buttonsTop() - 34 * u;
+            float top = titleBottom() + padTop, bottom = buttonsTop() - padBottom;
             float avail = Math.max(10, bottom - top);
             if (textH + between + extraH > avail) {
                 // a bit smaller first; still too long: it scrolls
@@ -758,6 +1051,8 @@ final class BigPopup {
             scroll.setVisible(text.hasText());
             if (extra != null) {
                 extra.setBounds((w - extraW) / 2, Math.round(y0 + textBox + between), extraW, extraH);
+                extra.invalidate();
+                extra.validate();
             }
         }
 
@@ -772,21 +1067,21 @@ final class BigPopup {
             float arc = 56 * u;
             RoundRectangle2D card = new RoundRectangle2D.Float(0, 0, w, h, arc, arc);
             if (isOpaque()) {                    // as its own window: the corners are cut by the window shape
-                g.setColor(CARD_BOTTOM);
+                g.setColor(light ? L_CARD_BOTTOM : CARD_BOTTOM);
                 g.fillRect(0, 0, w, h);
             }
-            g.setPaint(new GradientPaint(0, 0, CARD_TOP, 0, h, CARD_BOTTOM));
+            g.setPaint(new GradientPaint(0, 0, light ? L_CARD_TOP : CARD_TOP, 0, h, light ? L_CARD_BOTTOM : CARD_BOTTOM));
             g.fill(card);
             Color c = tone.color;
             g.setPaint(new RadialGradientPaint(new Point2D.Float(w / 2f, 0), w * 0.42f, new float[] {0f, 1f},
                     new Color[] {new Color(c.getRed(), c.getGreen(), c.getBlue(), 46), new Color(c.getRed(), c.getGreen(), c.getBlue(), 0)}));
             g.fill(card);
             g.setStroke(new BasicStroke(2f * u));
-            g.setColor(CARD_EDGE);
+            g.setColor(light ? L_CARD_EDGE : CARD_EDGE);
             g.draw(new RoundRectangle2D.Float(u, u, w - 2 * u, h - 2 * u, arc, arc));
 
             float mid = w / 2f;
-            if (icon != Icon.NONE) {
+            if (icon != Icon.NONE && badgeScale > 0f) {
                 float bd = badgeD(), by = badgeY();
                 g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 40));
                 g.fill(new Ellipse2D.Float(mid - bd / 2 - 14 * u, by - 14 * u, bd + 28 * u, bd + 28 * u));
@@ -796,27 +1091,20 @@ final class BigPopup {
             }
             if (!title.isEmpty()) {
                 g.setFont(titleFont());
-                g.setColor(TITLE);
+                g.setColor(light ? L_TITLE : TITLE);
                 String t = title.toUpperCase();
                 FontMetrics fm = g.getFontMetrics();
                 g.drawString(t, mid - fm.stringWidth(t) / 2f, titleBaseline());
             }
-            // key hints under the buttons
-            g.setFont(UiFonts.subtext(22 * u));
-            g.setColor(HINT);
-            FontMetrics fm = g.getFontMetrics();
-            for (int i = 0; i < buttons.size(); i++) {
-                String key = i == primary ? "Enter" : (i == cancel ? "Esc" : null);
-                if (key == null) continue;
-                Rectangle r = buttons.get(i).getBounds();
-                g.drawString(key, r.x + r.width / 2f - fm.stringWidth(key) / 2f, r.y + r.height + 40 * u);
-            }
+            // (Enter and Esc still work -- they're just not written under the buttons)
             g.dispose();
         }
     }
 
     /** A slim rounded scrollbar thumb, no arrows, for a long message. */
     private static final class ThinBar extends javax.swing.plaf.basic.BasicScrollBarUI {
+        private final boolean light;
+        ThinBar(boolean light) { this.light = light; }
         @Override protected JButton createDecreaseButton(int o) { return none(); }
         @Override protected JButton createIncreaseButton(int o) { return none(); }
         private static JButton none() {
@@ -831,7 +1119,9 @@ final class BigPopup {
             if (r.isEmpty()) return;
             Graphics2D g = (Graphics2D) g0.create();
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setColor(isDragging || isThumbRollover() ? new Color(120, 116, 136) : new Color(84, 81, 96));
+            boolean on = isDragging || isThumbRollover();
+            g.setColor(light ? (on ? new Color(180, 168, 148) : new Color(210, 200, 182))
+                    : (on ? new Color(120, 116, 136) : new Color(84, 81, 96)));
             g.fillRoundRect(r.x + 3, r.y + 2, r.width - 6, r.height - 4, r.width - 6, r.width - 6);
             g.dispose();
         }
@@ -840,6 +1130,7 @@ final class BigPopup {
     /** The message: wrapped to the width, every line centred. */
     private static final class MessageText extends JComponent {
         private final String message;
+        private final boolean light = pendingLight;
         private final List<String> lines = new ArrayList<>();
         private Font font;
         private float lineH;
@@ -904,7 +1195,7 @@ final class BigPopup {
             Graphics2D g = (Graphics2D) g0.create();
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g.setFont(font);
-            g.setColor(TEXT);
+            g.setColor(light ? L_TEXT : TEXT);
             FontMetrics fm = g.getFontMetrics();
             float y = firstBaseline();
             for (String l : lines) {
@@ -917,23 +1208,65 @@ final class BigPopup {
 
     /** A wide rounded button: coloured for the main action, grey otherwise. */
     private static final class PopButton extends JComponent {
-        private final String label;
-        private final Color fill;     // null = the grey one
+        private String label;
+        private Color fill;           // null = the grey one
         private boolean hover, down;
+        /** 0..1, eases toward hover so the colour change fades instead of snapping. */
+        private float hoverT;
+        private javax.swing.Timer hoverTimer;
+        boolean paid;
+
+        private void setHover(boolean on) {
+            hover = on;
+            if (hoverTimer == null) {
+                final long[] last = {0};
+                hoverTimer = new javax.swing.Timer(15, e -> {
+                    long now = System.nanoTime();
+                    float dt = last[0] == 0 ? 15f : Math.min(50f, (now - last[0]) / 1e6f);
+                    last[0] = now;
+                    float target = hover && isEnabled() && !locked ? 1f : 0f;
+                    float step = dt / (target > hoverT ? 130f : 200f);     // in ~0.13 s, out ~0.2 s
+                    hoverT = target > hoverT ? Math.min(target, hoverT + step) : Math.max(target, hoverT - step);
+                    repaint();
+                    if (hoverT == target) { ((javax.swing.Timer) e.getSource()).stop(); last[0] = 0; }
+                });
+            }
+            if (!hoverTimer.isRunning()) hoverTimer.start();
+        }
+        private final boolean light = pendingLight;
+        /** Shown in full colour but can't be pressed (e.g. "Opponent left"). */
+        private boolean locked;
+
+        void setLocked(boolean on) {
+            locked = on;
+            setHover(false);
+            down = false;
+            setCursor(Cursor.getPredefinedCursor(on || !isEnabled() ? Cursor.DEFAULT_CURSOR : Cursor.HAND_CURSOR));
+            repaint();
+        }
+
+        void setLabel(String text) { label = text == null ? "" : text.toUpperCase(); repaint(); }
+        void setFill(Color c) { fill = c; repaint(); }
+
+        @Override public void setEnabled(boolean on) {
+            super.setEnabled(on);
+            setCursor(Cursor.getPredefinedCursor(on ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
+            repaint();
+        }
 
         PopButton(String label, Color fill, Runnable action) {
             this.label = label == null ? "" : label.toUpperCase();
             this.fill = fill;
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             addMouseListener(new MouseAdapter() {
-                @Override public void mouseEntered(MouseEvent e) { hover = true; repaint(); }
-                @Override public void mouseExited(MouseEvent e) { hover = false; down = false; repaint(); }
-                @Override public void mousePressed(MouseEvent e) { down = true; repaint(); }
+                @Override public void mouseEntered(MouseEvent e) { if (!locked) setHover(true); }
+                @Override public void mouseExited(MouseEvent e) { setHover(false); down = false; repaint(); }
+                @Override public void mousePressed(MouseEvent e) { if (!locked) { down = true; repaint(); } }
                 @Override public void mouseReleased(MouseEvent e) {
                     boolean inside = contains(e.getPoint());
                     down = false;
                     repaint();
-                    if (inside && SwingUtilities.isLeftMouseButton(e)) action.run();
+                    if (inside && isEnabled() && !locked && SwingUtilities.isLeftMouseButton(e)) action.run();
                 }
             });
         }
@@ -945,25 +1278,53 @@ final class BigPopup {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             int w = getWidth(), h = getHeight();
             float arc = h * 0.23f;
-            float inset = down ? h * 0.025f : 0f;
+            float inset = down && isEnabled() ? h * 0.025f : 0f;
+            if (!isEnabled()) {
+                hover = false;
+                hoverT = 0f;
+                g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.55f));
+            }
             RoundRectangle2D r = new RoundRectangle2D.Float(inset, inset, w - 2 * inset, h - 2 * inset, arc, arc);
             if (fill != null) {
-                Color top = lighten(fill, hover ? 0.20f : 0.10f), bottom = darken(fill, hover ? 0.02f : 0.08f);
+                float e = hoverT * hoverT * (3 - 2 * hoverT);           // smoothstep
+                Color top = lighten(fill, 0.10f + 0.10f * e), bottom = darken(fill, 0.08f - 0.06f * e);
                 g.setPaint(new GradientPaint(0, 0, top, 0, h, bottom));
                 g.fill(r);
             } else {
-                g.setColor(hover ? new Color(60, 58, 70) : new Color(50, 48, 58));
+                float e = hoverT * hoverT * (3 - 2 * hoverT);
+                if (light) g.setColor(mix(new Color(240, 235, 225), new Color(229, 222, 208), e));
+                else g.setColor(mix(new Color(50, 48, 58), new Color(60, 58, 70), e));
                 g.fill(r);
-                g.setColor(new Color(66, 63, 76));
+                g.setColor(light ? new Color(222, 212, 194) : new Color(66, 63, 76));
                 g.setStroke(new BasicStroke(Math.max(1f, h / 56f)));
                 g.draw(new RoundRectangle2D.Float(inset + 1, inset + 1, w - 2 * inset - 2, h - 2 * inset - 2, arc, arc));
             }
-            g.setFont(getFont());
-            FontMetrics fm = g.getFontMetrics();
-            g.setColor(fill != null ? Color.WHITE : new Color(214, 210, 226));
+            // a longer label gets a smaller font to fit, rather than being cut off
+            Font f = getFont();
+            FontMetrics fm = g.getFontMetrics(f);
+            float room = w * 0.86f;
+            if (fm.stringWidth(label) > room) {
+                f = f.deriveFont(Math.max(f.getSize2D() * 0.55f, f.getSize2D() * room / fm.stringWidth(label)));
+                fm = g.getFontMetrics(f);
+            }
+            g.setFont(f);
+            g.setColor(fill != null ? Color.WHITE : light ? new Color(60, 48, 34) : new Color(214, 210, 226));
             String t = label;
-            while (t.length() > 1 && fm.stringWidth(t) > w * 0.9f) t = t.substring(0, t.length() - 1);
+            while (t.length() > 1 && fm.stringWidth(t) > w * 0.94f) t = t.substring(0, t.length() - 1);
             g.drawString(t, (w - fm.stringWidth(t)) / 2f, h / 2f + (fm.getAscent() - fm.getDescent()) / 2f);
+            if (paid) {
+                // a small deep-purple PAID tag in the top-right corner
+                Font tf = getFont().deriveFont(getFont().getSize2D() * 0.42f);
+                g.setFont(tf);
+                FontMetrics tm = g.getFontMetrics();
+                String tag = "PAID";
+                float th = h * 0.30f, tw = tm.stringWidth(tag) + th * 0.9f;
+                float tx = w - tw - h * 0.10f, ty = h * 0.10f;
+                g.setColor(new Color(74, 38, 140));
+                g.fill(new RoundRectangle2D.Float(tx, ty, tw, th, th, th));
+                g.setColor(Color.WHITE);
+                g.drawString(tag, tx + (tw - tm.stringWidth(tag)) / 2f, ty + th / 2f + (tm.getAscent() - tm.getDescent()) / 2f);
+            }
             g.dispose();
         }
 
@@ -974,6 +1335,12 @@ final class BigPopup {
 
         private static Color darken(Color c, float t) {
             return new Color(Math.round(c.getRed() * (1 - t)), Math.round(c.getGreen() * (1 - t)), Math.round(c.getBlue() * (1 - t)));
+        }
+
+        private static Color mix(Color a, Color b, float t) {
+            return new Color(Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
+                    Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                    Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
         }
     }
 
@@ -987,13 +1354,15 @@ final class BigPopup {
         float r = d * 0.24f;
         switch (icon) {
             case RESET: {
-                g.draw(new Arc2D.Float(cx - r, cy - r, 2 * r, 2 * r, 60, 290, Arc2D.OPEN));
-                arrowHead(g, cx, cy, r, 60, true, 22 * u);
+                // a clockwise circle open at the top right; the arrow at its top end points on round
+                g.draw(new Arc2D.Float(cx - r, cy - r, 2 * r, 2 * r, 10, -300, Arc2D.OPEN));
+                arrowHead(g, cx, cy, r, 70, false, 24 * u);
                 break;
             }
             case UNDO: {
-                g.draw(new Arc2D.Float(cx - r, cy - r, 2 * r, 2 * r, 120, -290, Arc2D.OPEN));
-                arrowHead(g, cx, cy, r, 120, false, 22 * u);
+                // its mirror image: anticlockwise, open at the top left
+                g.draw(new Arc2D.Float(cx - r, cy - r, 2 * r, 2 * r, 170, 300, Arc2D.OPEN));
+                arrowHead(g, cx, cy, r, 110, true, 24 * u);
                 break;
             }
             case EXIT: {
@@ -1074,5 +1443,344 @@ final class BigPopup {
         FontMetrics fm = g.getFontMetrics();
         Rectangle2D b = g.getFont().createGlyphVector(g.getFontRenderContext(), s).getVisualBounds();
         g.drawString(s, (float) (cx - b.getX() - b.getWidth() / 2), (float) (cy - b.getY() - b.getHeight() / 2));
+    }
+
+    // ── whole dialogs, shown inside the app window ─────────────────────────
+
+    /** Closes every popup that's waiting for an answer inside the app window (as if Esc). */
+    static void closeAllModal() {
+        for (InWindow w : new ArrayList<>(InWindow.OPEN)) w.close();
+    }
+
+    /** A popup that needs an answer is open inside the app window. */
+    static boolean modalOpen() {
+        return !InWindow.OPEN.isEmpty();
+    }
+
+    /** When a popup last opened inside the app window (0 = never). */
+    private static volatile long lastOpenNanos;
+
+    /**
+     * Whether a popup opened inside the app window at or after {@code nanos} -- the click
+     * that opened it then stays quiet (the popup plays its own sound), just like for windows.
+     */
+    static boolean openedSince(long nanos) {
+        long t = lastOpenNanos;
+        return t != 0 && t - nanos >= 0;
+    }
+
+    /** The app window behind {@code w}: a dialog shown inside it counts as that window. */
+    static Window realOwner(Window w) {
+        if (w instanceof InDialog && ((InDialog) w).inWin != null) return ((InDialog) w).inWin.frame;
+        return w;
+    }
+
+    /**
+     * The window {@code c} is in -- for something inside a dialog shown in the app window,
+     * that dialog (so packing it resizes the dialog, never the app window).
+     */
+    static Window windowOf(Component c) {
+        Host h = c == null ? null : (Host) SwingUtilities.getAncestorOfClass(Host.class, c);
+        if (h != null) return h.dialog;
+        return c == null ? null : SwingUtilities.getWindowAncestor(c);
+    }
+
+    /**
+     * A dialog that, when shown, isn't a window of its own: it's drawn inside the app window
+     * on a 16:9 card (70% of the screen, bigger only if what's in it needs more room), with
+     * the same open/close effect and shadow as the popups. Everything else works as for any
+     * JDialog -- set it up, setVisible(true) waits until it closes (unless it's modeless),
+     * dispose() closes it. With no app window to draw in, it's an ordinary window.
+     */
+    static class InDialog extends JDialog {
+        private InWindow inWin;
+        private Host host;
+        private boolean disposeAfter;
+        /** Stays its own size, where it was put (e.g. the promotion picker over its square). */
+        boolean inPlace;
+        /**
+         * A small card in a corner (incoming challenge, rematch offer, player card): stays its
+         * own size where it was put, and the game behind it keeps working (clicks, keys).
+         */
+        boolean floating;
+
+        InDialog(Window owner, String title, Dialog.ModalityType modality) {
+            super(realOwner(owner), title, modality);
+        }
+
+        InDialog(Window owner, boolean modal) {
+            this(owner, "", modal ? Dialog.ModalityType.APPLICATION_MODAL : Dialog.ModalityType.MODELESS);
+        }
+
+        /** Shown inside the app window right now. */
+        boolean inside() { return inWin != null; }
+
+        private JFrame appFrame() {
+            Window o = realOwner(getOwner());
+            if (o instanceof JFrame && o.isShowing() && !blockedByWindow(o)) return (JFrame) o;
+            return null;
+        }
+
+        @Override
+        public void setVisible(boolean b) {
+            if (!b) {
+                if (inWin != null) inWin.close();
+                else super.setVisible(false);
+                return;
+            }
+            if (inWin != null) return;
+            JFrame f = SwingUtilities.isEventDispatchThread() ? appFrame() : null;
+            if (f == null) {
+                super.setVisible(true);
+                return;
+            }
+            if (getWidth() <= 0 || getHeight() <= 0) super.pack();
+            if (floating) inPlace = true;
+            disposeAfter = false;
+            host = new Host(this);
+            inWin = new InWindow(f, host, new int[] {-1});
+            inWin.host = host;
+            inWin.open(-1, getModalityType() != Dialog.ModalityType.MODELESS);
+        }
+
+        @Override public boolean isVisible() { return inWin != null || super.isVisible(); }
+        @Override public boolean isShowing() { return inWin != null || super.isShowing(); }
+        @Override public boolean isDisplayable() { return inWin != null || super.isDisplayable(); }
+
+        @Override
+        public void dispose() {
+            if (inWin != null) {
+                disposeAfter = true;
+                inWin.close();
+            } else {
+                super.dispose();
+            }
+        }
+
+        @Override
+        public void pack() {
+            if (inWin == null) { super.pack(); return; }
+            Dimension d = getRootPane().getPreferredSize();
+            setSize(d.width, d.height);
+        }
+
+        @Override
+        public void setSize(int w, int h) {
+            super.setSize(w, h);
+            if (inWin != null) inWin.refit();
+        }
+
+        @Override
+        public void setBounds(int x, int y, int w, int h) {
+            super.setBounds(x, y, w, h);
+            if (inWin != null) inWin.refit();
+        }
+
+        /** The shape as given (getShape() hands back a copy that's no longer a rounded rectangle). */
+        Shape givenShape;
+
+        @Override
+        public void setShape(Shape shape) {
+            givenShape = shape;
+            super.setShape(shape);
+            if (inWin != null) inWin.refit();
+        }
+
+        @Override public void toFront() { if (inWin == null) super.toFront(); }
+
+        /** Closed: the dialog gets its insides back (it can be shown again), or goes for good. */
+        private void ended() {
+            setRootPane(getRootPane());
+            inWin = null;
+            host = null;
+            if (disposeAfter) {
+                disposeAfter = false;
+                super.dispose();
+            }
+        }
+    }
+
+    /**
+     * The 16:9 card a dialog's insides sit on. The card is the dialog's own colour (picked up
+     * from its edges), so its insides sit on it seamlessly; the dialog's own outline and
+     * corners are left off -- the card has those.
+     */
+    private static final class Host extends JComponent {
+        final InDialog dialog;
+        final JRootPane root;
+        private final Color bg, edge;
+        private final boolean rootOpaque, contentOpaque;
+        private final Container content;
+
+        Host(InDialog dialog) {
+            this.dialog = dialog;
+            this.root = dialog.getRootPane();
+            setLayout(null);
+            setOpaque(false);
+            setFocusable(true);
+            bg = sampleBackground();
+            boolean dark = (bg.getRed() * 299 + bg.getGreen() * 587 + bg.getBlue() * 114) / 1000 < 128;
+            edge = mix(bg, dark ? Color.WHITE : Color.BLACK, dark ? 0.12f : 0.14f);
+            content = root.getContentPane();
+            rootOpaque = root.isOpaque();
+            contentOpaque = content instanceof JComponent && ((JComponent) content).isOpaque();
+            // see-through, so whatever repaints in there is always drawn through this card's
+            // clip (the dialog's square corners and outline never come back)
+            root.setOpaque(false);
+            if (content instanceof JComponent) ((JComponent) content).setOpaque(false);
+            add(root);
+        }
+
+        /** The part of the dialog that shows (its window shape), in the dialog's own coordinates. */
+        Rectangle visible() {
+            Rectangle all = new Rectangle(0, 0, Math.max(1, dialog.getWidth()), Math.max(1, dialog.getHeight()));
+            Shape s = dialog.getShape();
+            Rectangle r = s == null ? all : s.getBounds().intersection(all);
+            return r.isEmpty() ? all : r;
+        }
+
+        float shapeArc() {
+            Shape s = dialog.givenShape;
+            if (s instanceof RoundRectangle2D) return (float) ((RoundRectangle2D) s).getArcWidth();
+            return 0f;
+        }
+
+        Dimension cardSize(JFrame frame, JLayeredPane layers) {
+            Rectangle screen = frame.getGraphicsConfiguration() != null
+                    ? frame.getGraphicsConfiguration().getBounds() : new Rectangle(0, 0, layers.getWidth(), layers.getHeight());
+            Rectangle v = visible();
+            if (dialog.inPlace) return new Dimension(v.width, v.height);
+            Dimension c = BigPopup.cardSize(screen, layers.getWidth(), layers.getHeight());
+            int pad = Math.round(44 * c.width / 1344f);
+            int w = Math.max(c.width, v.width + pad * 2), h = Math.max(c.height, v.height + pad * 2);
+            w = Math.min(w, Math.max(c.width, Math.round(layers.getWidth() * 0.98f)));
+            h = Math.min(h, Math.max(c.height, Math.round(layers.getHeight() * 0.98f)));
+            return new Dimension(w, h);
+        }
+
+        @Override
+        public void doLayout() {
+            Rectangle v = visible();
+            int x = (getWidth() - v.width) / 2 - v.x, y = (getHeight() - v.height) / 2 - v.y;
+            root.setBounds(x, y, dialog.getWidth(), dialog.getHeight());
+            root.validate();
+        }
+
+        /** Where the dialog's insides show: inside its outline, corners rounded. */
+        private Shape clip() {
+            Rectangle v = visible();
+            if (dialog.inPlace) {                 // all of it, cut to its own shape
+                float a = shapeArc();
+                return new RoundRectangle2D.Float(root.getX() + v.x, root.getY() + v.y, v.width, v.height, a, a);
+            }
+            // a little inside its outline, and rounder than its own corners, so not a hair of
+            // the outline's curve is left in the corners
+            int t = 5;
+            float arc = Math.max(28f, shapeArc() * 1.6f);
+            return new RoundRectangle2D.Float(root.getX() + v.x + t, root.getY() + v.y + t,
+                    v.width - 2 * t, v.height - 2 * t, arc, arc);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g0) {
+            Graphics2D g = (Graphics2D) g0.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            if (dialog.inPlace) {
+                // its own size: just its background, in its own shape (a window used to give it
+                // that; drawn in the game window it would otherwise be see-through)
+                g.setColor(bg);
+                g.fill(clip());
+                g.dispose();
+                return;
+            }
+            float u = getWidth() / 1344f, arc = 56 * u;
+            g.setColor(bg);
+            g.fill(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), arc, arc));
+            g.setStroke(new BasicStroke(2f * u));
+            g.setColor(edge);
+            g.draw(new RoundRectangle2D.Float(u, u, getWidth() - 2 * u, getHeight() - 2 * u, arc, arc));
+            g.dispose();
+        }
+
+        @Override
+        protected void paintChildren(Graphics g0) {
+            Graphics2D g = (Graphics2D) g0.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.clip(clip());
+            super.paintChildren(g);
+            g.dispose();
+        }
+
+        /** Keys go to the first box to type in, or else to the dialog as a whole. */
+        void focusFirst() {
+            Component f = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            if (f != null && SwingUtilities.isDescendingFrom(f, this)) return;
+            javax.swing.text.JTextComponent t = firstField(root.getContentPane());
+            if (t != null && t.requestFocusInWindow()) return;
+            requestFocusInWindow();
+        }
+
+        private static javax.swing.text.JTextComponent firstField(Component c) {
+            if (c instanceof javax.swing.text.JTextComponent && c.isShowing() && c.isEnabled()
+                    && ((javax.swing.text.JTextComponent) c).isEditable()) return (javax.swing.text.JTextComponent) c;
+            if (c instanceof Container) {
+                for (Component k : ((Container) c).getComponents()) {
+                    javax.swing.text.JTextComponent t = firstField(k);
+                    if (t != null) return t;
+                }
+            }
+            return null;
+        }
+
+        /** Closed: everything goes back the way the dialog had it. */
+        void done() {
+            remove(root);
+            root.setOpaque(rootOpaque);
+            if (content instanceof JComponent) ((JComponent) content).setOpaque(contentOpaque);
+            dialog.ended();
+        }
+
+        /** The dialog's background colour: what's most common just inside its edges. */
+        private Color sampleBackground() {
+            Color fallback = AnalysisTheme.CARD;
+            try {
+                int w = dialog.getWidth(), h = dialog.getHeight();
+                if (w <= 0 || h <= 0) return fallback;
+                root.setSize(w, h);
+                root.validate();
+                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g = img.createGraphics();
+                root.printAll(g);
+                g.dispose();
+                Rectangle v = visible();
+                int in = 9;
+                int[][] pts = {
+                        {v.x + v.width / 4, v.y + in}, {v.x + v.width / 2, v.y + in}, {v.x + v.width * 3 / 4, v.y + in},
+                        {v.x + in, v.y + v.height / 2}, {v.x + v.width - 1 - in, v.y + v.height / 2},
+                        {v.x + v.width / 4, v.y + v.height - 1 - in}, {v.x + v.width / 2, v.y + v.height - 1 - in},
+                        {v.x + v.width * 3 / 4, v.y + v.height - 1 - in},
+                        {v.x + in + 14, v.y + in + 14}, {v.x + v.width - 1 - in - 14, v.y + in + 14}};
+                java.util.Map<Integer, Integer> count = new java.util.HashMap<>();
+                int best = 0;
+                Integer bestRgb = null;
+                for (int[] p : pts) {
+                    int x = Math.max(0, Math.min(w - 1, p[0])), y = Math.max(0, Math.min(h - 1, p[1]));
+                    int argb = img.getRGB(x, y);
+                    if ((argb >>> 24) < 200) continue;
+                    int n = count.merge(argb & 0xFFFFFF, 1, Integer::sum);
+                    if (n > best) { best = n; bestRgb = argb & 0xFFFFFF; }
+                }
+                return bestRgb == null ? fallback : new Color(bestRgb);
+            } catch (RuntimeException e) {
+                return fallback;
+            }
+        }
+
+        private static Color mix(Color a, Color b, float t) {
+            return new Color(Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
+                    Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                    Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
+        }
     }
 }

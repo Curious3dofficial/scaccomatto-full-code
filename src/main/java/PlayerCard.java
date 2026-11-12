@@ -45,15 +45,17 @@ final class PlayerCard {
     private static final Color BTN = UiTheme.c(240, 235, 225);
     private static final Color BTN_HOVER = UiTheme.c(229, 222, 208);
 
-    private static JWindow open;
+    private static Window open;
 
     /** Shows the card just below {@code anchor} (the name or picture that was clicked). */
     static void show(Component anchor, Info info) {
         if (open != null) open.dispose();
         Window owner = SwingUtilities.getWindowAncestor(anchor);
-        JWindow w = new JWindow(owner);
+        // drawn inside the game window, under the name that was clicked
+        BigPopup.InDialog w = new BigPopup.InDialog(owner, "", Dialog.ModalityType.MODELESS);
+        w.setUndecorated(true);
+        w.floating = true;
         open = w;
-        w.setFocusableWindowState(true);
 
         JPanel card = new JPanel(new BorderLayout(0, 14)) {
             @Override protected void paintComponent(Graphics g0) {
@@ -244,6 +246,9 @@ final class PlayerCard {
             Component src = ((MouseEvent) ev).getComponent();
             Window sw = src == null ? null : SwingUtilities.getWindowAncestor(src);
             if (src == w || sw == w || sw instanceof JWindow && sw.getOwner() == w || sw instanceof JDialog && sw.getOwner() == w) return;
+            if (BigPopup.windowOf(src) == w) return;              // a click on the card itself
+            if (BigPopup.modalOpen()) return;                     // answering a popup it opened (Block?)
+            if (AppMenu.isMenu(src)) return;                       // its ••• menu
             if (src instanceof JPopupMenu || SwingUtilities.getAncestorOfClass(JPopupMenu.class, src) != null) return;
             w.dispose();
         };
@@ -265,9 +270,42 @@ final class PlayerCard {
 
     // ── the ••• menu ────────────────────────────────────────────────────────
 
-    private static void showMenu(Component under, JWindow cardWindow, Info info) {
+    private static void showMenu(Component under, Window cardWindow, Info info) {
+        // the app's own menu (rounded card, icon tiles, hover glide) -- see AppMenu
+        java.util.List<AppMenu.Item> menu = new java.util.ArrayList<>();
+        boolean online = info.playerId != null;
+        boolean muted = info.net != null && info.net.isChatMuted();
+        boolean blocked = Moderation.isBlocked(info.playerId);
+        if (!blocked) {
+            menu.add(new AppMenu.Item(muted ? "Unmute chat" : "Mute chat", Glyph.MUTE, false, true, () -> {
+                if (info.net != null) info.net.setChatMuted(!muted);
+            }));
+        }
+        menu.add(new AppMenu.Item(blocked ? "Unblock" : "Block", Glyph.BLOCK, !blocked, online, () -> {
+            if (blocked) {
+                Moderation.setBlocked(info.playerId, info.name, false);
+            } else if (confirm(cardWindow, "Block " + info.name + "?",
+                    "You won't see their chat, and Join Game won't match you with them again. "
+                            + "You can unblock them in Settings > Privacy.", "Block")) {
+                Moderation.setBlocked(info.playerId, info.name, true);
+            }
+        }));
+        menu.add(new AppMenu.Item("Report", Glyph.REPORT, true, online, () -> {
+            Window game = cardWindow.getOwner();
+            cardWindow.dispose();
+            ReportDialog.open(game, info);
+        }));
+        AppMenu.show(under, 0, under.getHeight() + 4, info.name, null, menu,
+                online ? null : "Block and Report work in internet games");
+    }
+
+    /** The old JPopupMenu version, kept aside (AppMenu is used now). */
+    private static void legacyShowMenu(Component under, Window cardWindow, Info info) {
         SoundManager.playExtraSound("tap.wav");
         JPopupMenu menu = new JPopupMenu();
+        // its own little window: the card is drawn on the game window's top layer, so a menu
+        // drawn in the window would end up underneath it
+        menu.setLightWeightPopupEnabled(false);
         menu.setBorder(BorderFactory.createLineBorder(EDGE));
         menu.setBackground(CARD);
         boolean online = info.playerId != null;
@@ -302,7 +340,7 @@ final class PlayerCard {
         menu.show(under, 0, under.getHeight() + 4);
     }
 
-    private static JMenuItem item(String text, Glyph glyph, boolean enabled, Runnable action) {
+    static JMenuItem item(String text, Glyph glyph, boolean enabled, Runnable action) {
         JMenuItem it = new JMenuItem(text, glyph.icon(enabled ? INK : MUTED));
         it.setFont(UiFonts.subtext(17f));
         it.setForeground(enabled ? INK : MUTED);
@@ -326,7 +364,7 @@ final class PlayerCard {
     /** The old confirm, kept aside (BigPopup is used now). */
     static boolean legacyConfirm(Window owner, String title, String text, String yes) {
         final boolean[] ok = {false};
-        JDialog d = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new BigPopup.InDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         JPanel c = roundPanel();
         c.setLayout(new BorderLayout(0, 16));
@@ -360,7 +398,7 @@ final class PlayerCard {
 
     /** Settings > Privacy > Blocked players: everyone you've blocked, with Unblock. */
     static void showBlockedList(Window owner) {
-        JDialog d = new JDialog(owner, "Blocked players", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new BigPopup.InDialog(owner, "Blocked players", Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         JPanel c = roundPanel();
         c.setLayout(new BorderLayout(0, 14));
@@ -433,7 +471,7 @@ final class PlayerCard {
 
     /** The old note, kept aside. */
     static void legacyConfirmOnly(Window owner, String title, String text) {
-        JDialog d = new JDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new BigPopup.InDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         JPanel c = roundPanel();
         c.setLayout(new BorderLayout(0, 16));
@@ -520,7 +558,7 @@ final class PlayerCard {
     // ── small drawn icons for the menu ──────────────────────────────────────
 
     enum Glyph {
-        MUTE, BLOCK, REPORT;
+        MUTE, BLOCK, REPORT, ADD_FRIEND;
 
         Icon icon(Color ink) {
             Glyph kind = this;
@@ -539,6 +577,13 @@ final class PlayerCard {
                             g.drawLine(6, 16, 5, 20);
                             g.drawLine(5, 20, 10, 16);
                             g.drawLine(3, 2, 19, 18);
+                            break;
+                        }
+                        case ADD_FRIEND: {   // a person with a plus
+                            g.draw(new Ellipse2D.Float(4, 3, 8, 8));
+                            g.draw(new java.awt.geom.Arc2D.Float(1, 13, 14, 14, 0, 180, java.awt.geom.Arc2D.OPEN));
+                            g.drawLine(18, 6, 18, 14);
+                            g.drawLine(14, 10, 21, 10);
                             break;
                         }
                         case BLOCK: {  // circle with a bar

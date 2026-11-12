@@ -28,6 +28,103 @@ public class AchievementsScreen extends JPanel {
     private Achievements.Category filter = null;   // null = all
     private final List<Pill> pills = new ArrayList<>();
     private final Runnable refresh = this::rebuild;
+    private final ResetButton resetButton = new ResetButton();
+    private boolean resetting;
+
+    /** Asks, then wipes everything behind a full-screen loading cover. */
+    private void resetAchievements() {
+        if (resetting) return;
+        if (!BigPopup.confirm(this, BigPopup.Tone.DANGER, BigPopup.Icon.RESET, "Reset achievements?",
+                "All your achievements and their progress go back to zero"
+                        + (FirebaseLink.signedInToAccount() ? ", on every computer you sign in on" : "")
+                        + ". This can't be undone.",
+                "Reset", "Cancel")) return;
+        JFrame frame = (JFrame) SwingUtilities.getWindowAncestor(this);
+        if (frame == null) return;
+        resetting = true;
+        SpinnerLoader cover = SpinnerLoader.show(frame, UiTheme.DARK);
+        long started = System.currentTimeMillis();
+        Thread t = new Thread(() -> {
+            Achievements.resetAll();
+            // stay up a moment even when it's instant, so it reads as one calm step
+            long left = 900 - (System.currentTimeMillis() - started);
+            if (left > 0) try { Thread.sleep(left); } catch (InterruptedException ignored) { }
+            SwingUtilities.invokeLater(() -> {
+                rebuild();
+                cover.hide(() -> {
+                    resetting = false;
+                    grid.startReveal();
+                });
+            });
+        }, "reset-achievements");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** "RESET ACHIEVEMENTS": a big red button; brightens on hover, presses in. */
+    private final class ResetButton extends JComponent {
+        private float hover;
+        private boolean down;
+        private final Timer fade = new Timer(15, null);
+        private boolean in;
+
+        ResetButton() {
+            setOpaque(false);
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            fade.addActionListener(e -> {
+                float target = in ? 1f : 0f;
+                hover += (target - hover) * 0.25f;
+                if (Math.abs(target - hover) < 0.02f) { hover = target; fade.stop(); }
+                repaint();
+            });
+            addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override public void mouseEntered(java.awt.event.MouseEvent e) { in = true; fade.start(); }
+                @Override public void mouseExited(java.awt.event.MouseEvent e) { in = false; down = false; fade.start(); }
+                @Override public void mousePressed(java.awt.event.MouseEvent e) { down = true; repaint(); }
+                @Override public void mouseReleased(java.awt.event.MouseEvent e) {
+                    boolean go = down && contains(e.getPoint()) && SwingUtilities.isLeftMouseButton(e);
+                    down = false;
+                    repaint();
+                    if (go) {
+                        SoundManager.playExtraSound("tap.wav");
+                        resetAchievements();
+                    }
+                }
+            });
+        }
+
+        @Override
+        protected void paintComponent(Graphics g0) {
+            Graphics2D g = smooth(g0);
+            int w = getWidth(), h = getHeight();
+            float press = down ? 2f : 0f, arc = h * 0.42f;
+            // soft red glow under it
+            g.setColor(new Color(200, 50, 40, Math.round(30 + 30 * hover)));
+            g.fill(new java.awt.geom.RoundRectangle2D.Float(2, 6, w - 4, h - 6, arc, arc));
+            Color top = mix(new Color(226, 84, 70), new Color(238, 100, 86), hover);
+            Color bottom = mix(new Color(182, 46, 36), new Color(198, 56, 44), hover);
+            java.awt.geom.RoundRectangle2D body = new java.awt.geom.RoundRectangle2D.Float(0, press, w, h - 6, arc, arc);
+            g.setPaint(new GradientPaint(0, 0, top, 0, h, bottom));
+            g.fill(body);
+            g.setPaint(new GradientPaint(0, press, new Color(255, 255, 255, 70), 0, press + (h - 6) * 0.5f, new Color(255, 255, 255, 0)));
+            g.fill(new java.awt.geom.RoundRectangle2D.Float(3, press + 2, w - 6, (h - 6) * 0.5f, arc, arc));
+            g.setColor(new Color(150, 32, 24));
+            g.setStroke(new BasicStroke(1.4f));
+            g.draw(new java.awt.geom.RoundRectangle2D.Float(0.7f, press + 0.7f, w - 1.4f, h - 7.4f, arc, arc));
+            String t = "RESET ACHIEVEMENTS";
+            g.setFont(MainMenu.variantDisplayFont(h * 0.36f));
+            FontMetrics fm = g.getFontMetrics();
+            g.setColor(Color.WHITE);
+            g.drawString(t, (w - fm.stringWidth(t)) / 2f, press + (h - 6) / 2f + (fm.getAscent() - fm.getDescent()) / 2f);
+            g.dispose();
+        }
+
+        private Color mix(Color a, Color b, float t) {
+            return new Color(Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
+                    Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                    Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
+        }
+    }
 
     public AchievementsScreen(Runnable onBack) {
         this.onBack = onBack;
@@ -136,6 +233,9 @@ public class AchievementsScreen extends JPanel {
             return Integer.compare(Achievements.stars(b), Achievements.stars(a));
         });
         for (Achievements.Def d : shown) grid.add(new Card(d));
+        // the big red Reset button, at the very bottom under all the cards
+        grid.footer = resetButton;
+        grid.add(resetButton);
         header.repaint();
         grid.revalidate();
         grid.repaint();
@@ -533,13 +633,30 @@ public class AchievementsScreen extends JPanel {
 
         private int columns(int w) { return cols; }
 
+        /** The Reset button, laid out under all the cards (not a card). */
+        JComponent footer;
+        private static final int FOOTER_H = 84, FOOTER_GAP = 36;
+
+        private int cardCount() {
+            int n = getComponentCount();
+            return footer != null && footer.getParent() == this ? n - 1 : n;
+        }
+
         @Override
         public void doLayout() {
             int w = getWidth(), cols = columns(w);
             int cw = (w - GAP * (cols - 1)) / cols;
-            for (int i = 0; i < getComponentCount(); i++) {
+            int i = 0;
+            for (Component k : getComponents()) {
+                if (k == footer) continue;
                 int r = i / cols, c = i % cols;
-                getComponent(i).setBounds(c * (cw + GAP), 6 + r * (cardHeight() + GAP), cw, cardHeight());
+                k.setBounds(c * (cw + GAP), 6 + r * (cardHeight() + GAP), cw, cardHeight());
+                i++;
+            }
+            if (footer != null && footer.getParent() == this) {
+                int rows = (cardCount() + cols - 1) / cols;
+                int fw = Math.min(w, 560), fy = 6 + rows * (cardHeight() + GAP) + FOOTER_GAP;
+                footer.setBounds((w - fw) / 2, fy, fw, FOOTER_H);
             }
         }
 
@@ -547,8 +664,9 @@ public class AchievementsScreen extends JPanel {
         public Dimension getPreferredSize() {
             int w = getParent() instanceof JViewport ? getParent().getWidth() : 1200;
             int cols = columns(w);
-            int rows = (getComponentCount() + cols - 1) / cols;
-            return new Dimension(w, 12 + rows * (cardHeight() + GAP) + 90);   // room under the slider
+            int rows = (cardCount() + cols - 1) / cols;
+            int foot = footer != null && footer.getParent() == this ? FOOTER_GAP + FOOTER_H : 0;
+            return new Dimension(w, 12 + rows * (cardHeight() + GAP) + foot + 90);   // room under the slider
         }
 
         @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }

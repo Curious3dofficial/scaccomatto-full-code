@@ -79,8 +79,10 @@ final class PlayerEditor {
         });
 
         Runnable choose = () -> {
-            java.awt.FileDialog fd = window[0] != null
-                    ? new java.awt.FileDialog(window[0], "Choose a picture", java.awt.FileDialog.LOAD)
+            Window fo = BigPopup.realOwner(window[0]);    // the app window while the editor is shown inside it
+            java.awt.FileDialog fd = fo instanceof Frame
+                    ? new java.awt.FileDialog((Frame) fo, "Choose a picture", java.awt.FileDialog.LOAD)
+                    : fo instanceof Dialog ? new java.awt.FileDialog((Dialog) fo, "Choose a picture", java.awt.FileDialog.LOAD)
                     : new java.awt.FileDialog(owner instanceof Frame ? (Frame) owner : null, "Choose a picture", java.awt.FileDialog.LOAD);
             fd.setVisible(true);
             if (fd.getFile() == null) return;
@@ -372,7 +374,7 @@ final class PlayerEditor {
 
     /** Rounded, undecorated modal window in the dark card colours, centred over a dimmed screen. Blocks until closed. */
     private static void openWindow(Window owner, JPanel card, JDialog[] holder) {
-        JDialog d = new JDialog(owner, "", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new BigPopup.InDialog(owner, "", Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         holder[0] = d;
         JPanel root = new JPanel(new BorderLayout()) {

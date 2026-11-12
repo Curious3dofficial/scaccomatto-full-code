@@ -122,7 +122,9 @@ final class SpectateScreen extends JComponent {
         MouseAdapter mouse = new MouseAdapter() {
             @Override public void mouseMoved(MouseEvent e) { updateHover(e.getPoint()); }
             @Override public void mouseExited(MouseEvent e) { hoverId = null; setCursor(Cursor.getDefaultCursor()); kick(); }
-            @Override public void mouseClicked(MouseEvent e) {
+            @Override public void mousePressed(MouseEvent e) {
+                // on press, not click: instant, and not lost when the mouse moves a hair
+                if (!javax.swing.SwingUtilities.isLeftMouseButton(e)) return;
                 Hit h = hitAt(e.getPoint());
                 if (h != null && h.action != null) {
                     SoundManager.playExtraSound("tap.wav");
@@ -160,13 +162,25 @@ final class SpectateScreen extends JComponent {
         idx = ((idx % bots.length) + bots.length) % bots.length;
         if (white) { if (idx == whiteIdx) return; whiteIdx = idx; startPop(0); }
         else { if (idx == blackIdx) return; blackIdx = idx; startPop(1); }
+        // only what changed is redrawn: that card and its roster, and the middle column
+        float cardX = white ? 150 : 1240;
+        repaintDesign(cardX - CARD_MARGIN, 150, 530 + CARD_MARGIN * 2, 860);
+        repaintDesign(680, 150, 560, 720);
         kick();
     }
 
     private void swap() {
         int t = whiteIdx; whiteIdx = blackIdx; blackIdx = t;
         startPop(0); startPop(1);
+        repaintDesign(110, 150, 1700, 860);      // everything below the title
         kick();
+    }
+
+    /** Redraws just this part of the screen (design units); the title and backdrop stay put. */
+    private void repaintDesign(float x, float y, float w, float h) {
+        int x0 = (int) Math.floor(offX + x * scale) - 2, y0 = (int) Math.floor(offY + y * scale) - 2;
+        int x1 = (int) Math.ceil(offX + (x + w) * scale) + 2, y1 = (int) Math.ceil(offY + (y + h) * scale) + 2;
+        repaint(x0, y0, x1 - x0, y1 - y0);
     }
 
     private void randomise() {
@@ -175,6 +189,7 @@ final class SpectateScreen extends JComponent {
         if (bots.length > 1) while (b == w) b = r.nextInt(bots.length);
         whiteIdx = w; blackIdx = b;
         startPop(0); startPop(1);
+        repaintDesign(110, 150, 1700, 860);
         kick();
     }
 
@@ -188,15 +203,17 @@ final class SpectateScreen extends JComponent {
         warm = new Timer(40, e -> {
             if (scale <= 0 || !isShowing()) return;
             int n = next[0]++;
-            if (n >= bots.length * 2) { ((Timer) e.getSource()).stop(); return; }
-            disc(bots[n / 2], n % 2 == 0, 112);
+            if (n >= bots.length * 4) { ((Timer) e.getSource()).stop(); return; }
+            if (n < bots.length * 2) { disc(bots[n / 2], n % 2 == 0, 112); return; }
+            int m = n - bots.length * 2;                       // then every card, both sides
+            boolean white = m % 2 == 0;
+            if (cardPlace[white ? 0 : 1] != null) cardImage(white, bots[m / 2]);
         });
         warm.start();
     }
 
     private void kick() {
         if (!ticker.isRunning()) ticker.start();
-        repaint();
     }
 
     /** One frame of every small animation; false once everything has settled. */
@@ -344,8 +361,34 @@ final class SpectateScreen extends JComponent {
     // each frame of the portrait pop only has to draw the portrait itself.
     private java.awt.image.BufferedImage backdropImg;
     private String backdropKey;
-    private final java.awt.image.BufferedImage[] cardImg = new java.awt.image.BufferedImage[2];
-    private final String[] cardKey = new String[2];
+    /** Every bot's card (each side), so switching bots only copies a picture. */
+    private final Map<String, java.awt.image.BufferedImage> cardCache = new HashMap<>();
+    /** Where each side's card was last drawn: x, y, pixels per unit, snapped left, snapped top. */
+    private final float[][] cardPlace = new float[2][];
+    private Map<?, ?> cardHints;
+
+    private java.awt.image.BufferedImage cardImage(boolean white, ChessBot bot) {
+        int side = white ? 0 : 1;
+        float[] pl = cardPlace[side];
+        String key = side + "|" + bot.getName() + "|" + pl[2] + "|" + pl[3] + "," + pl[4] + "|" + UiTheme.VERSION + "|" + UiTheme.DARK;
+        java.awt.image.BufferedImage img = cardCache.get(key);
+        if (img != null) return img;
+        // a different size / theme: the old pictures are no use any more
+        String tail = "|" + pl[2] + "|" + pl[3] + "," + pl[4] + "|" + UiTheme.VERSION + "|" + UiTheme.DARK;
+        cardCache.keySet().removeIf(k -> k.startsWith(side + "|") && !k.endsWith(tail));
+        float w = 530, bw = w + CARD_MARGIN * 2 + 2, bh = 648 + CARD_MARGIN * 2 + 2;
+        double px = pl[2];
+        img = new java.awt.image.BufferedImage(
+                (int) Math.ceil(bw * px), (int) Math.ceil(bh * px), java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        Graphics2D c = img.createGraphics();
+        if (cardHints != null) c.setRenderingHints(cardHints);
+        c.scale(px, px);
+        c.translate(-pl[3], -pl[4]);
+        paintFighterBase(c, white, bot, pl[0], pl[1]);
+        c.dispose();
+        cardCache.put(key, img);
+        return img;
+    }
 
     /** Copies a cached picture whose top-left lands on a whole screen pixel. */
     private static void blit(Graphics2D g, java.awt.image.BufferedImage img, float x, float y, double pxPerUnit) {
@@ -408,6 +451,7 @@ final class SpectateScreen extends JComponent {
     /** The "Spectate" wordmark, pre-shrunk once to twice its drawn size so it stays crisp. */
     private static final Image WORDMARK = loadWordmark();
     private static final float WM_H = 262f;     // twice the Play Against Bot wordmark
+    private java.awt.image.BufferedImage wordmarkImg;
 
     private static Image loadWordmark() {
         try (java.io.InputStream in = SpectateScreen.class.getResourceAsStream("/assets/headers/SpectateWordmark.png")) {
@@ -433,7 +477,20 @@ final class SpectateScreen extends JComponent {
             float wmW = WM_H * WORDMARK.getWidth(null) / (float) WORDMARK.getHeight(null);
             // the picture has empty space around the letters: these offsets put the letters
             // just right of the back button, level with it, and clear of the cards
-            g.drawImage(WORDMARK, 139, -26, Math.round(wmW), Math.round(WM_H), null);
+            // (scaled once to the screen's size and then only copied: scaling it every
+            //  frame took ~20 ms)
+            double px = g.getTransform().getScaleX();
+            float[] o = snap(g, 139, -26);
+            int iw = Math.max(1, (int) Math.round(Math.round(wmW) * px)), ih = Math.max(1, (int) Math.round(Math.round(WM_H) * px));
+            if (wordmarkImg == null || wordmarkImg.getWidth() != iw || wordmarkImg.getHeight() != ih) {
+                wordmarkImg = new java.awt.image.BufferedImage(iw, ih, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                Graphics2D c = wordmarkImg.createGraphics();
+                c.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                c.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                c.drawImage(WORDMARK, 0, 0, iw, ih, null);
+                c.dispose();
+            }
+            blit(g, wordmarkImg, o[0], o[1], px);
         }
 
         // back button, on the left of the title and sized to match it
@@ -466,20 +523,10 @@ final class SpectateScreen extends JComponent {
         // everything but the portrait and the arrows, from the cache
         double px = g.getTransform().getScaleX();
         float[] o = snap(g, x - CARD_MARGIN, y - CARD_MARGIN);
-        String key = bot.getName() + "|" + px + "|" + o[0] + "," + o[1] + "|" + UiTheme.VERSION + "|" + UiTheme.DARK;
-        if (!key.equals(cardKey[side]) || cardImg[side] == null) {
-            float bw = w + CARD_MARGIN * 2 + 2, bh = 648 + CARD_MARGIN * 2 + 2;
-            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
-                    (int) Math.ceil(bw * px), (int) Math.ceil(bh * px), java.awt.image.BufferedImage.TYPE_INT_ARGB);
-            Graphics2D c = cacheGraphics(img, g);
-            c.scale(px, px);
-            c.translate(-o[0], -o[1]);
-            paintFighterBase(c, white, bot, x, y);
-            c.dispose();
-            cardImg[side] = img;
-            cardKey[side] = key;
-        }
-        blit(g, cardImg[side], o[0], o[1], px);
+        cardPlace[side] = new float[]{x, y, (float) px, o[0], o[1]};
+        cardHints = g.getRenderingHints();
+        java.awt.image.BufferedImage cached = cardImage(white, bot);
+        blit(g, cached, o[0], o[1], px);
 
         float pcy = y + 222, pr = 112;
         float s = popScale(p);

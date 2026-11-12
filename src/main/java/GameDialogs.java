@@ -339,6 +339,7 @@ final class GameDialogs {
         String title = "Game Over";      // "Checkmate", "Draw", "Resignation", "Time out"...
         String detail = "";              // "White wins", "by stalemate"...
         Boolean whiteWon;                // null = draw / no winner
+        Boolean youWon;                  // from your side (null = draw, or nobody's side: two players on one screen)
         String whiteName = "White", blackName = "Black";
         java.awt.image.BufferedImage whiteAvatar, blackAvatar;   // pictures for the two sides (null = initial)
         boolean canReview;
@@ -357,15 +358,36 @@ final class GameDialogs {
         private final AnalysisTheme.Button rematchButton;
         private final JDialog dialog;
         private final Choice[] choice;
+        // the popup version
+        private final BigPopup.Handle handle;
+        private final int rematchIdx;
+
         private ResultWindow(RatingLine line, AnalysisTheme.Button rematchButton,
                              JDialog dialog, Choice[] choice) {
             this.line = line;
             this.rematchButton = rematchButton;
             this.dialog = dialog;
             this.choice = choice;
+            this.handle = null;
+            this.rematchIdx = -1;
+        }
+
+        private ResultWindow(RatingLine line, BigPopup.Handle handle, int rematchIdx) {
+            this.line = line;
+            this.rematchButton = null;
+            this.dialog = null;
+            this.choice = null;
+            this.handle = handle;
+            this.rematchIdx = rematchIdx;
         }
 
         void setRematchWaiting(boolean waiting) {
+            if (handle != null) {
+                if (rematchIdx < 0) return;
+                handle.setLabel(rematchIdx, waiting ? "Waiting\u2026" : "Rematch");
+                handle.setEnabled(rematchIdx, !waiting);
+                return;
+            }
             if (rematchButton == null) return;
             SwingUtilities.invokeLater(() -> {
                 rematchButton.setText(waiting ? "WAITING…" : "REMATCH");
@@ -374,7 +396,25 @@ final class GameDialogs {
             });
         }
 
+        /** The other player left the board: no rematch possible -- a red "Opponent left", not pressable. */
+        void setOpponentLeft() {
+            if (handle != null) {
+                if (rematchIdx >= 0) handle.setLocked(rematchIdx, "Opponent left", new Color(214, 76, 64));
+                return;
+            }
+            if (rematchButton == null) return;
+            SwingUtilities.invokeLater(() -> {
+                rematchButton.setText("OPPONENT LEFT");
+                rematchButton.setKind(AnalysisTheme.Kind.DANGER);
+                rematchButton.setEnabled(false);
+            });
+        }
+
         void finishRematch() {
+            if (handle != null) {
+                if (rematchIdx >= 0) handle.closeWith(rematchIdx);
+                return;
+            }
             SwingUtilities.invokeLater(() -> {
                 if (dialog.isDisplayable()) {
                     choice[0] = Choice.REMATCH;
@@ -396,7 +436,10 @@ final class GameDialogs {
     static JDialog rematchOfferPopup(Component anchor, Runnable accept, Runnable decline) {
         Window owner = anchor == null ? null
                 : anchor instanceof Window ? (Window) anchor : SwingUtilities.getWindowAncestor(anchor);
-        JDialog dialog = new JDialog(owner, "", Dialog.ModalityType.MODELESS);
+        // drawn inside the game window, bottom right, above the result popup; the game
+        // behind stays usable
+        BigPopup.InDialog dialog = new BigPopup.InDialog(owner, "", Dialog.ModalityType.MODELESS);
+        dialog.floating = true;
         dialog.setUndecorated(true);
         // the result window blocks the game window while it's open -- and with it every
         // window the game owns, this one included, so Accept/Decline couldn't be clicked
@@ -450,6 +493,7 @@ final class GameDialogs {
         KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
         java.beans.PropertyChangeListener follow = ev -> {
             if (!dialog.isDisplayable()) return;
+            if (dialog.inside()) return;          // part of the game window: nothing to hide
             if (ev.getNewValue() != null) {
                 if (!dialog.isVisible()) dialog.setVisible(true);
                 return;
@@ -477,7 +521,73 @@ final class GameDialogs {
      *
      * @param onOpen receives the window while it's open (for the rating to arrive later)
      */
+    /**
+     * The result, in the app's popup (16:9, inside the game): the title, who won, both
+     * players and the score, the rating change, then three buttons side by side --
+     * New game / Rematch, Game Review (in the middle), Menu. The X (or Esc) just closes it
+     * to look at the board.
+     */
+    /** The popup's glow and the winner's ring: green when you won, red when you lost. */
+    static BigPopup.Tone resultTone(Result r) {
+        if (r == null || r.whiteWon == null) return BigPopup.Tone.PRIMARY;      // draw: as before
+        if (r.youWon == null) return BigPopup.Tone.SUCCESS;                     // two players, one screen
+        return r.youWon ? BigPopup.Tone.SUCCESS : BigPopup.Tone.DANGER;
+    }
+
     static Choice result(Component anchor, Result r, java.util.function.Consumer<ResultWindow> onOpen) {
+        // the pictures and rating grow and shrink with the popup (as one block)
+        JPanel extra = new JPanel(null) {
+            @Override public void doLayout() {
+                float k = getHeight() / (float) Math.max(1, getPreferredSize().height);
+                int ph = Math.round(268 * k);
+                for (Component c : getComponents()) {
+                    if (c instanceof Players) c.setBounds(0, 0, getWidth(), ph);
+                    else c.setBounds(0, ph + Math.round(18 * k), getWidth(), Math.round(48 * k));
+                }
+            }
+        };
+        extra.setOpaque(false);
+        extra.putClientProperty(BigPopup.SCALES, Boolean.TRUE);
+        Players players = new Players(r);
+        extra.add(players);
+        RatingLine rating = new RatingLine();
+        if (r.rated) extra.add(rating);
+        Dimension pp = players.getPreferredSize(), rp = r.rated ? rating.getPreferredSize() : new Dimension(0, 0);
+        extra.setPreferredSize(new Dimension(Math.max(pp.width, rp.width), pp.height + (r.rated ? 18 + rp.height : 0)));
+
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        java.util.List<Choice> picks = new java.util.ArrayList<>();
+        java.util.List<Color> fills = new java.util.ArrayList<>();
+        Color green = new Color(62, 166, 92);
+        if (r.canNewGame) { labels.add(r.newGameLabel); picks.add(Choice.NEW_GAME); fills.add(null); }
+        if (r.canRematch) { labels.add("Rematch"); picks.add(Choice.REMATCH); fills.add(green); }
+        if (r.canReview) { labels.add("Game Review"); picks.add(Choice.REVIEW); fills.add(BigPopup.Tone.PRIMARY.color); }
+        labels.add("Menu"); picks.add(Choice.MENU); fills.add(null);
+        int reviewIdx = picks.indexOf(Choice.REVIEW);
+        int rematchIdx = picks.indexOf(Choice.REMATCH);
+        int primary = reviewIdx >= 0 ? reviewIdx : 0;
+
+        // the buttons keep their colours (the green/red is only the glow and the ring)
+        if (reviewIdx < 0 && fills.get(0) == null) fills.set(0, BigPopup.Tone.PRIMARY.color);
+        BigPopup.Options o = new BigPopup.Options();
+        o.closeButton = true;
+        o.fills = fills.toArray(new Color[0]);
+        o.keepOpen = i -> {
+            if (i == rematchIdx && r.onRematch != null) {
+                r.onRematch.run();            // stays open while the opponent answers
+                return true;
+            }
+            return false;
+        };
+        o.onOpen = h -> { if (onOpen != null) onOpen.accept(new ResultWindow(rating, h, rematchIdx)); };
+        // no badge: the players' pictures are the picture here
+        int pick = BigPopup.show(anchor, resultTone(r), BigPopup.Icon.NONE, r.title, r.detail, extra,
+                labels.toArray(new String[0]), primary, -1, o);
+        return pick < 0 || pick >= picks.size() ? Choice.CLOSE : picks.get(pick);
+    }
+
+    /** The old result window, kept aside (the popup above is used now). */
+    static Choice legacyResult(Component anchor, Result r, java.util.function.Consumer<ResultWindow> onOpen) {
         Choice[] choice = {Choice.CLOSE};
         JDialog[] holder = new JDialog[1];
 
@@ -568,16 +678,20 @@ final class GameDialogs {
 
         Players(Result r) {
             this.r = r;
-            setPreferredSize(new Dimension(680, 220));
-            setMaximumSize(new Dimension(680, 220));
+            setPreferredSize(new Dimension(720, 268));
+            setMaximumSize(new Dimension(720, 268));
+            putClientProperty(BigPopup.SCALES, Boolean.TRUE);
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = AnalysisTheme.smooth(g);
-            int w = getWidth();
-            int av = 126, ay = 6;
-            int lx = 60, rx = w - 60 - av;
+            // drawn at 720 x 268 and scaled to the room it's given (the popup's size)
+            float k = getHeight() / 268f;
+            g2.scale(k, k);
+            int w = Math.round(getWidth() / k);
+            int av = 170, ay = 8;
+            int lx = 50, rx = w - 50 - av;
             side(g2, lx, ay, av, true, r.whiteName, r.whiteAvatar, Boolean.TRUE.equals(r.whiteWon));
             side(g2, rx, ay, av, false, r.blackName, r.blackAvatar, Boolean.FALSE.equals(r.whiteWon));
 
@@ -590,13 +704,18 @@ final class GameDialogs {
 
         private String formatScore(double score) {
             if (Math.abs(score - Math.rint(score)) < 0.001) return String.valueOf((int) Math.rint(score));
+            // a half point the chess way: ½, 1½, 2½ ...
+            if (Math.abs(score * 2 - Math.rint(score * 2)) < 0.001) {
+                int whole = (int) Math.floor(score);
+                return (whole == 0 ? "" : String.valueOf(whole)) + "\u00BD";
+            }
             return String.format(java.util.Locale.ROOT, "%.1f", score);
         }
 
         private void side(Graphics2D g2, int x, int y, int av, boolean white, String name,
                 java.awt.image.BufferedImage avatar, boolean won) {
             if (won) {
-                g2.setColor(AnalysisTheme.accent(this).base);
+                g2.setColor(resultTone(r).color);     // green if you won, red if you lost
                 g2.setStroke(new BasicStroke(5f));
                 float pad = 8;
                 g2.draw(new RoundRectangle2D.Float(x - pad, y - pad + 6, av + 2 * pad, av + 2 * pad,
@@ -644,12 +763,14 @@ final class GameDialogs {
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = AnalysisTheme.smooth(g);
+            float k = getHeight() / 48f;                 // drawn 48 tall, scaled to fit
+            g2.scale(k, k);
             Font a = AnalysisTheme.bold(28f), b = AnalysisTheme.display(32f);
             FontMetrics fa = g2.getFontMetrics(a), fb = g2.getFontMetrics(b);
             int gap = delta.isEmpty() ? 0 : 12;
             int total = fa.stringWidth(rating) + gap + (delta.isEmpty() ? 0 : fb.stringWidth(delta));
-            int x = (getWidth() - total) / 2;
-            int base = getHeight() / 2 + (fa.getAscent() - fa.getDescent()) / 2;
+            int x = (Math.round(getWidth() / k) - total) / 2;
+            int base = 24 + (fa.getAscent() - fa.getDescent()) / 2;
             g2.setFont(a);
             g2.setColor(AnalysisTheme.TEXT_BODY);
             g2.drawString(rating, x, base);

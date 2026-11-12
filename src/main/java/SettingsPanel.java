@@ -1054,7 +1054,7 @@ public class SettingsPanel extends JPanel {
      */
     private void showHotkeysPopup() {
         Window owner = SwingUtilities.getWindowAncestor(this);
-        JDialog dialog = new JDialog(owner, "Keyboard shortcuts", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog dialog = new BigPopup.InDialog(owner, "Keyboard shortcuts", Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setUndecorated(true);
 
         JPanel content = new JPanel(new BorderLayout(0, k(22))) {

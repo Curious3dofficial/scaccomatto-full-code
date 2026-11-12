@@ -2192,7 +2192,7 @@ public class SettingsScreen extends JPanel {
 
     private JDialog dialog() {
         Window owner = SwingUtilities.getWindowAncestor(this);
-        JDialog d = new JDialog(owner, "", Dialog.ModalityType.APPLICATION_MODAL);
+        JDialog d = new BigPopup.InDialog(owner, "", Dialog.ModalityType.APPLICATION_MODAL);
         d.setUndecorated(true);
         // No see-through window: the window is cut to the card's shape instead (showDialog),
         // and a see-through one made scrolling inside it flash black on some systems.

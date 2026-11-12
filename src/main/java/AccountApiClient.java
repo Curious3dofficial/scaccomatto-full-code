@@ -112,6 +112,7 @@ public final class AccountApiClient {
     /** A sign-up waiting for its email link to be clicked. Only ever one at a time. */
     private static final class Unconfirmed {
         String uid, idToken, refreshToken, email, username, name;
+        char[] password;             // kept only until the profile exists (for the username sign-in key)
     }
 
     private static volatile Unconfirmed unconfirmed;
@@ -163,6 +164,7 @@ public final class AccountApiClient {
         u.email = email.trim();
         u.username = username.trim();
         u.name = name;
+        u.password = password == null ? null : password.clone();
         unconfirmed = u;
         resendConfirmation();
     }
@@ -204,6 +206,15 @@ public final class AccountApiClient {
                 throw taken;
             }
         }
+        if (u.password != null) {
+            String uname = u.username;
+            if (uname == null) {
+                Object n = FirebaseLink.asMap(dbGet("players/" + u.uid)).get("username");
+                uname = n instanceof String ? (String) n : null;
+            }
+            UsernameLogin.save(uname, u.email, u.password);
+            java.util.Arrays.fill(u.password, '\0');
+        }
         return session(r, u.email);
     }
 
@@ -234,7 +245,15 @@ public final class AccountApiClient {
     public Session login(String login, char[] password, boolean remember)
             throws IOException, InterruptedException, ApiException {
         String email = login == null ? "" : login.trim();
-        if (!email.contains("@")) throw new ApiException(400, "Sign in with the email address you signed up with.");
+        boolean byUsername = !email.contains("@");
+        if (byUsername) {
+            // a username: its email is kept locked with the password (see UsernameLogin)
+            try {
+                email = UsernameLogin.emailFor(email, password);
+            } catch (UsernameLogin.Problem p) {
+                throw new ApiException(p.status, p.getMessage());
+            }
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("email", email);
         body.put("password", new String(password));
@@ -253,9 +272,13 @@ public final class AccountApiClient {
             throw new ApiException(NEEDS_EMAIL_CONFIRMATION, "Confirm your email first: we've sent the link again.");
         }
         signInLocally(r);
-        if (!(dbGet("players/" + FirebaseLink.str(r.get("localId"))) instanceof Map)) {
+        Object player = dbGet("players/" + FirebaseLink.str(r.get("localId")));
+        if (!(player instanceof Map)) {
             throw new ApiException(NEEDS_PROFILE, "Pick a username to finish your account.");
         }
+        // keep the username sign-in key up to date (new password, or first time on this version)
+        Object uname = FirebaseLink.asMap(player).get("username");
+        if (uname instanceof String) UsernameLogin.save((String) uname, email, password);
         return session(r, email);
     }
 
@@ -685,6 +708,7 @@ public final class AccountApiClient {
         // (claims/UID stays: just a list of game codes already counted, so the same win
         //  can't be counted twice by deleting and remaking a profile)
         if (username != null) gone.put("usernames/" + username.toLowerCase(Locale.ROOT), null);
+        if (username != null) gone.put(UsernameLogin.PATH + username.toLowerCase(Locale.ROOT), null);
         try {
             FirebaseLink.update(gone);
         } catch (FirebaseLink.FirebaseException e) {
