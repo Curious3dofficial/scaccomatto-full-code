@@ -118,4 +118,6 @@ jobs:
           gh release view "$TAG" -R "$REPO" > /dev/null 2>&1 || \
             gh release create "$TAG" -R "$REPO" --title "Scaccomatto $VERSION" --notes "Scaccomatto, full version." --latest=false
           gh release upload "$TAG" -R "$REPO" --clobber out/windows/*.exe out/linux/*.deb
+          # (in case it was left as a draft: drafts are invisible to visitors and the website)
+          gh release edit "$TAG" -R "$REPO" --draft=false --tag "$TAG" --latest=false
           echo "Done: https://github.com/$REPO/releases/tag/$TAG"
