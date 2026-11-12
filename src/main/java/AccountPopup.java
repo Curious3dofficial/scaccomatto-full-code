@@ -697,7 +697,8 @@ final class AccountPopup {
     private void setPage(JComponent next) {
         onProfilePage = Boolean.TRUE.equals(next.getClientProperty("profilePage"));
         if (refreshButton != null) {
-            refreshButton.setVisible(onProfilePage || Boolean.TRUE.equals(next.getClientProperty("friendsPage"))
+            // (not on the profile page: it refreshes itself when it opens)
+            refreshButton.setVisible(Boolean.TRUE.equals(next.getClientProperty("friendsPage"))
                     || Boolean.TRUE.equals(next.getClientProperty("bannedPage")));
         }
         if (testLogin != null) testLogin.setVisible(!AccountSession.isSignedIn());
