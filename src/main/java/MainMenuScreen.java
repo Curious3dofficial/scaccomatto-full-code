@@ -185,6 +185,7 @@ public class MainMenuScreen extends JPanel {
             // one separately, for the intro sequence).
             @Override
             public void componentShown(ComponentEvent e) {
+                MenuBackdrop.titleShown();
                 if (skipNextFadeIn) {
                     // back from Settings / Achievements: the screen slid away to
                     // reveal this one already in place -- no fade, just be there
@@ -360,6 +361,7 @@ public class MainMenuScreen extends JPanel {
             float alpha = SmoothFade.inOut(t);   // gentle at both ends
             setAllButtonsFadeAlphaQuiet(alpha);
             if (withHeader) headerFadeAlpha = alpha;
+            MenuBackdrop.introFade(alpha);   // the first time: the picture fades in with the buttons
             SmoothFade.paintNow(this);
             if (t >= 1.0) {
                 setAllButtonsFadeAlpha(1f);
@@ -390,6 +392,7 @@ public class MainMenuScreen extends JPanel {
      * impossible instead of just unlikely.
      */
     private void startPlayTransition() {
+        MenuBackdrop.playPressed();     // the picture starts blurring; it's done as "Board Room" lands
         setButtonsEnabled(false);
         resetIconButtonHovers();
         int durationMs = PLAY_TRANSITION_FADE_MS;
@@ -591,6 +594,7 @@ public class MainMenuScreen extends JPanel {
             bgPicture = SmoothFade.gradient(w, h, BG_TOP, BG_BOTTOM, getGraphicsConfiguration());
         }
         g2.drawImage(bgPicture, 0, 0, null);
+        MenuBackdrop.paint(this, g2);    // the menu picture, if there is one
 
         if (wordmark != null) {
             double aspect = wordmark.getHeight(this) / (double) wordmark.getWidth(this);
@@ -732,7 +736,8 @@ public class MainMenuScreen extends JPanel {
                 g2.fill(sh);
             }
 
-            g2.setColor(UiTheme.inkFill(new Color(18, 18, 18)));
+            // black pill in Light; in Dark an ivory one (the purple clashed with the blue background)
+            g2.setColor(UiTheme.pick(new Color(18, 18, 18), new Color(0xF7, 0xF3, 0xE8)));
             g2.fill(new RoundRectangle2D.Float(0, 0, w, h, h, h));
 
             Font font = getFont().deriveFont(Math.max(18f, h * 0.40f));
@@ -744,7 +749,7 @@ public class MainMenuScreen extends JPanel {
             int contentW = textW + chevronSpace;
             int textX = (w - contentW) / 2;
             int textY = (h + fm.getAscent() - fm.getDescent()) / 2;
-            g2.setColor(Color.WHITE);
+            g2.setColor(UiTheme.pick(Color.WHITE, new Color(18, 18, 18)));   // the chevron below too
             g2.drawString(text, textX, textY);
 
             int chevX = textX + textW + (int) (h * 0.30);

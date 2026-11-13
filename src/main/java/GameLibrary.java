@@ -14,7 +14,7 @@ import java.util.List;
 final class GameLibrary {
     private GameLibrary() { }
 
-    private static final File DIR = new File(new File(System.getProperty("user.home"), ".scaccomatto"), "library");
+    private static final File DIR = new File(AppData.dir(), "library");
 
     /** One reviewed game. */
     static final class Record {

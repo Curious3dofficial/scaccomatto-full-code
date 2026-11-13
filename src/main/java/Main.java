@@ -54,6 +54,9 @@ public class Main {
                     // Don't hijack the letter "m" while the user is typing it into
                     // a text field (player name, search, chat, etc.).
                     if (e.getComponent() instanceof javax.swing.text.JTextComponent) return false;
+                    // ...or into an open list's type-to-search (Settings dropdowns)
+                    if (e.getComponent() instanceof javax.swing.JComponent && Boolean.TRUE.equals(
+                            ((javax.swing.JComponent) e.getComponent()).getClientProperty("typeToSearch"))) return false;
                     if (!mHeld) {                 // (key repeat sends more presses: ignore those)
                         mHeld = true;
                         mUsedForVolume = false;

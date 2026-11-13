@@ -1,12 +1,13 @@
 Fonts bundled with Scaccomatto
 ==============================
 
-Baloo2-ExtraBold.ttf, Inter.ttf and Cinzel.ttf are each licensed under the
+Baloo2-ExtraBold.ttf, Inter.ttf, Cinzel.ttf and PatrickHand-Regular.ttf are each licensed under the
 SIL Open Font License, Version 1.1. Their copyright lines and the license follow.
 
 Copyright 2019 The Baloo 2 Project Authors (https://github.com/EkType/Baloo2)
 Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
 Copyright 2020 The Cinzel Project Authors (https://github.com/NDISCOVER/Cinzel)
+Copyright (c) 2010-2012 Patrick Wagesreiter (mail@patrickwagesreiter.at), Patrick Hand
 
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.

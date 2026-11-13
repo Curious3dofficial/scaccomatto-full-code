@@ -330,7 +330,24 @@ public class MainMenu extends JFrame implements ActionListener {
         boardLaunching = true;
         SoundManager.SoundHandle h = menuMusicHandle;
         menuMusicHandle = null;
-        if (h != null) h.fadeOutAndStop(ms);
+        if (h != null) {
+            h.fadeOutAndStop(ms);
+            musicSilentAtNanos = System.nanoTime() + ms * 1_000_000L;
+        }
+    }
+
+    /** When the menu music will have faded to nothing (the board is only built after that). */
+    private long musicSilentAtNanos;
+    /** How long the music takes to fade when a board opens straight from a screen (multiplayer...). */
+    private static final int MUSIC_TO_BOARD_MS = 1200;
+
+    /** Runs {@code then} once the menu music has faded out completely (right away if it has). */
+    private void afterMusicSilent(Runnable then) {
+        long waitMs = (musicSilentAtNanos - System.nanoTime()) / 1_000_000L;
+        if (waitMs <= 0) { then.run(); return; }
+        Timer t = new Timer((int) Math.min(3000, waitMs), e -> then.run());
+        t.setRepeats(false);
+        t.start();
     }
 
     private void stopMenuMusic() {
@@ -650,6 +667,7 @@ public class MainMenu extends JFrame implements ActionListener {
 
         add(mainPanel);
         installApplicationTopBar();
+        MenuBackdrop.attach(getRootPane());   // the picture behind the menus (see MenuBackdrop)
 
         showCard("TITLE", false);
         // The cold-launch call to showCard() above triggers
@@ -1866,10 +1884,12 @@ public class MainMenu extends JFrame implements ActionListener {
         }
         // a board is opening: the menu music fades out while the loading screen comes in
         // (already fading if the launch cinematic started it)
-        fadeOutMenuMusicForBoard(fadeIn ? LOADING_FADE_IN_MS : LOADING_CLOSE_MS);
+        fadeOutMenuMusicForBoard(fadeIn ? LOADING_FADE_IN_MS : MUSIC_TO_BOARD_MS);
         beginGameLaunchOverlay(fadeIn, false, () ->
-                // Let Swing paint the covered frame before game construction occupies the EDT.
-                SwingUtilities.invokeLater(() -> {
+                // Let Swing paint the covered frame before game construction occupies the EDT
+                // -- and let the music finish fading first: building the board keeps the
+                // screen busy, and nothing should still be playing while it does.
+                SwingUtilities.invokeLater(() -> afterMusicSilent(() -> {
                     try {
                         launchAction.run();
                     } catch (RuntimeException | Error failure) {
@@ -1882,7 +1902,7 @@ public class MainMenu extends JFrame implements ActionListener {
                         GameDialogs.info(this, "Game Startup Error", String.valueOf("The game could not be started."
                                         + (detail == null || detail.isBlank() ? "" : "\n\n" + detail)));
                     }
-                }));
+                })));
     }
 
     private void launchVariantWithCinematic(String variant, Runnable launchAction) {
@@ -1949,7 +1969,8 @@ public class MainMenu extends JFrame implements ActionListener {
 
         // the screen starts darkening: the music fades out with it, reaching silence
         // just as the loading screen has come down
-        fadeOutMenuMusicForBoard(SPELL_LAUNCH_CHARGE_MS + SPELL_LAUNCH_CIRCLE_MS + LOADING_FADE_IN_MS);
+        // silent just as the circle burst ends, before the loading screen and the board
+        fadeOutMenuMusicForBoard(SPELL_LAUNCH_CHARGE_MS + SPELL_LAUNCH_CIRCLE_MS);
 
         long startedAt = System.nanoTime();
         variantLaunchCinematicTimer = AnimationTiming.createUiTimer(e -> {
@@ -3386,6 +3407,7 @@ public class MainMenu extends JFrame implements ActionListener {
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 paintCachedGradient(this, g, bgTop, bgBottom);
+                MenuBackdrop.paintBlurred(this, g);
             }
         };
         panel.setLayout(new BorderLayout());
@@ -3891,6 +3913,7 @@ public class MainMenu extends JFrame implements ActionListener {
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 paintCachedGradient(this, g, bgTop, bgBottom);
+                MenuBackdrop.paintBlurred(this, g);
             }
         };
         mainContainer.setBorder(BorderFactory.createEmptyBorder(24, 42, 20, 42));
@@ -4842,162 +4865,6 @@ public class MainMenu extends JFrame implements ActionListener {
         BigPopup.info(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.INFO, featureName, message, "Got it");
     }
 
-    /** The old card, kept aside (BigPopup is used now). */
-    void legacyUnderDevelopmentDialog(String featureName, String message) {
-        JDialog dialog = new JDialog(this, true);
-        dialog.setUndecorated(true);
-
-        // Scaled up across the board per "make the pop up biggerrrr" --
-        // the card was reading as a tiny note lost in the middle of the
-        // big Board Room screen. Every measurement below (border, arc,
-        // shadow, fonts, copy width, button) is bumped together so it
-        // grows as one proportional object instead of just getting wider.
-        //
-        // Same white/drop-shadow/rounded-border card recipe
-        // showBotSelectionScreen()'s own leftCard uses.
-        JPanel card = new JPanel(new BorderLayout(0, 36)) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int w = getWidth() - 1;
-                int h = getHeight() - 1;
-                int arc = 40;
-                Color shadow = UiTheme.c(25, 18, 10);
-                int[] shadowAlphas = {14, 22, 32};
-                int[] shadowGrow = {16, 8, 2};
-                for (int i = 0; i < shadowAlphas.length; i++) {
-                    int gr = shadowGrow[i];
-                    g2.setColor(UiTheme.raw(shadow.getRed(), shadow.getGreen(), shadow.getBlue(), shadowAlphas[i]));
-                    g2.fillRoundRect(-gr / 2, 2 - gr / 4, w + gr, h + gr, arc, arc);
-                }
-                g2.setColor(UiTheme.c(Color.WHITE));
-                g2.fillRoundRect(0, 0, w, h, arc, arc);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-
-            @Override
-            protected void paintBorder(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(UiTheme.c(224, 217, 203));
-                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 40, 40);
-                g2.dispose();
-            }
-        };
-        card.setOpaque(false);
-        card.setBorder(BorderFactory.createEmptyBorder(60, 68, 52, 68));
-        UiTheme.roundWindowOf(card, 42f);
-
-        JPanel copy = new JPanel();
-        copy.setOpaque(false);
-        copy.setLayout(new BoxLayout(copy, BoxLayout.Y_AXIS));
-
-
-        JLabel title = crispLabel(featureName);
-        title.setFont(variantDisplayFont(52f));
-        title.setForeground(UiTheme.c(28, 22, 14));
-        title.setAlignmentX(Component.CENTER_ALIGNMENT);
-        copy.add(title);
-        copy.add(Box.createVerticalStrut(18));
-
-        // Plain, friendly copy -- no "under development" boilerplate.
-        JLabel body = new JLabel("<html><div style='text-align:center; width:480px;'>"
-                + message + "</div></html>");
-        body.setFont(UiFonts.subtext(30f));
-        body.setForeground(UiTheme.c(130, 117, 98));
-        body.setAlignmentX(Component.CENTER_ALIGNMENT);
-        copy.add(body);
-        card.add(copy, BorderLayout.CENTER);
-
-        // Blue/navy-on-hover treatment, matching the locked-bot ("Grandmother
-        // Levi") popup's "Got it" button exactly -- same base/hover/pressed
-        // colors, same 160ms animated hover blend, same arc=26 rounding, no
-        // separate border stroke -- per "make the button color blue and navy
-        // blue on hover (animated transition hover effect) exactly like
-        // Levi popup". Built as its own small button here (not
-        // through createRoundedFillButton) since that shared factory has no
-        // hover-animation support and is used by many other buttons this
-        // change must not touch.
-        JButton ok = new JButton("GOT IT") {
-            private float hoverProgress = 0f;
-            private Timer hoverAnimTimer;
-            private static final int HOVER_ANIM_MS = 160;
-
-            {
-                addMouseListener(new MouseAdapter() {
-                    @Override
-                    public void mouseEntered(MouseEvent e) {
-                        animateHoverTo(1f);
-                    }
-
-                    @Override
-                    public void mouseExited(MouseEvent e) {
-                        animateHoverTo(0f);
-                    }
-                });
-            }
-
-            private void animateHoverTo(float target) {
-                if (hoverAnimTimer != null && hoverAnimTimer.isRunning()) hoverAnimTimer.stop();
-                float start = hoverProgress;
-                long startedAt = System.nanoTime();
-                hoverAnimTimer = AnimationTiming.createUiTimer(e -> {
-                    float t = AnimationTiming.progress(startedAt, HOVER_ANIM_MS);
-                    hoverProgress = start + (target - start) * t;
-                    repaint();
-                    if (t >= 1f) {
-                        hoverProgress = target;
-                        ((Timer) e.getSource()).stop();
-                        repaint();
-                    }
-                });
-                hoverAnimTimer.start();
-            }
-
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int w = getWidth();
-                int h = getHeight();
-                boolean pressed = getModel().isPressed() && getModel().isArmed();
-                Color base = UiTheme.pick(new Color(91, 124, 173), UiTheme.ACCENT);
-                Color hoverColor = UiTheme.pick(new Color(47, 76, 124), UiTheme.ACCENT_DEEP);
-                Color pressedColor = UiTheme.pick(new Color(34, 58, 97), new Color(0x5E, 0x00, 0x94));
-                float hp = Math.max(0f, Math.min(1f, hoverProgress));
-                int r = Math.round(base.getRed() + (hoverColor.getRed() - base.getRed()) * hp);
-                int gr = Math.round(base.getGreen() + (hoverColor.getGreen() - base.getGreen()) * hp);
-                int b = Math.round(base.getBlue() + (hoverColor.getBlue() - base.getBlue()) * hp);
-                Color fill = pressed ? pressedColor : UiTheme.raw(r, gr, b);
-                g2.setColor(fill);
-                int arc = 26;
-                g2.fillRoundRect(0, 0, w, h, arc, arc);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        ok.setForeground(Color.WHITE);
-        ok.setFont(variantDisplayFont(30f));
-        ok.setFocusPainted(false);
-        ok.setBorderPainted(false);
-        ok.setContentAreaFilled(false);
-        ok.setOpaque(false);
-        ok.setPreferredSize(new Dimension(300, 92));
-        ok.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        ok.addActionListener(e -> dialog.dispose());
-        JPanel okWrap = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
-        okWrap.setOpaque(false);
-        okWrap.add(ok);
-        card.add(okWrap, BorderLayout.SOUTH);
-
-        dialog.setContentPane(card);
-        dialog.pack();
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
-    }
-
     private ImageIcon loadBotPortrait(ChessBot bot, int width, int height) {
         String base = getBotImageBaseName(bot);
         String[] candidates = {
@@ -5185,13 +5052,23 @@ public class MainMenu extends JFrame implements ActionListener {
                     // ("VS Player") cards, so this is safe to retheme here
                     // without touching any other createRoundedFillButton
                     // caller.
+                    // the room the text has: from where it starts to the card's right edge
+                    // (less a margin). Fonts are wider on some systems (Windows): a line
+                    // that doesn't fit is drawn smaller rather than running off the card.
+                    int textRoom = Math.max(1, inset + w - contentX - Math.round(18 * hRatio));
                     Font titleFont = variantDisplayFont(23f * hRatio);
+                    int titleW = g2.getFontMetrics(titleFont).stringWidth(String.valueOf(variantTitle));
+                    if (titleW > textRoom) titleFont = titleFont.deriveFont(Math.max(titleFont.getSize2D() * 0.6f, titleFont.getSize2D() * textRoom / titleW));
                     g2.setFont(titleFont);
                     FontMetrics titleMetrics = g2.getFontMetrics();
 
                     Object variantSubtitle = getClientProperty("variant_card_subtitle");
                     boolean hasSubtitle = variantSubtitle instanceof String;
                     Font subtitleFont = UiFonts.subtext(16f * hRatio);
+                    if (hasSubtitle) {
+                        int subW = g2.getFontMetrics(subtitleFont).stringWidth((String) variantSubtitle);
+                        if (subW > textRoom) subtitleFont = subtitleFont.deriveFont(Math.max(subtitleFont.getSize2D() * 0.6f, subtitleFont.getSize2D() * textRoom / subW));
+                    }
                     FontMetrics subtitleMetrics = hasSubtitle ? g2.getFontMetrics(subtitleFont) : null;
 
                     // Title+subtitle laid out as ONE block, centered as a
@@ -5874,367 +5751,6 @@ public class MainMenu extends JFrame implements ActionListener {
         // (the old card, ExitDialog, is kept below but no longer used)
     }
 
-
-    /**
-     * "Leaving already?" -- the Classic white card with a soft shadow, centred on the
-     * screen: a round badge with an open door, the question, and STAY / QUIT. It eases
-     * in (fade + slight grow); Enter or Esc stays.
-     *
-     * <p>Drawn inside the main window (on its top layer) rather than as a separate
-     * see-through window: those flicker on Linux every time anything on them redraws.
-     * While it's up it takes every click, so the menu behind can't be used.
-     */
-    private static final class ExitDialog extends JComponent {
-        private static final Color INK = UiTheme.c(28, 22, 14);
-        private static final Color MUTED = UiTheme.c(120, 106, 88);
-        private static final Color BORDER = UiTheme.c(224, 217, 203);
-        private static final Color GOLD = UiTheme.c(214, 160, 52);
-        private static final Color GOLD_SOFT = UiTheme.c(250, 236, 205);
-        private static final Color RED = UiTheme.c(196, 70, 56);
-        private static final Color RED_HI = UiTheme.c(214, 86, 70);
-
-        private final MainMenu owner;
-        private final float u;          // scale: 1 at 1080p
-        private float appear;           // 0 -> 1 entrance
-        private Timer appearTimer;
-        /** Shown as its own window, exactly the card's size (the window edge is the card edge). */
-        private final boolean windowed = true;
-        private JDialog window;
-        private boolean closed;
-
-        private JPanel card;
-
-        ExitDialog(MainMenu owner) {
-            this.owner = owner;
-            int screenH = owner.getGraphicsConfiguration() != null
-                    ? owner.getGraphicsConfiguration().getBounds().height
-                    : Toolkit.getDefaultToolkit().getScreenSize().height;
-            u = Math.max(0.8f, Math.min(1.35f, screenH / 1080f));
-            setOpaque(false);
-            setLayout(null);
-            setFocusable(true);
-            // swallow clicks so nothing behind the card reacts
-            addMouseListener(new MouseAdapter() { });
-            addMouseMotionListener(new MouseAdapter() { });
-            addMouseWheelListener(e -> { });
-
-            int shadow = windowed ? 0 : s(26);
-            card = new JPanel(new BorderLayout(0, s(30))) {
-                @Override protected void paintComponent(Graphics g) {
-                    if (windowed) {          // the window's own rounded shape is the card
-                        Graphics2D g2 = smooth(g);
-                        g2.setColor(UiTheme.c(Color.WHITE));
-                        g2.fillRect(0, 0, getWidth(), getHeight());
-                        g2.setStroke(new BasicStroke(Math.max(1.2f, s(1.4f))));
-                        g2.setColor(BORDER);
-                        float arc = s(40);
-                        g2.draw(new java.awt.geom.RoundRectangle2D.Float(0.7f, 0.7f,
-                                getWidth() - 1.4f, getHeight() - 1.4f, arc, arc));
-                        g2.dispose();
-                        return;
-                    }
-                    Graphics2D g2 = smooth(g);
-                    float e = appear;
-                    // grow from 94% to 100% around the centre while fading in
-                    float sc = 0.94f + 0.06f * e;
-                    g2.translate(getWidth() / 2f, getHeight() / 2f);
-                    g2.scale(sc, sc);
-                    g2.translate(-getWidth() / 2f, -getHeight() / 2f);
-                    int x = shadow, y = shadow - s(8);
-                    int w = getWidth() - shadow * 2 - 1, h = getHeight() - shadow * 2 - 1;
-                    float arc = s(40);
-                    // soft shadow: a few widening, fading layers
-                    for (int i = 6; i >= 1; i--) {
-                        g2.setColor(UiTheme.c(25, 18, 10, Math.round((3 + 2 * (6 - i)) * e)));
-                        float grow = i * s(3);
-                        g2.fill(new java.awt.geom.RoundRectangle2D.Float(x - grow, y - grow + s(10),
-                                w + grow * 2, h + grow * 2, arc + grow, arc + grow));
-                    }
-                    g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, e))));
-                    java.awt.geom.RoundRectangle2D.Float shape = new java.awt.geom.RoundRectangle2D.Float(x, y, w, h, arc, arc);
-                    g2.setColor(UiTheme.c(Color.WHITE));
-                    g2.fill(shape);
-                    g2.setStroke(new BasicStroke(Math.max(1.2f, s(1.4f))));
-                    g2.setColor(BORDER);
-                    g2.draw(shape);
-                    g2.dispose();
-                }
-
-                @Override protected void paintChildren(Graphics g) {
-                    if (windowed) { super.paintChildren(g); return; }
-                    Graphics2D g2 = (Graphics2D) g.create();
-                    float sc = 0.94f + 0.06f * appear;
-                    g2.translate(getWidth() / 2f, getHeight() / 2f);
-                    g2.scale(sc, sc);
-                    g2.translate(-getWidth() / 2f, -getHeight() / 2f);
-                    g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, appear))));
-                    super.paintChildren(g2);
-                    g2.dispose();
-                }
-            };
-            card.setOpaque(false);
-            card.setBorder(windowed
-                    ? BorderFactory.createEmptyBorder(s(44), s(64), s(40), s(64))
-                    : BorderFactory.createEmptyBorder(shadow + s(44), shadow + s(64),
-                            shadow + s(44) - s(8), shadow + s(64)));
-
-            JPanel copy = new JPanel();
-            copy.setOpaque(false);
-            copy.setLayout(new BoxLayout(copy, BoxLayout.Y_AXIS));
-            JComponent badge = new JComponent() {
-                @Override protected void paintComponent(Graphics g) {
-                    Graphics2D g2 = smooth(g);
-                    int d = Math.min(getWidth(), getHeight());
-                    float cx = getWidth() / 2f, cy = getHeight() / 2f;
-                    g2.setColor(GOLD_SOFT);
-                    g2.fill(new java.awt.geom.Ellipse2D.Float(cx - d / 2f, cy - d / 2f, d, d));
-                    // an open door with an arrow walking out of it
-                    float k = d / 100f;
-                    g2.setColor(GOLD);
-                    g2.setStroke(new BasicStroke(5.5f * k, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    float fx = cx - 26 * k, fy = cy - 26 * k;
-                    g2.draw(new java.awt.geom.Path2D.Float() {{
-                        moveTo(fx + 24 * k, fy);
-                        lineTo(fx, fy);
-                        lineTo(fx, fy + 52 * k);
-                        lineTo(fx + 24 * k, fy + 52 * k);
-                    }});
-                    g2.draw(new java.awt.geom.Line2D.Float(cx - 8 * k, cy, cx + 30 * k, cy));
-                    g2.draw(new java.awt.geom.Path2D.Float() {{
-                        moveTo(cx + 18 * k, cy - 12 * k);
-                        lineTo(cx + 30 * k, cy);
-                        lineTo(cx + 18 * k, cy + 12 * k);
-                    }});
-                    g2.dispose();
-                }
-            };
-            Dimension bd = new Dimension(s(96), s(96));
-            badge.setPreferredSize(bd);
-            badge.setMaximumSize(bd);
-            badge.setAlignmentX(Component.CENTER_ALIGNMENT);
-            copy.add(badge);
-            copy.add(Box.createVerticalStrut(s(22)));
-            JLabel title = crispLabel("Leaving already?");
-            title.setFont(variantDisplayFont(s(52f)));
-            title.setForeground(INK);
-            title.setAlignmentX(Component.CENTER_ALIGNMENT);
-            copy.add(title);
-            copy.add(Box.createVerticalStrut(s(10)));
-            JLabel message = crispLabel("Are you sure you want to quit Scaccomatto?");
-            message.setFont(UiFonts.subtext(s(22f)));
-            message.setForeground(MUTED);
-            message.setAlignmentX(Component.CENTER_ALIGNMENT);
-            copy.add(message);
-            card.add(copy, BorderLayout.CENTER);
-
-            JPanel actions = new JPanel(new GridLayout(1, 2, s(18), 0));
-            actions.setOpaque(false);
-            PopupButton stay = new PopupButton("STAY", UiTheme.inkFill(new Color(28, 22, 14)), UiTheme.pick(new Color(58, 48, 36), UiTheme.ACCENT_HI), this::close);
-            PopupButton quit = new PopupButton("QUIT", RED, RED_HI, () -> {
-                close();
-                owner.dispose();
-                System.exit(0);
-            });
-            actions.add(stay);
-            actions.add(quit);
-            actions.setPreferredSize(new Dimension(s(520), s(74)));
-            JPanel actionsWrap = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
-            actionsWrap.setOpaque(false);
-            actionsWrap.add(actions);
-            card.add(actionsWrap, BorderLayout.SOUTH);
-
-            add(card);
-            // Esc or Enter = stay
-            int keyScope = windowed ? WHEN_IN_FOCUSED_WINDOW : WHEN_FOCUSED;
-            getInputMap(keyScope).put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "exitStay");
-            getInputMap(keyScope).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "exitStay");
-            getActionMap().put("exitStay", new AbstractAction() {
-                @Override public void actionPerformed(ActionEvent e) { stay.fire(); }
-            });
-        }
-
-        @Override
-        public void doLayout() {
-            if (windowed) { card.setBounds(0, 0, getWidth(), getHeight()); return; }
-            // centred in the window (which fills the screen)
-            Dimension d = card.getPreferredSize();
-            card.setBounds((getWidth() - d.width) / 2, (getHeight() - d.height) / 2, d.width, d.height);
-        }
-
-        void open() {
-            if (windowed) { openWindow(); return; }
-            JLayeredPane layers = owner.getLayeredPane();
-            setBounds(0, 0, layers.getWidth(), layers.getHeight());
-            layers.add(this, JLayeredPane.POPUP_LAYER);
-            layers.moveToFront(this);
-            validate();
-            requestFocusInWindow();
-            long start = System.nanoTime();
-            appearTimer = AnimationTiming.createUiTimer(e -> {
-                float t = AnimationTiming.progress(start, 220f);
-                appear = 1f - (float) Math.pow(1f - t, 3);
-                card.repaint();
-                if (t >= 1f) appearTimer.stop();
-            });
-            appearTimer.start();
-        }
-
-        /**
-         * A real window just the size of the card, centred on the screen with rounded
-         * corners; it fades in. While it's open the menu behind can't be used.
-         */
-        private void openWindow() {
-            appear = 1f;
-            window = new JDialog(owner, true);
-            window.setUndecorated(true);
-            window.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
-            window.addWindowListener(new java.awt.event.WindowAdapter() {
-                @Override public void windowClosing(java.awt.event.WindowEvent e) {
-                    // Alt+F4 on the question itself: that's a clear "quit"
-                    close();
-                    owner.dispose();
-                    System.exit(0);
-                }
-            });
-            setOpaque(true);
-            setBackground(UiTheme.c(Color.WHITE));
-            window.setContentPane(this);
-            Dimension d = card.getPreferredSize();
-            GraphicsConfiguration gc = owner.getGraphicsConfiguration();
-            Rectangle screen = gc != null ? gc.getBounds() : new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());
-            window.setBounds(screen.x + (screen.width - d.width) / 2, screen.y + (screen.height - d.height) / 2,
-                    d.width, d.height);
-            try {
-                window.setShape(new java.awt.geom.RoundRectangle2D.Float(0, 0, d.width, d.height, s(40), s(40)));
-            } catch (Exception ignored) {
-            }
-            boolean canFade = true;
-            try {
-                window.setOpacity(0f);
-            } catch (Exception ignored) {
-                canFade = false;             // the system can't fade whole windows: it just appears
-            }
-            if (canFade) {
-                long start = System.nanoTime();
-                appearTimer = AnimationTiming.createUiTimer(e -> {
-                    float t = AnimationTiming.progress(start, 200f);
-                    float a = (float) ((1 - Math.cos(Math.PI * t)) / 2);
-                    try { window.setOpacity(Math.max(0f, Math.min(1f, a))); } catch (Exception ignored) { }
-                    if (t >= 1f) appearTimer.stop();
-                });
-                appearTimer.start();     // runs inside the dialog's own event loop
-            }
-            window.addWindowFocusListener(new java.awt.event.WindowAdapter() {
-                @Override public void windowGainedFocus(java.awt.event.WindowEvent e) { requestFocusInWindow(); }
-            });
-            window.setVisible(true);     // blocks until it closes
-        }
-
-        private void close() {
-            if (closed) return;
-            closed = true;
-            if (appearTimer != null) appearTimer.stop();
-            if (window != null) {
-                window.dispose();
-                owner.exitDialogOpen = false;
-                return;
-            }
-            Container parent = getParent();
-            if (parent != null) {
-                parent.remove(this);
-                parent.repaint();
-            }
-            owner.exitDialogOpen = false;
-        }
-
-        private int s(int v) { return Math.round(v * u); }
-        private float s(float v) { return v * u; }
-
-        private static Graphics2D smooth(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            g2.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
-            return g2;
-        }
-
-        /** Rounded filled button: brightens on hover, dips when pressed, clicks. No focus box. */
-        private final class PopupButton extends JComponent {
-            private final String text;
-            private final Color fill, fillHover;
-            private final Runnable action;
-            private float hover, press;
-            private boolean hoverOn, pressOn;
-            private final Timer timer;
-
-            PopupButton(String text, Color fill, Color fillHover, Runnable action) {
-                this.text = text;
-                this.fill = fill;
-                this.fillHover = fillHover;
-                this.action = action;
-                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                setFocusable(false);
-                timer = AnimationTiming.createUiTimer(e -> {
-                    float step = AnimationTiming.FRAME_DELAY_MS / 140f;
-                    hover = approach(hover, hoverOn ? 1f : 0f, step);
-                    press = approach(press, pressOn ? 1f : 0f, step * 1.6f);
-                    repaint();
-                    if (hover == (hoverOn ? 1f : 0f) && press == (pressOn ? 1f : 0f)) ((Timer) e.getSource()).stop();
-                });
-                addMouseListener(new MouseAdapter() {
-                    @Override public void mouseEntered(MouseEvent e) { hoverOn = true; timer.start(); }
-                    @Override public void mouseExited(MouseEvent e) { hoverOn = false; pressOn = false; timer.start(); }
-                    @Override public void mousePressed(MouseEvent e) { pressOn = true; timer.start(); }
-                    @Override public void mouseReleased(MouseEvent e) {
-                        boolean inside = contains(e.getPoint());
-                        pressOn = false;
-                        timer.start();
-                        if (inside && SwingUtilities.isLeftMouseButton(e)) fire();
-                    }
-                });
-            }
-
-            void fire() {
-                SoundManager.playExtraSound("tap.wav");
-                action.run();
-            }
-
-            private float approach(float v, float target, float step) {
-                return v < target ? Math.min(target, v + step) : Math.max(target, v - step);
-            }
-
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = smooth(g);
-                int w = getWidth(), h = getHeight();
-                float shrink = press * s(2.5f);
-                float lift = hover * s(2f) - press * s(1f);
-                float arc = s(22f);
-                // drop shadow under the button
-                g2.setColor(UiTheme.c(25, 18, 10, Math.round(26 + 22 * hover)));
-                g2.fill(new java.awt.geom.RoundRectangle2D.Float(shrink, s(5f) + shrink, w - shrink * 2, h - s(6f) - shrink * 2, arc, arc));
-                java.awt.geom.RoundRectangle2D.Float r = new java.awt.geom.RoundRectangle2D.Float(
-                        shrink, s(2f) - lift + shrink, w - shrink * 2, h - s(6f) - shrink * 2, arc, arc);
-                Color c = blend(fill, fillHover, hover);
-                g2.setPaint(new GradientPaint(0, (float) r.y, blend(c, Color.WHITE, 0.08f), 0, (float) (r.y + r.height), c));
-                g2.fill(r);
-                g2.setColor(UiTheme.c(255, 255, 255, 34));
-                g2.fill(new java.awt.geom.RoundRectangle2D.Float(r.x + 2, r.y + 2, r.width - 4, r.height * 0.45f, arc - 4, arc - 4));
-                g2.setFont(variantDisplayFont(s(26f)));
-                FontMetrics fm = g2.getFontMetrics();
-                g2.setColor(Color.WHITE);
-                g2.drawString(text, (w - fm.stringWidth(text)) / 2f,
-                        (float) (r.y + r.height / 2 + (fm.getAscent() - fm.getDescent()) / 2f));
-                g2.dispose();
-            }
-
-            private Color blend(Color a, Color b, float t) {
-                return UiTheme.raw(
-                        Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
-                        Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
-                        Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
-            }
-        }
-    }
 
     @Override
     public void dispose() {

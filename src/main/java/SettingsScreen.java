@@ -98,7 +98,18 @@ public class SettingsScreen extends JPanel {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { goBack(); }
         });
 
-        showCategory(Category.GENERAL, false);
+        showCategory(startCategory(), false);
+    }
+
+    /** Started again by a Storage & Data job: open back on that page (only the first time). */
+    private static boolean resumeUsed;
+
+    private static Category startCategory() {
+        if (!resumeUsed) {
+            resumeUsed = true;
+            if ("storage".equals(SpinnerLoader.resumeSection())) return Category.STORAGE;
+        }
+        return Category.GENERAL;
     }
 
     /** Header, sidebar and page, at the current size. */
@@ -403,7 +414,7 @@ public class SettingsScreen extends JPanel {
                     g2.setColor(HOVER);
                     g2.fillRoundRect(pad, y, w - pad * 2 - s(6), rowH() - s(6), s(18), s(18));
                 }
-                boolean soon = cats[i] == Category.STORAGE;
+                boolean soon = false;
                 Color ink = sel ? INK : soon ? FAINT : UiTheme.c(70, 60, 46);
                 int icx = pad + s(40), icy = y + (rowH() - s(6)) / 2;
                 CategoryIcon.paint(g2, cats[i], icx, icy, s(32), sel ? GOLD_DEEP : soon ? FAINT : MUTED);
@@ -1260,7 +1271,10 @@ public class SettingsScreen extends JPanel {
 
                 anchor = SwingUtilities.convertRectangle(Dropdown.this.getParent(), Dropdown.this.getBounds(), layers);
                 int itemH = s(54), pad = s(6);
+                rowH = itemH;
+                padY = pad;
                 JPanel items = new RowList();
+                itemsPanel = items;
                 items.setLayout(new BoxLayout(items, BoxLayout.Y_AXIS));
                 items.setBorder(BorderFactory.createEmptyBorder(pad, 0, pad, 0));
                 for (int i = 0; i < options.length; i++) items.add(item(i, itemH));
@@ -1316,10 +1330,94 @@ public class SettingsScreen extends JPanel {
                     items.scrollRectToVisible(r);
                 });
 
+                // type to search: there's no box, just start typing a name and the list jumps
+                // to it (Enter picks it, the arrows move from there)
+                putClientProperty("typeToSearch", Boolean.TRUE);
+                addKeyListener(new java.awt.event.KeyAdapter() {
+                    @Override public void keyTyped(java.awt.event.KeyEvent e) {
+                        char c = e.getKeyChar();
+                        if (c < ' ' || c == 127 || e.isControlDown() || e.isAltDown() || e.isMetaDown()) return;
+                        long now = System.nanoTime();
+                        if (now - lastTyped > 1_200_000_000L) typed.setLength(0);   // a pause starts a new search
+                        lastTyped = now;
+                        typed.append(c);
+                        search();
+                        e.consume();
+                    }
+                    @Override public void keyPressed(java.awt.event.KeyEvent e) {
+                        switch (e.getKeyCode()) {
+                            case KeyEvent.VK_BACK_SPACE:
+                                if (typed.length() > 0) { typed.setLength(typed.length() - 1); lastTyped = System.nanoTime(); search(); }
+                                e.consume();
+                                break;
+                            case KeyEvent.VK_DOWN: case KeyEvent.VK_UP: {
+                                int step = e.getKeyCode() == KeyEvent.VK_DOWN ? 1 : -1;
+                                int i = found < 0 ? selected : found;
+                                for (int n = 0; n < options.length; n++) {
+                                    i = Math.floorMod(i + step, options.length);
+                                    if (!disabled[i]) break;
+                                }
+                                typed.setLength(0);
+                                showFound(i);
+                                e.consume();
+                                break;
+                            }
+                            case KeyEvent.VK_ENTER:
+                                if (found >= 0) pick(found);
+                                e.consume();
+                                break;
+                            default: break;
+                        }
+                    }
+                });
                 getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "closeList");
                 getActionMap().put("closeList", new AbstractAction() {
                     @Override public void actionPerformed(java.awt.event.ActionEvent e) { close(); }
                 });
+            }
+
+            // ── type to search ──────────────────────────────────────────────
+            private JPanel itemsPanel;
+            private int rowH, padY;
+            private final StringBuilder typed = new StringBuilder();
+            private long lastTyped;
+            /** The option the keyboard is on (typed to, or moved to with the arrows); -1 = none. */
+            private int found = -1;
+
+            /** The first option starting with what's been typed (or, failing that, containing it). */
+            private void search() {
+                String q = typed.toString().toLowerCase(java.util.Locale.ROOT).trim();
+                if (q.isEmpty()) return;
+                int hit = -1;
+                for (int i = 0; i < options.length && hit < 0; i++) {
+                    if (!disabled[i] && options[i].toLowerCase(java.util.Locale.ROOT).startsWith(q)) hit = i;
+                }
+                for (int i = 0; i < options.length && hit < 0; i++) {
+                    if (!disabled[i] && options[i].toLowerCase(java.util.Locale.ROOT).contains(q)) hit = i;
+                }
+                if (hit >= 0) showFound(hit);
+            }
+
+            private void showFound(int i) {
+                found = i;
+                if (itemsPanel != null) {
+                    // brought to the middle of the list, where it's easy to see
+                    Rectangle view = scroll.getViewport().getViewRect();
+                    int y = padY + i * rowH - (view.height - rowH) / 2;
+                    itemsPanel.scrollRectToVisible(new Rectangle(0, Math.max(0, y), 10, view.height));
+                    itemsPanel.repaint();
+                }
+            }
+
+            private void pick(int idx) {
+                if (disabled[idx]) return;
+                SoundManager.playExtraSound("tap.wav");
+                if (idx != selected) {
+                    selected = idx;
+                    Dropdown.this.repaint();
+                    if (onChange != null) onChange.accept(idx);
+                }
+                close();
             }
 
             private JComponent item(int idx, int itemH) {
@@ -1356,7 +1454,8 @@ public class SettingsScreen extends JPanel {
                         Graphics2D g2 = smooth(g);
                         int w = getWidth(), h = getHeight();
                         Color base = idx == selected ? GOLD_SOFT : CARD;
-                        g2.setColor(blendColor(base, HOVER, hv));
+                        // the option typed to (or moved to with the arrows) shows like a hover
+                        g2.setColor(blendColor(base, HOVER, idx == found ? 1f : hv));
                         g2.fillRect(0, 0, w, h);
                         int x = s(16);
                         if (swatchFor[idx] != null) {
@@ -1504,6 +1603,8 @@ public class SettingsScreen extends JPanel {
         private final Kind kind;
         private final Runnable action;
         private boolean hover, press;
+        /** No click sound (the button's action plays its own, like opening the book). */
+        private boolean silent;
 
         PillButton(String text, Kind kind, Runnable action) {
             this.text = text;
@@ -1522,7 +1623,7 @@ public class SettingsScreen extends JPanel {
                     press = false;
                     repaint();
                     if (fire) {
-                        SoundManager.playExtraSound("tap.wav");
+                        if (!silent) SoundManager.playExtraSound("tap.wav");
                         if (action != null) action.run();
                     }
                 }
@@ -1530,6 +1631,9 @@ public class SettingsScreen extends JPanel {
         }
 
         void setText(String t) { text = t; repaint(); }
+
+        /** Turns off the click sound. */
+        PillButton silent() { silent = true; return this; }
 
         @Override
         public void setEnabled(boolean e) {
@@ -1776,7 +1880,7 @@ public class SettingsScreen extends JPanel {
                         AppSettings.confirmResign(), v -> AppSettings.setBool("confirmResign", v)));
                 rows.add(toggleRow("Confirm before offering a draw", null,
                         AppSettings.confirmDraw(), v -> AppSettings.setBool("confirmDraw", v)));
-                rows.add(toggleRow("Focus mode", "Hide your opponent: no rating, no picture, no title, name shown as Anonymous",
+                rows.add(toggleRow("Focus mode", "Your opponent shows as Anonymous: rating ???, no title, flag or picture",
                         AppSettings.focusMode(), v -> AppSettings.setBool("focusMode", v)));
                 String[] chatModes = {"On", "Emojis only", "Off"};
                 ChatPanel.Mode cm = AppSettings.chatMode();
@@ -1784,9 +1888,12 @@ public class SettingsScreen extends JPanel {
                         new Dropdown(chatModes, cm == ChatPanel.Mode.QUICK ? 1 : cm == ChatPanel.Mode.OFF ? 2 : 0, null,
                                 i -> AppSettings.setChatMode(i == 1 ? ChatPanel.Mode.QUICK : i == 2 ? ChatPanel.Mode.OFF : ChatPanel.Mode.ON)),
                         false));
-                rows.add(soonRow("Show opponent's country flag", null, new Toggle(false, null)));
-                rows.add(soonRow("Reconnect after a brief connection loss", "Needs the online server -- coming with it",
-                        new Toggle(false, null)));
+                rows.add(toggleRow("Show country flags", "Each player's flag at the end of their name in online games",
+                        AppSettings.showFlags(), v -> AppSettings.setBool("showFlags", v)));
+                rows.add(new Row("Your country", "The flag other players see next to your name", countryPicker(), false));
+                rows.add(toggleRow("Reconnect after a brief connection loss",
+                        "Pause and wait for the connection to come back (off: the game ends straight away)",
+                        AppSettings.autoReconnect(), v -> AppSettings.setBool("autoReconnect", v)));
                 break;
             }
             case ANALYSIS: {
@@ -1809,7 +1916,9 @@ public class SettingsScreen extends JPanel {
                         AppSettings.achievementToasts(), v -> AppSettings.setBool("achievementToasts", v)));
                 rows.add(toggleRow("Online game invitations", "Rematch requests from your opponent (off = declined quietly)",
                         AppSettings.gameInvitations(), v -> AppSettings.setBool("gameInvitations", v)));
-                rows.add(soonRow("Turn reminders", "A nudge when it's your move in a long game", new Toggle(false, null)));
+                rows.add(toggleRow("Turn reminders",
+                        "A nudge when it's your move in an online game with more than an hour on the clock",
+                        AppSettings.turnReminders(), v -> AppSettings.setBool("turnReminders", v)));
                 break;
             }
             case PRIVACY: {
@@ -1856,18 +1965,29 @@ public class SettingsScreen extends JPanel {
                 break;
             }
             case STORAGE: {
-                rows.add(soonRow("Save location", "~/.scaccomatto", value("Default")));
-                rows.add(soonRow("Manage saved games and analysis", null, new PillButton("Manage", PillButton.Kind.SECONDARY, null)));
-                rows.add(soonRow("Import / export preferences", null, new PillButton("Export", PillButton.Kind.SECONDARY, null)));
-                rows.add(soonRow("Clear local app data", null, new PillButton("Clear", PillButton.Kind.DANGER, null)));
+                String used = AppData.usedSpace();
+                rows.add(new Row("Save location", AppData.shown() + (used.isEmpty() ? "" : "  ·  " + used),
+                        buttons(new PillButton("Change", PillButton.Kind.SECONDARY, this::changeSaveLocation),
+                                AppData.isDefault() ? null
+                                        : new PillButton("Default", PillButton.Kind.SECONDARY, this::defaultSaveLocation)), false));
+                rows.add(new Row("Manage saved games and analysis", "See what's kept, save games as PGN, or remove them",
+                        new PillButton("Manage", PillButton.Kind.SECONDARY, () -> {
+                            ManageSaved.open(this);
+                            showCategory(Category.STORAGE, false);       // the space used may have changed
+                        }), false));
+                rows.add(new Row("Import / export preferences", "Save your settings to a file, or load them from one",
+                        buttons(new PillButton("Import", PillButton.Kind.SECONDARY, this::importPreferences),
+                                new PillButton("Export", PillButton.Kind.SECONDARY, this::exportPreferences)), false));
+                rows.add(new Row("Clear local app data", "Remove everything Scaccomatto keeps on this computer",
+                        new PillButton("Clear", PillButton.Kind.DANGER, this::clearLocalData), false));
                 break;
             }
             case ABOUT: {
                 rows.add(new Row("App version", null, value(appVersion()), false));
                 rows.add(new Row("Credits", "Who made Scaccomatto",
-                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> info("Credits", CREDITS_TEXT)), false));
+                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> book(0)).silent(), false));
                 rows.add(new Row("Licenses", "The open-source pieces inside",
-                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> info("Licenses", LICENSES_TEXT)), false));
+                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> book(1)).silent(), false));
                 rows.add(new Row("Problem reports", "If something went wrong, the details are saved here",
                         new PillButton("Open folder", PillButton.Kind.SECONDARY, () -> {
                             try {
@@ -1878,11 +1998,11 @@ public class SettingsScreen extends JPanel {
                             }
                         }), false));
                 rows.add(new Row("Help and support", "How things work, and how to reach us",
-                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> info("Help and support", HELP_TEXT)), false));
+                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> book(2)).silent(), false));
                 rows.add(new Row("Privacy policy", "What we keep about you, and why",
-                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> info("Privacy policy", PRIVACY_TEXT)), false));
+                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> book(3)).silent(), false));
                 rows.add(new Row("Terms of service", "The rules for using Scaccomatto",
-                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> info("Terms of service", TERMS_TEXT)), false));
+                        new PillButton("Open", PillButton.Kind.SECONDARY, () -> book(4)).silent(), false));
                 break;
             }
             default: break;
@@ -2038,7 +2158,9 @@ public class SettingsScreen extends JPanel {
         if (dark == UiTheme.DARK) return;
         pictures.clear();                    // page pictures drawn in the old look
         Window w = SwingUtilities.getWindowAncestor(this);
-        if (w instanceof JFrame) UiTheme.switchWithFade((JFrame) w, dark);
+        // a loading cover in the current look fades in, crossfades to the new look, the
+        // switch happens under it, and it fades away onto the app in its new look
+        if (w instanceof JFrame) SpinnerLoader.coverWhileSwitching((JFrame) w, UiTheme.DARK, dark, () -> UiTheme.setDark(dark));
         else UiTheme.setDark(dark);
     }
 
@@ -2149,21 +2271,6 @@ public class SettingsScreen extends JPanel {
                 BigPopup.iconFor(title, danger), title, message, yes, "Cancel");
     }
 
-    /** The old question, kept aside (BigPopup is used now). */
-    private boolean legacyAsk(String title, String message, String yes, boolean danger) {
-        boolean[] answer = {false};
-        JDialog d = dialog();
-        JPanel card = classicCard(title, message, null);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, s(14), 0));
-        buttons.setOpaque(false);
-        buttons.add(new PillButton("Cancel", PillButton.Kind.SECONDARY, d::dispose));
-        buttons.add(new PillButton(yes, danger ? PillButton.Kind.DANGER : PillButton.Kind.PRIMARY,
-                () -> { answer[0] = true; d.dispose(); }));
-        card.add(buttons, BorderLayout.SOUTH);
-        showDialog(d, card);
-        return answer[0];
-    }
-
     /** A short message (one or two sentences) with a Got it button. */
     private void notice(String title, String message) {
         JDialog d = dialog();
@@ -2175,19 +2282,160 @@ public class SettingsScreen extends JPanel {
         showDialog(d, card);
     }
 
-    private void info(String title, String text) {
-        BigPopup.info(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.INFO, title, text, "Got it");
+    /**
+     * Credits, licences, help, privacy and terms as one book to page through, opened at
+     * {@code chapter} (0 credits, 1 licences, 2 help, 3 privacy, 4 terms).
+     */
+    private void book(int chapter) {
+        java.util.List<BookView.Chapter> all = java.util.List.of(
+                new BookView.Chapter("Credits", CREDITS_TEXT),
+                new BookView.Chapter("Licenses", LICENSES_TEXT),
+                new BookView.Chapter("Help and support", HELP_TEXT),
+                new BookView.Chapter("Privacy policy", PRIVACY_TEXT),
+                new BookView.Chapter("Terms of service", TERMS_TEXT));
+        if (!BookView.open(this, all, chapter)) info(all.get(chapter).title, all.get(chapter).text);
     }
 
-    /** The old reading window, kept aside. */
-    private void legacyInfo(String title, String text) {
-        JDialog d = dialog();
-        JPanel card = classicCard(title, null, text);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
-        buttons.setOpaque(false);
-        buttons.add(new PillButton("Got it", PillButton.Kind.PRIMARY, d::dispose));
-        card.add(buttons, BorderLayout.SOUTH);
-        showDialog(d, card);
+    /** The "Your country" dropdown: "Don't show", then every country by name, each with its flag. */
+    private static Dropdown countryPicker() {
+        java.util.List<String[]> all = CountryFlags.all();
+        String[] names = new String[all.size() + 1];
+        names[0] = "Don't show";
+        String mine = CountryFlags.mine();
+        int sel = 0;
+        for (int i = 0; i < all.size(); i++) {
+            names[i + 1] = all.get(i)[1];
+            if (all.get(i)[0].equals(mine)) sel = i + 1;
+        }
+        Dropdown d = new Dropdown(names, sel, null,
+                i -> CountryFlags.setMine(i == 0 ? null : all.get(i - 1)[0]));
+        for (int i = 0; i < all.size(); i++) {
+            String code = all.get(i)[0];
+            d.swatch(i + 1, (g, r) -> {
+                int h = Math.round(r.height * 0.78f);
+                CountryFlags.paint(g, code, new Rectangle(r.x, r.y + (r.height - h) / 2, Math.round(h * 4f / 3f), h));
+            });
+        }
+        return d;
+    }
+
+    // ── Storage & Data ───────────────────────────────────────────────────────
+
+    /** Two buttons side by side for one row ({@code b} may be null: just {@code a}). */
+    private static JComponent buttons(PillButton a, PillButton b) {
+        if (b == null) return a;
+        JPanel p = new JPanel(new FlowLayout(FlowLayout.RIGHT, s(10), 0));
+        p.setOpaque(false);
+        p.add(a);
+        p.add(b);
+        return p;
+    }
+
+    private JFrame frame() {
+        Window w = SwingUtilities.getWindowAncestor(this);
+        return w instanceof JFrame ? (JFrame) w : null;
+    }
+
+    private void storageMessage(boolean ok, String title, String message) {
+        BigPopup.info(this, ok ? BigPopup.Tone.SUCCESS : BigPopup.Tone.DANGER,
+                ok ? BigPopup.Icon.CHECK : BigPopup.Icon.WARNING, title, message, "GOT IT");
+    }
+
+    /**
+     * Runs a Storage & Data job behind the loading cover (off the UI thread, so the spinner
+     * keeps turning), then starts the app again so everything picks the change up. If the
+     * job fails, the cover goes and the reason is shown; nothing has changed.
+     */
+    private interface StorageJob { void run() throws Exception; }
+
+    private void runThenRestart(StorageJob job, String failTitle) {
+        JFrame f = frame();
+        if (f == null) return;
+        SpinnerLoader cover = SpinnerLoader.show(f, UiTheme.DARK);
+        Thread t = new Thread(() -> {
+            try {
+                job.run();
+                SwingUtilities.invokeLater(() -> SpinnerLoader.restart(f, "storage",
+                        () -> storageMessage(false, "Restart Scaccomatto",
+                                "It's done -- close Scaccomatto and open it again to finish.")));
+            } catch (Exception e) {
+                String why = e.getMessage() == null ? "Something went wrong." : e.getMessage();
+                SwingUtilities.invokeLater(() -> cover.hide(() -> storageMessage(false, failTitle, why)));
+            }
+        }, "storage-job");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void changeSaveLocation() {
+        JFileChooser fc = new JFileChooser(AppData.dir().getParentFile());
+        fc.setDialogTitle("Choose where Scaccomatto keeps its files");
+        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        fc.setAcceptAllFileFilterUsed(false);
+        if (fc.showDialog(frame(), "Use this folder") != JFileChooser.APPROVE_OPTION || fc.getSelectedFile() == null) return;
+        java.io.File target = AppData.targetFor(fc.getSelectedFile());
+        if (!BigPopup.confirm(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.QUESTION, "Move your files?",
+                "Everything Scaccomatto keeps (" + AppData.usedSpace() + ") moves to " + target.getAbsolutePath()
+                        + ". Scaccomatto restarts to finish.", "MOVE", "CANCEL")) return;
+        runThenRestart(() -> AppData.moveTo(target), "Couldn't move your files");
+    }
+
+    private void defaultSaveLocation() {
+        if (!BigPopup.confirm(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.QUESTION, "Move back to the usual folder?",
+                "Your files move back to ~/.scaccomatto. Scaccomatto restarts to finish.", "MOVE", "CANCEL")) return;
+        runThenRestart(AppData::moveToDefault, "Couldn't move your files");
+    }
+
+    private void exportPreferences() {
+        FileDialog fd = new FileDialog(frame(), "Save your settings", FileDialog.SAVE);
+        fd.setDirectory(System.getProperty("user.home"));
+        fd.setFile("scaccomatto-settings.txt");
+        fd.setVisible(true);
+        if (fd.getFile() == null) return;
+        java.io.File out = new java.io.File(fd.getDirectory(), fd.getFile());
+        try {
+            int n = AppData.exportSettings(out);
+            storageMessage(true, "Settings saved", n + " settings saved to " + out.getName()
+                    + ". Load it on any computer with Import.");
+        } catch (Exception e) {
+            storageMessage(false, "Couldn't save your settings", e.getMessage());
+        }
+    }
+
+    private void importPreferences() {
+        FileDialog fd = new FileDialog(frame(), "Load settings", FileDialog.LOAD);
+        fd.setDirectory(System.getProperty("user.home"));
+        fd.setVisible(true);
+        if (fd.getFile() == null) return;
+        java.io.File in = new java.io.File(fd.getDirectory(), fd.getFile());
+        if (!BigPopup.confirm(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.QUESTION, "Load these settings?",
+                "Your settings are replaced by the ones in " + in.getName()
+                        + ". Your games, sign-in and achievements stay as they are. Scaccomatto restarts to use them.",
+                "LOAD", "CANCEL")) return;
+        runThenRestart(() -> AppData.importSettings(in), "Couldn't load those settings");
+    }
+
+    private void clearLocalData() {
+        boolean signedIn = AccountSession.get() != null && AccountSession.get().profile() != null;
+        String what = "Your saved games and analysis, repertoire, player pictures, settings, achievements"
+                + " and everything else Scaccomatto keeps on this computer will be removed. This can't be undone.";
+        boolean keep;
+        if (signedIn) {
+            int c = BigPopup.show(this, BigPopup.Tone.DANGER, BigPopup.Icon.WARNING, "Clear local app data?",
+                    what + " Your account online isn't touched.", null,
+                    new String[] {"CANCEL", "KEEP SIGN-IN", "CLEAR ALL"}, 2, 0);
+            if (c == 0) return;
+            keep = c == 1;
+        } else {
+            if (!BigPopup.confirm(this, BigPopup.Tone.DANGER, BigPopup.Icon.WARNING, "Clear local app data?",
+                    what, "CLEAR", "CANCEL")) return;
+            keep = false;
+        }
+        runThenRestart(() -> AppData.clearAll(keep), "Couldn't clear everything");
+    }
+
+    private void info(String title, String text) {
+        BigPopup.info(this, BigPopup.Tone.PRIMARY, BigPopup.Icon.INFO, title, text, "Got it");
     }
 
     private JDialog dialog() {
@@ -2304,7 +2552,7 @@ public class SettingsScreen extends JPanel {
             + "\n"
             + "The bots, their characters and artwork, and Spell Chess were made for Scaccomatto.\n"
             + "\n"
-            + "Opening names come from the Lichess chess-openings list. The piece sets, fonts and emoji are other people's work, shared under open licences; see Licenses for who made them.\n"
+            + "Opening names come from the Lichess chess-openings list. The piece sets, fonts, emoji and country flags are other people's work, shared under open licences; see Licenses for who made them.\n"
             + "\n"
             + "Menu music, all from OpenGameArt.org and used under Creative Commons licences:\n"
             + "• \"Caketown\" by Matthew Pablo (CC BY-SA 3.0), opengameart.org/content/caketown-cuteplayful\n"
@@ -2312,7 +2560,7 @@ public class SettingsScreen extends JPanel {
             + "• \"Blueberries\" by Viktor Kraus, opengameart.org/content/blueberries\n"
             + "The tracks were converted to WAV and trimmed of silence at the ends; the music itself is unchanged.\n"
             + "\n"
-            + "Sound effects: the Three-check fuse and glass break come from Pixabay. The Spell Chess teleport and shield sounds were made for Scaccomatto.\n"
+            + "Sound effects: the Three-check fuse and glass break come from Pixabay. The Atomic explosion, the book's page-turn, opening and closing sounds, and the Spell Chess teleport and shield sounds were made for Scaccomatto.\n"
             + "\n"
             + "Thanks to everyone who played the early versions and said what was broken.\n"
             + "\n"
@@ -2330,10 +2578,16 @@ public class SettingsScreen extends JPanel {
             + "• Baloo 2, by the Baloo 2 Project Authors\n"
             + "• Inter, by the Inter Project Authors\n"
             + "• Cinzel, by the Cinzel Project Authors\n"
+            + "• Patrick Hand, by Patrick Wagesreiter (the handwriting in this book)\n"
             + "\n"
             + "Pictures\n"
             + "• Chat emoji: Twemoji, by Twitter, Inc and contributors (CC BY 4.0)\n"
             + "• Neo pieces: \"Celtic\", by Maurizio Monge (MIT License)\n"
+            + "• Chessnut pieces: by Alexis Luengas (Apache License 2.0)\n"
+            + "• Spatial, Eyes, Skulls and Prmi pieces: by Maurizio Monge (MIT License)\n"
+            + "• Papercut pieces: by Nikolay Anzarov (CC BY 4.0)\n"
+            + "• Cburnett pieces: by Colin M.L. Burnett, via Wikimedia Commons (BSD License)\n"
+            + "• Country flags: flag-icons, by Panayiotis Lipiridis (MIT License)\n"
             + "• Minimal pieces: \"Totoy\", by Kosal Sen, via lichess.org (CC BY 4.0)\n"
             + "\n"
             + "Data\n"
@@ -2388,13 +2642,13 @@ public class SettingsScreen extends JPanel {
             + "Internet games are passed between the two players through Google Firebase, a service we use for this. The first time you host or join a game, the app gets a random guest number from Firebase (no name, email or account). While a game is waiting for an opponent, Firebase holds its code, variant and clock. During the game it holds your guest name, your moves and any chat messages, just long enough to pass them on. Each message is removed once the other player has it, and the whole game is deleted when it ends. Unused guest numbers are deleted after 30 days. Like any website, Google's servers see your IP address when the app talks to them. We don't look at games or chat, and we don't keep them.\n"
             + "\n"
             + "If you make an account\n"
-            + "Accounts are optional and run on Google Firebase. We keep: your email address (to sign you in and to reset your password; it's never shown to other players), or your Google sign-in if you used that; your username and profile name; your picture if you add one; your rating and your number of wins, losses and draws from rated games; your settings and achievements, so they follow you to another computer; and which rated games have been counted. Other signed-in players can see your username, name, picture and rating, for example on the leaderboard or when you play them. Your password is handled by Google; we never see it.\n"
+            + "Accounts are optional and run on Google Firebase. We keep: your email address (to sign you in and to reset your password; it's never shown to other players), or your Google sign-in if you used that; your username and profile name; your picture if you add one; your country, if you picked one or let the game guess it (it's shown as a flag next to your name, and you can hide it in Settings > Online Play > Your country); your rating and your number of wins, losses and draws from rated games; your settings and achievements, so they follow you to another computer; and which rated games have been counted. Other signed-in players can see your username, name, picture, country flag and rating, for example on the leaderboard or when you play them. Your password is handled by Google; we never see it.\n"
             + "\n"
             + "Deleting your account\n"
             + "Settings > Privacy > Delete account removes your profile, picture, settings, achievements and sign-in for good. The only thing left is an unlinked list of game codes already counted, so the same game can't be counted twice.\n"
             + "\n"
             + "Friends\n"
-            + "If you add friends, we keep your friends list and any requests waiting for an answer. While the game is open, your friends can see that you're online (and whether you're in a game); set Online status to Nobody in Settings > Privacy to stop that. A challenge to a friend keeps the game's code, variant and clock until it's answered or two minutes pass. Profile visibility decides whether players who aren't your friends see your picture, join date and record, and whether you're on the leaderboard.\n"
+            + "If you add friends, we keep your friends list and any requests waiting for an answer. While the game is open, other signed-in players can see that you're online (and whether you're in a game): everyone if Online status is set to Everyone, only your friends if it's set to Friends. Set it to Nobody in Settings > Privacy to stop that. A challenge to a friend keeps the game's code, variant and clock until it's answered or two minutes pass. Profile visibility decides whether players who aren't your friends see your picture, join date and record, and whether you're on the leaderboard.\n"
             + "\n"
             + "Blocking and reporting\n"
             + "Your block list stays on your computer (and in your account, if you have one). If you report someone, the report goes to us with the reason, your note, and the moves and chat from that game, so we can check what happened. Only we can read reports; the player you reported isn't told who reported them. We keep a report until we've dealt with it, and for up to a year after if the player was banned. A banned player can't play online, change their profile or be rated.\n"

@@ -57,10 +57,21 @@ jobs:
             --win-upgrade-uuid 7c27d338-d9df-49a7-a747-aafaa13ef36c `
             --dest installers
           Rename-Item "installers/Scaccomatto-$version.exe" "Scaccomatto-Setup-$version.exe"
+          # also a no-install copy: unzip anywhere and run Scaccomatto.exe (for PCs where the setup won't run)
+          jpackage --type app-image `
+            --name Scaccomatto --app-version $version `
+            --vendor "Alekhine Studios" `
+            --input dist --main-jar "scaccomatto-$version.jar" --main-class Main `
+            --icon packaging/windows/scaccomatto.ico `
+            --add-modules java.se,jdk.crypto.ec,jdk.unsupported,jdk.localedata,jdk.zipfs `
+            --dest portable
+          Compress-Archive -Path portable/Scaccomatto -DestinationPath "installers/Scaccomatto-$version-Windows-portable.zip"
       - uses: actions/upload-artifact@v5
         with:
           name: windows
-          path: installers/*.exe
+          path: |
+            installers/*.exe
+            installers/*.zip
 
   linux:
     runs-on: ubuntu-22.04
@@ -117,7 +128,7 @@ jobs:
           TAG=v$VERSION
           gh release view "$TAG" -R "$REPO" > /dev/null 2>&1 || \
             gh release create "$TAG" -R "$REPO" --title "Scaccomatto $VERSION" --notes "Scaccomatto $VERSION"
-          gh release upload "$TAG" -R "$REPO" --clobber out/windows/*.exe out/linux/*.deb
+          gh release upload "$TAG" -R "$REPO" --clobber out/windows/*.exe out/windows/*.zip out/linux/*.deb
           # (in case it was left as a draft: drafts are invisible to visitors and the website)
           gh release edit "$TAG" -R "$REPO" --draft=false --tag "$TAG" --latest
           echo "Done: https://github.com/$REPO/releases/tag/$TAG"

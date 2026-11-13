@@ -78,7 +78,7 @@ public class ArgusEngine {
         try (java.io.InputStream in = ArgusEngine.class.getResourceAsStream("/assets/engine/argus.book")) {
             if (in == null) return null;
             byte[] bytes = in.readAllBytes();
-            java.io.File out = new java.io.File(new java.io.File(System.getProperty("user.home"), ".scaccomatto"), "argus.book");
+            java.io.File out = new java.io.File(AppData.dir(), "argus.book");
             // rewrite it whenever the app's own copy differs (a new version shipped a new book)
             if (!out.isFile() || !java.util.Arrays.equals(java.nio.file.Files.readAllBytes(out.toPath()), bytes)) {
                 out.getParentFile().mkdirs();

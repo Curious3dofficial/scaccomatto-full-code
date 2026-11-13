@@ -20,7 +20,7 @@ final class Repertoire {
     private Repertoire() { }
 
     private static final File FILE = new File(
-            new File(System.getProperty("user.home"), ".scaccomatto"), "repertoire.txt");
+            AppData.dir(), "repertoire.txt");
 
     private static final List<String> WHITE = new ArrayList<>();
     private static final List<String> BLACK = new ArrayList<>();
@@ -162,6 +162,22 @@ final class Repertoire {
         String joined = String.join(" ", line);
         List<String> list = white ? WHITE : BLACK;
         list.removeIf(l -> l.equals(joined) || l.startsWith(joined + " "));
+        rebuild();
+        save();
+        fire();
+    }
+
+    /** How many lines are saved, for both colours together. */
+    static synchronized int size() {
+        ensureLoaded();
+        return WHITE.size() + BLACK.size();
+    }
+
+    /** Removes every saved line (Settings > Storage & Data > Manage). */
+    static synchronized void clearAll() {
+        ensureLoaded();
+        WHITE.clear();
+        BLACK.clear();
         rebuild();
         save();
         fire();

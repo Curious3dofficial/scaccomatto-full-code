@@ -293,7 +293,7 @@ public class SettingsPanel extends JPanel {
                     new Row("Chat", null, chat, false).stacked(),
                     new Row("Confirm resigning", "Ask before you resign", resign, false),
                     new Row("Confirm draw offers", "Ask before offering a draw", draw, false),
-                    new Row("Focus mode", "Hide opponent's name and rating", focus, false));
+                    new Row("Focus mode", "Opponent shows as Anonymous: no rating, title, flag or picture", focus, false));
         }
 
         body.add(tailStrut);
@@ -1074,10 +1074,10 @@ public class SettingsPanel extends JPanel {
         JPanel head = new JPanel();
         head.setOpaque(false);
         head.setLayout(new BoxLayout(head, BoxLayout.Y_AXIS));
-        JLabel title = AnalysisTheme.title("KEYBOARD SHORTCUTS", k(34f));
+        JLabel title = AnalysisTheme.title("KEYBOARD SHORTCUTS", k(40f));
         title.setAlignmentX(LEFT_ALIGNMENT);
         JLabel sub = new JLabel("Work anywhere on the game screen");
-        sub.setFont(AnalysisTheme.medium(k(17f)));
+        sub.setFont(AnalysisTheme.medium(k(19f)));
         sub.setForeground(BODY);
         sub.setAlignmentX(LEFT_ALIGNMENT);
         head.add(title);
@@ -1097,30 +1097,38 @@ public class SettingsPanel extends JPanel {
             {"Back to the game", "Shift", "↑"},
             {"Cancel selection", "Esc"},
             {"Mute / unmute", "M"},
+            {"Volume up / down", "Hold M", "\u2191 \u2193"},
         };
-        JPanel table = new JPanel();
+        // two columns side by side (one long list left wide empty margins)
+        JPanel table = new JPanel(new GridLayout(1, 2, k(18), 0));
         table.setOpaque(false);
-        table.setLayout(new BoxLayout(table, BoxLayout.Y_AXIS));
-        for (int i = 0; i < hotkeys.length; i++) {
-            table.add(hotkeyRow(hotkeys[i], i == hotkeys.length - 1));
+        int half = (hotkeys.length + 1) / 2;
+        for (int col = 0; col < 2; col++) {
+            JPanel list = new JPanel();
+            list.setOpaque(false);
+            list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
+            int from = col * half, to = Math.min(hotkeys.length, from + half);
+            for (int i = from; i < to; i++) list.add(hotkeyRow(hotkeys[i], i == to - 1));
+            list.add(Box.createVerticalGlue());
+            JPanel card = new JPanel(new BorderLayout()) {
+                @Override protected void paintComponent(Graphics g) {
+                    Graphics2D g2 = AnalysisTheme.smooth(g);
+                    g2.setColor(GROUP);
+                    g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, k(18), k(18));
+                    g2.setColor(GROUP_EDGE);
+                    g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, k(18), k(18));
+                    g2.dispose();
+                }
+            };
+            card.setOpaque(false);
+            card.add(list);
+            table.add(card);
         }
-        JPanel tableCard = new JPanel(new BorderLayout()) {
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = AnalysisTheme.smooth(g);
-                g2.setColor(GROUP);
-                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, k(18), k(18));
-                g2.setColor(GROUP_EDGE);
-                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, k(18), k(18));
-                g2.dispose();
-            }
-        };
-        tableCard.setOpaque(false);
-        tableCard.add(table);
-        content.add(tableCard, BorderLayout.CENTER);
+        content.add(table, BorderLayout.CENTER);
 
         AnalysisTheme.Button done = new AnalysisTheme.Button("DONE", AnalysisTheme.Kind.PRIMARY, dialog::dispose);
-        done.setFont(AnalysisTheme.display(k(23f)));
-        done.setPreferredSize(new Dimension(k(220), k(62)));
+        done.setFont(AnalysisTheme.display(k(25f)));
+        done.setPreferredSize(new Dimension(k(260), k(66)));
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
         footer.setOpaque(false);
         footer.add(done);
@@ -1130,7 +1138,10 @@ public class SettingsPanel extends JPanel {
                 KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
         dialog.setContentPane(content);
         dialog.pack();
-        dialog.setSize(Math.max(dialog.getWidth(), k(640)), dialog.getHeight());
+        // as wide as most of the popup card (it's 16:9, so it has width to spare)
+        Rectangle scr0 = owner != null && owner.getGraphicsConfiguration() != null
+                ? owner.getGraphicsConfiguration().getBounds() : new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());
+        dialog.setSize(Math.max(dialog.getWidth(), Math.round(scr0.width * 0.64f)), dialog.getHeight());
         try {
             dialog.setShape(new RoundRectangle2D.Float(0, 0, dialog.getWidth(), dialog.getHeight(), k(36), k(36)));
         } catch (Exception ignored) {
@@ -1162,7 +1173,7 @@ public class SettingsPanel extends JPanel {
 
     /** "Flip board .......... [Ctrl] + [F]" */
     private JComponent hotkeyRow(String[] spec, boolean last) {
-        int h = k(54);
+        int h = k(64);
         JComponent row = new JComponent() {
             @Override protected void paintComponent(Graphics g) {
                 Graphics2D g2 = AnalysisTheme.smooth(g);
@@ -1171,14 +1182,14 @@ public class SettingsPanel extends JPanel {
                     g2.setColor(HAIRLINE);
                     g2.fillRect(k(20), h - 1, w - k(40), 1);
                 }
-                g2.setFont(AnalysisTheme.display(k(19f)));
+                g2.setFont(AnalysisTheme.display(k(22f)));
                 g2.setColor(TEXT);
                 FontMetrics fm = g2.getFontMetrics();
                 g2.drawString(spec[0], k(20), h / 2 + (fm.getAscent() - fm.getDescent()) / 2);
                 // key caps, right-aligned, joined by "+"
-                g2.setFont(AnalysisTheme.bold(k(15f)));
+                g2.setFont(AnalysisTheme.bold(k(17f)));
                 FontMetrics km = g2.getFontMetrics();
-                int capH = k(32), gap = k(8);
+                int capH = k(38), gap = k(8);
                 int total = 0;
                 for (int i = 1; i < spec.length; i++) {
                     total += Math.max(capH, km.stringWidth(spec[i]) + k(20));
@@ -1206,7 +1217,7 @@ public class SettingsPanel extends JPanel {
                 g2.dispose();
             }
         };
-        row.setPreferredSize(new Dimension(k(560), h));
+        row.setPreferredSize(new Dimension(k(520), h));
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
         return row;
     }

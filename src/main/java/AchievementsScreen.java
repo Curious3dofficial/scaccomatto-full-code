@@ -233,9 +233,14 @@ public class AchievementsScreen extends JPanel {
             return Integer.compare(Achievements.stars(b), Achievements.stars(a));
         });
         for (Achievements.Def d : shown) grid.add(new Card(d));
-        // the big red Reset button, at the very bottom under all the cards
-        grid.footer = resetButton;
-        grid.add(resetButton);
+        // the big red Reset button, at the very bottom under all the cards -- only on "All"
+        // (it resets everything, so it doesn't belong under one category)
+        if (filter == null) {
+            grid.footer = resetButton;
+            grid.add(resetButton);
+        } else {
+            grid.footer = null;
+        }
         header.repaint();
         grid.revalidate();
         grid.repaint();

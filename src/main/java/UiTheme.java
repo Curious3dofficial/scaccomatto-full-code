@@ -86,54 +86,6 @@ final class UiTheme {
     }
 
     /**
-     * {@link #setDark}, with the old look fading out over the new one in {@code frame},
-     * so the switch is a short smooth blend instead of a flash.
-     */
-    static void switchWithFade(javax.swing.JFrame frame, boolean dark) {
-        if (dark == DARK) return;
-        BufferedImage before = null;
-        javax.swing.JRootPane root = frame == null ? null : frame.getRootPane();
-        if (root != null && root.getWidth() > 0 && root.getHeight() > 0) {
-            before = new BufferedImage(root.getWidth(), root.getHeight(), BufferedImage.TYPE_INT_RGB);
-            java.awt.Graphics2D g = before.createGraphics();
-            root.paint(g);
-            g.dispose();
-        }
-        setDark(dark);
-        if (before == null) return;
-        final BufferedImage old = before;
-        final float[] alpha = {1f};
-        javax.swing.JComponent veil = new javax.swing.JComponent() {
-            @Override protected void paintComponent(java.awt.Graphics g0) {
-                java.awt.Graphics2D g = (java.awt.Graphics2D) g0.create();
-                g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, Math.max(0f, alpha[0])));
-                g.drawImage(old, 0, 0, null);
-                g.dispose();
-            }
-        };
-        java.awt.Component oldGlass = frame.getGlassPane();
-        frame.setGlassPane(veil);
-        veil.setVisible(true);
-        long start = System.nanoTime();
-        javax.swing.Timer t = AnimationTiming.createUiTimer(null);
-        t.addActionListener(e -> {
-            float p = Math.min(1f, (System.nanoTime() - start) / 1e6f / 380f);
-            alpha[0] = 1f - p * p * (3f - 2f * p);
-            veil.repaint();
-            if (p >= 1f) {
-                t.stop();
-                veil.setVisible(false);
-                if (frame.getGlassPane() == veil) {
-                    frame.setGlassPane(oldGlass);
-                    oldGlass.setVisible(false);
-                }
-                frame.repaint();
-            }
-        });
-        t.start();
-    }
-
-    /**
      * A borderless pop-up whose content is a rounded card: cut the window itself to the
      * card's rounded shape so its square corners don't show behind it. Does nothing for
      * a card that isn't the whole content of a pop-up window.

@@ -57,6 +57,10 @@ final class AppMenu extends JComponent {
     private final Timer ticker;
     private final float originX, originY;                // where it grows from (0..1 of its size)
     private JLayeredPane layers;
+    /** The header's picture (null: the initial) and status dot (null: none). */
+    private java.awt.image.BufferedImage picture;
+    private Color status;
+    private ChessTitle tag = ChessTitle.NONE;
     private AWTEventListener outside;
     private KeyEventDispatcher keys;
 
@@ -93,6 +97,21 @@ final class AppMenu extends JComponent {
      * small header (null: none); {@code note} is a muted line at the bottom (null: none).
      */
     static void show(Component invoker, int x, int y, String title, String subtitle, List<Item> items, String note) {
+        show(invoker, x, y, title, subtitle, items, note, null, null);
+    }
+
+    /**
+     * Same, with the player's picture in the header instead of their initial ({@code picture}
+     * null: the initial) and their online status as a dot on it ({@code status} null: none).
+     */
+    static void show(Component invoker, int x, int y, String title, String subtitle, List<Item> items, String note,
+                     java.awt.image.BufferedImage picture, Color status) {
+        show(invoker, x, y, title, subtitle, items, note, picture, status, ChessTitle.NONE);
+    }
+
+    /** Same, with the player's title tag (GM, IM...) before their name. */
+    static void show(Component invoker, int x, int y, String title, String subtitle, List<Item> items, String note,
+                     java.awt.image.BufferedImage picture, Color status, ChessTitle tag) {
         closeAny();
         Window w = invoker instanceof Window ? (Window) invoker : SwingUtilities.getWindowAncestor(invoker);
         if (!(w instanceof RootPaneContainer) || items.isEmpty()) return;
@@ -113,6 +132,9 @@ final class AppMenu extends JComponent {
         cy = Math.max(6, Math.min(layers.getHeight() - contentH - 6, cy));
 
         AppMenu menu = new AppMenu(title, subtitle, items, note, u, left ? 1f : 0f, up ? 1f : 0f);
+        menu.picture = picture;
+        menu.status = status;
+        menu.tag = tag == null ? ChessTitle.NONE : tag;
         menu.layers = layers;
         menu.setBounds(cx - sh, cy - sh, contentW + sh * 2, contentH + sh * 2);
         layers.add(menu, LAYER);
@@ -122,6 +144,23 @@ final class AppMenu extends JComponent {
         menu.animFrom = System.nanoTime();
         menu.ticker.start();
         SoundManager.playExtraSound("tap.wav");
+    }
+
+    /** {@code src} as a smooth {@code size} px circle (centre-cropped to a square). */
+    private static java.awt.image.BufferedImage round(java.awt.image.BufferedImage src, int size) {
+        size = Math.max(1, size);
+        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setColor(Color.WHITE);
+        g.fill(new java.awt.geom.Ellipse2D.Float(0, 0, size, size));
+        g.setComposite(AlphaComposite.SrcIn);
+        int side = Math.min(src.getWidth(), src.getHeight());
+        int sx = (src.getWidth() - side) / 2, sy = (src.getHeight() - side) / 2;
+        g.drawImage(src, 0, 0, size, size, sx, sy, sx + side, sy + side, null);
+        g.dispose();
+        return out;
     }
 
     /** Is this part of an open menu? (popups that close on outside clicks ask this.) */
@@ -311,13 +350,24 @@ final class AppMenu extends JComponent {
             int hx = c.x + s(16), hy = c.y + s(PAD);
             int d = s(36);
             int by = hy + (s(HEADER_H) - d) / 2;
-            g.setPaint(new GradientPaint(0, by, UiTheme.c(234, 182, 70), 0, by + d, UiTheme.c(196, 138, 40)));
-            g.fillOval(hx, by, d, d);
-            String letter = title.isBlank() ? "?" : title.trim().substring(0, 1).toUpperCase();
-            g.setFont(MainMenu.variantDisplayFont(d * 0.5f));
-            FontMetrics lf = g.getFontMetrics();
-            g.setColor(Color.WHITE);
-            g.drawString(letter, hx + (d - lf.stringWidth(letter)) / 2f, by + d / 2f + (lf.getAscent() - lf.getDescent()) / 2f);
+            if (picture != null) {
+                g.drawImage(round(picture, d), hx, by, null);
+            } else {
+                g.setPaint(new GradientPaint(0, by, UiTheme.c(234, 182, 70), 0, by + d, UiTheme.c(196, 138, 40)));
+                g.fillOval(hx, by, d, d);
+                String letter = title.isBlank() ? "?" : title.trim().substring(0, 1).toUpperCase();
+                g.setFont(MainMenu.variantDisplayFont(d * 0.5f));
+                FontMetrics lf = g.getFontMetrics();
+                g.setColor(Color.WHITE);
+                g.drawString(letter, hx + (d - lf.stringWidth(letter)) / 2f, by + d / 2f + (lf.getAscent() - lf.getDescent()) / 2f);
+            }
+            if (status != null) {                           // online status, bottom-right of the picture
+                float sz = d * 0.34f, sx = hx + d - sz * 0.8f, sy = by + d - sz * 0.8f;
+                g.setColor(cardBg);
+                g.fill(new java.awt.geom.Ellipse2D.Float(sx - s(2), sy - s(2), sz + s(4), sz + s(4)));
+                g.setColor(status);
+                g.fill(new java.awt.geom.Ellipse2D.Float(sx, sy, sz, sz));
+            }
             int tx = hx + d + s(12);
             int maxW = c.x + c.width - s(14) - tx;
             g.setColor(ink);
@@ -326,7 +376,15 @@ final class AppMenu extends JComponent {
             boolean two = subtitle != null && !subtitle.isBlank();
             float mid = hy + s(HEADER_H) / 2f;
             float tBase = two ? mid - s(2) : mid + (tf.getAscent() - tf.getDescent()) / 2f;
-            g.drawString(fit(title, tf, maxW), tx, tBase);
+            if (tag != ChessTitle.NONE) {                    // title tag before the name
+                float th = s(18);
+                int tw = tag.paint(g, tx, tBase - (tf.getAscent() - tf.getDescent()) / 2f, th) + s(7);
+                g.setColor(ink);
+                g.setFont(MainMenu.variantDisplayFont(s(19)));
+                g.drawString(fit(title, tf, maxW - tw), tx + tw, tBase);
+            } else {
+                g.drawString(fit(title, tf, maxW), tx, tBase);
+            }
             if (two) {
                 g.setFont(UiFonts.subtext(s(14)));
                 FontMetrics sf = g.getFontMetrics();

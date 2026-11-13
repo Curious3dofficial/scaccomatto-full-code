@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 final class OggMusic {
     private OggMusic() { }
 
-    private static final File DIR = new File(new File(System.getProperty("user.home"), ".scaccomatto"), "music");
+    private static final File DIR = new File(AppData.dir(), "music");
     /** Track name ("Theme 1.ogg") -> its ready .wav. */
     private static final Map<String, File> READY = new ConcurrentHashMap<>();
     private static volatile boolean started;

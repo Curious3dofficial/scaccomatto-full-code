@@ -617,7 +617,10 @@ public class NetworkManager {
         } else if (line.startsWith("ACCOUNT ")) {
             // FORMAT: ACCOUNT <account id or ->
             String id = line.substring(8).trim();
-            opponentUid = id.isEmpty() || "-".equals(id) || !id.matches("[A-Za-z0-9_-]{1,128}") ? null : id;
+            String uid = id.isEmpty() || "-".equals(id) || !id.matches("[A-Za-z0-9_-]{1,128}") ? null : id;
+            // a later "-" (they signed out?) doesn't wipe an account we already know
+            if (uid != null || opponentUid == null) opponentUid = uid;
+            System.err.println("Online: opponent account " + (opponentUid == null ? "none (guest)" : "known"));
             if (listener != null) listener.onPlayerInfo();
         } else if (line.startsWith("PLAYER ")) {
             // FORMAT: PLAYER <rating or -> <base64 name>
@@ -662,6 +665,9 @@ public class NetworkManager {
 
     /** Tell the other side who we are: rating (null = not signed in) and display name. */
     public void sendPlayerInfo(Double rating, String name) {
+        // which account we are goes along again too: if the first ACCOUNT line was missed
+        // (or sent before signing in finished), the other side still gets our picture and flag
+        if (relayMode) announceAccount();
         sendLine("PLAYER " + (rating == null ? "-" : String.valueOf(rating)) + " " + encode(name == null ? "" : name));
     }
 

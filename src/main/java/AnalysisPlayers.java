@@ -15,7 +15,7 @@ final class AnalysisPlayers {
     private AnalysisPlayers() { }
 
     private static final Preferences PREFS = Preferences.userNodeForPackage(AnalysisPlayers.class);
-    private static final File DIR = new File(System.getProperty("user.home"), ".scaccomatto");
+    private static final File DIR = AppData.dir();
     private static final String[] names = new String[2];
     private static final BufferedImage[] avatars = new BufferedImage[2];
     private static final boolean[] loaded = new boolean[2];
@@ -168,19 +168,6 @@ final class AnalysisPlayers {
 
     static void addListener(Runnable r) { if (r != null) listeners.add(r); }
     static void removeListener(Runnable r) { listeners.remove(r); }
-
-    /** Centre-crops any picture to a square and scales it to 256px. */
-    static BufferedImage squareCrop(BufferedImage src) {
-        if (src == null) return null;
-        int s = Math.min(src.getWidth(), src.getHeight());
-        BufferedImage sq = src.getSubimage((src.getWidth() - s) / 2, (src.getHeight() - s) / 2, s, s);
-        BufferedImage out = new BufferedImage(256, 256, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = out.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-        g.drawImage(sq.getScaledInstance(256, 256, Image.SCALE_SMOOTH), 0, 0, null);
-        g.dispose();
-        return out;
-    }
 
     /** A rounded-square avatar: the picture, or the name's first letter on the side's colour. */
     static void paint(Graphics2D g, int x, int y, int size, boolean white, BufferedImage avatar, String name) {

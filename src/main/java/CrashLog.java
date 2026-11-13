@@ -29,7 +29,7 @@ import java.util.Map;
 final class CrashLog {
     private CrashLog() { }
 
-    static final File DIR = new File(new File(System.getProperty("user.home"), ".scaccomatto"), "logs");
+    static final File DIR = new File(AppData.dir(), "logs");
     private static final int SAME_ERROR_MAX = 3;
     private static final long APP_LOG_MAX_BYTES = 2L * 1024 * 1024;
     private static final Map<String, Integer> SEEN = new HashMap<>();

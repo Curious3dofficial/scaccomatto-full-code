@@ -92,10 +92,6 @@ public final class Move {
         return f == CASTLE_KING || f == CASTLE_QUEEN;
     }
 
-    public static boolean isDoublePush(int move) {
-        return flags(move) == DOUBLE_PUSH;
-    }
-
     /** The piece a pawn becomes. Only meaningful when {@link #isPromotion} is true. */
     public static int promotionPiece(int move) {
         return Piece.KNIGHT + (flags(move) & 3);

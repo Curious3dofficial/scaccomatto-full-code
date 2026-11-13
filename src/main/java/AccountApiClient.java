@@ -48,9 +48,6 @@ public final class AccountApiClient {
     public record Session(String token, String expiresAt, Profile profile, String rememberToken) {
     }
 
-    public record OtpDelivery(String email, String expiresAt, String delivery) {
-    }
-
     public record RatingUpdate(
             Profile profile,
             String result,
@@ -88,7 +85,9 @@ public final class AccountApiClient {
     }
 
     /** Everyone starts here. */
-    static final double START_RATING = 1200;
+    static final double START_RATING = 200;
+    /** A rating never goes below this (losing at the bottom just keeps you here). */
+    static final double RATING_FLOOR = 100;
     /** How much one game can move a rating at most (the database rules allow up to 40). */
     static final double K_FACTOR = 32;
 
@@ -497,11 +496,16 @@ public final class AccountApiClient {
     /** Anyone's picture (e.g. your online opponent's), or null. */
     static byte[] avatarOf(String uid) {
         try {
-            Object v = FirebaseLink.get("avatars/" + uid);
-            return v instanceof String ? Base64.getDecoder().decode((String) v) : null;
+            return avatarOrThrow(uid);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** The picture, or null when they have none; throws when it couldn't be asked (try again). */
+    static byte[] avatarOrThrow(String uid) throws IOException {
+        Object v = FirebaseLink.get("avatars/" + uid);
+        return v instanceof String ? Base64.getDecoder().decode((String) v) : null;
     }
 
     /** Saves the profile picture: shrunk to 128 px and stored as a small JPEG. */
@@ -627,6 +631,7 @@ public final class AccountApiClient {
         double after = Math.round((before + K_FACTOR * (score - expected)) * 100) / 100.0;
         if ("win".equals(result) && after < before) after = before;
         if ("loss".equals(result) && after > before) after = before;
+        after = Math.max(Math.min(before, RATING_FLOOR), after);     // never below the floor
         String counter = "win".equals(result) ? "w" : "draw".equals(result) ? "d" : "l";
         Map<String, Object> claim = new LinkedHashMap<>();
         claim.put("players/" + me + "/rating", after);

@@ -1,76 +1,86 @@
-<p align="center"><img src="docs/img/wordmark.png" alt="Scaccomatto" width="520"></p>
+<p align="center"><img src="src/main/assets/headers/ScaccoWordmark.png" alt="Scaccomatto" width="520"></p>
 
 <p align="center"><b>Chess, with personality.</b><br>
-A free chess game for Windows and Linux by Alekhine Studios.</p>
+Made by Alekhine Studios, for Windows and Linux.</p>
 
-<p align="center"><a href="../../releases/latest"><b>Download the latest version</b></a></p>
+<p align="center"><a href="https://curious3dofficial.github.io/scaccomatto-full-site/"><b>Get it here</b></a></p>
 
-<p align="center"><img src="docs/img/boardroom.jpg" alt="Scaccomatto's Board Room" width="760"></p>
+## What it is
 
-## What's in it
+A chess game I've been building for a while. Normal chess, plus the weird stuff:
 
-- **Eight variants.** Classic, Chess960, King of the Hill, Three-check, Atomic, Fog of War and Duck Chess, with Spell Chess coming later.
-- **Bots with a story.** Each one plays its own way, from Gary, who grabs anything you leave hanging, up to Margot.
-- **Analysis and Game Review.** Load a game, step through it, and see which moves were good and which ones lost it.
-- **Play anyone, anywhere.** Send a friend a six-letter code, or let Join Game find you an opponent online.
-- **Friends.** Add friends, see who's online and challenge them to a game.
-- **Optional accounts.** Sign in with email or Google for a rating, a leaderboard spot, and achievements that follow you between computers.
-- **Achievements**, three piece sets, board themes, and light and dark mode.
+- **Seven variants:** Classic, Chess960, King of the Hill, Three-check, Atomic, Fog of War and Duck Chess. Spell Chess is on the way.
+- **Bots with actual personalities.** Gary will take anything you hang. Margot won't let you get away with much.
+- **Online play.** Send a friend a six-letter code, or hit Join Game and get matched with someone.
+- **Accounts if you want them.** Rating, leaderboard, friends, achievements that follow you around. You can also just play as a guest.
+- **Analysis and Game Review** to find out exactly where it went wrong.
+- Ten piece sets (one of them is cats), board themes, light and dark mode.
 
-The engine, **Argus**, was written from scratch for Scaccomatto. It plays every bot and runs the analysis.
+The engine, **Argus**, is written from scratch. It plays all the bots and does the analysis.
 
 ## Installing
 
-**Windows:** run `Scaccomatto-Setup-<version>.exe`. If Windows says "Windows protected your PC", click *More info*, then *Run anyway* (the installer isn't signed with a paid certificate yet).
+**Windows:** run `Scaccomatto-Setup-<version>.exe`. Windows will probably warn you because the installer isn't signed. Click *More info*, then *Run anyway*.
 
-**Linux (Debian, Ubuntu, Mint):**
+**Linux (Debian / Ubuntu / Mint):**
 
 ```bash
 sudo apt install ./scaccomatto_<version>_amd64.deb
 ```
 
-Both installers include their own Java, so there's nothing else to install.
+Java comes bundled, so that's it.
 
-## Building it yourself
+## Building it
 
-You need JDK 17 or newer and Maven.
+JDK 17+ and Maven.
 
 ```bash
-mvn package                 # builds target/scaccomatto-<version>.jar
+mvn package                 # target/scaccomatto-<version>.jar
 java -jar target/scaccomatto-<version>.jar
-bash build-installer.sh     # Linux .deb, in installers/
+bash build-installer.sh     # Linux .deb, ends up in installers/
 ```
 
-The game reads its Firebase settings from `src/main/assets/firebase.properties`, which stays on your computer (it's in `.gitignore`). The Windows build on GitHub gets the same file from a repository secret; set it once (and again whenever the file changes) with `gh secret set FIREBASE_PROPERTIES < src/main/assets/firebase.properties`.
+Don't run the build with sudo, or Maven can't clean up after itself next time.
 
-The Windows installer is built by GitHub Actions (`.github/workflows/windows-installer.yml`): run it from the Actions tab, or push a tag like `v1.0.1` to build it and attach it to a release. Before each release, raise the version in `pom.xml` and `AppVersion.java`, otherwise Windows treats the new installer as the same version.
+Firebase settings live in `src/main/assets/firebase.properties`. It's gitignored on purpose. The GitHub build gets it from the `FIREBASE_PROPERTIES` secret, so if the file changes, update the secret too:
 
-## Engine updates (full version only)
+```bash
+gh secret set FIREBASE_PROPERTIES < src/main/assets/firebase.properties
+```
 
-The full game keeps Argus up to date by itself. When you change the engine, run:
+## Releasing
+
+1. Bump the version in `pom.xml` and `AppVersion.java`.
+2. Push, then run `gh workflow run release-full.yml --repo Curious3dofficial/scaccomatto-full-code --ref master`. That builds the Windows and Linux installers on GitHub and puts them on scaccomatto-full-site.
+3. Once they're up, set `meta/latest` (and `meta/downloadUrl`) in the Firebase database so older copies show the "new version" note.
+
+## Engine updates
+
+The full game updates Argus by itself. After changing the engine:
 
 ```bash
 bash publish-argus.sh
 ```
 
-It builds Argus, checks it can find a move, signs it and uploads it to the `engine` release of scaccomatto-free-site. Every copy of the game checks for it in the background, tries it out (everything the game uses in Argus must still be there), and switches to it the next time it opens. If a new engine ever fails, the game goes back to the Argus it was built with. Scaccomatto Free never changes its engine.
+It builds Argus, makes sure it can still find a move, signs it and uploads it to the `engine` release on scaccomatto-free-site. Games pick it up in the background and switch over next launch. If the new one breaks, they fall back to the Argus they shipped with. (Scaccomatto Free never updates its engine.)
 
-One-time setup: `java tools/ArgusPublish.java keygen` makes the signing key in `~/.scaccomatto-signing/` (keep a backup, never commit it) and puts its public half in `ArgusBoot.java`. After each publish, commit `src/main/assets/engine/argus.version`.
+First time only: `java tools/ArgusPublish.java keygen` makes the signing key in `~/.scaccomatto-signing/`. Back it up and never commit it. After each publish, commit `src/main/assets/engine/argus.version`.
 
-## Project layout
+## What's where
 
-| Folder | What's in it |
+| Folder | |
 |---|---|
-| `src/main/java` | The game (Swing). `Main.java` starts it. |
-| `src/main/java/argus` | Argus, the chess engine |
-| `src/main/assets` | Pictures, sounds, music, fonts, the opening book |
-| `database.rules.json` | The Firebase database rules: paste into Realtime Database > Rules after changing them |
-| `docs` | The download website (GitHub Pages) |
-| `packaging` | Installer icon and the Windows build workflow |
+| `src/main/java` | The game. `Main.java` starts it. |
+| `src/main/java/argus` | Argus, the engine |
+| `src/main/assets` | Pictures, sounds, music, fonts, piece sets, the opening book |
+| `database.rules.json` | Firebase database rules. Paste into Realtime Database > Rules after changing them. |
+| `packaging/windows` | The Windows installer icon |
+| `.github/workflows` | The GitHub builds |
+| `tools`, `publish-argus.sh` | Engine publishing |
 
 ## Privacy and credits
 
-Without an account, nothing about you is kept anywhere but your own computer. Accounts and internet games run on Google Firebase; [docs/privacy.html](docs/privacy.html) lists exactly what's stored. Music, sounds, piece sets and fonts by other people are listed in [docs/credits.html](docs/credits.html) and in the app under Settings → About.
+No account means nothing about you leaves your computer. Accounts and online games run on Google Firebase. Exactly what gets stored is in the game under Settings > About > Privacy policy. Music, sounds, piece sets and fonts by other people are credited there too.
 
 ## Contact
 

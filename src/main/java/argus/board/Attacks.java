@@ -141,11 +141,6 @@ public final class Attacks {
         }
     }
 
-    /** True if {@code a} and {@code b} share a rank, file or diagonal. */
-    public static boolean aligned(int a, int b) {
-        return LINE[a][b] != 0;
-    }
-
     // ---- Leaper construction ----------------------------------------------
 
     private static void initLeapers() {

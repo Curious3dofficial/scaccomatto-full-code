@@ -17,7 +17,7 @@ public abstract class Piece {
     // (/assets/pieces/neo/wk.png ...). Every board draws through pieceImages, so
     // swapping the pictures here changes every board at once.
 
-    static final String[] SETS = {"Classic", "Neo", "Minimal"};
+    static final String[] SETS = {"Classic", "Neo", "Minimal", "Chessnut", "Spatial", "Papercut", "Cburnett", "Eyes", "Skulls", "Prmi"};
     private static volatile String loadedSet = "Classic";
 
     static {
@@ -34,7 +34,7 @@ public abstract class Piece {
         return "Classic".equals(set) ? "/assets/pieces/" + file : "/assets/pieces/" + set.toLowerCase() + "/" + file;
     }
 
-    /** The current set's name ("Classic", "Neo", "Minimal"). */
+    /** The current set's name ("Classic", "Neo", "Minimal", "Chessnut"...). */
     static String setName() { return loadedSet; }
 
     /** Switches every board to another piece set (missing pictures fall back to Classic). */

@@ -45,7 +45,7 @@ final class ArgusBoot {
     static final String MANIFEST_URL = System.getProperty("scaccomatto.argus.manifest",
             "https://github.com/Curious3dofficial/scaccomatto-free-site/releases/download/engine/argus.json");
 
-    static final File DIR = new File(new File(System.getProperty("user.home"), ".scaccomatto"), "engine");
+    static final File DIR = new File(AppData.dir(), "engine");
     private static final File BAD = new File(DIR, "bad.txt");
     private static final File LAUNCHING = new File(DIR, "launching.txt");
     /** Opening with a new engine and not getting going this many times in a row: drop it. */

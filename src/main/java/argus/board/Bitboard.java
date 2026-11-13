@@ -51,16 +51,6 @@ public final class Bitboard {
     /** Indexed by rank 0..7. */
     public static final long[] RANKS = {RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8};
 
-    /** The rank a pawn of the given colour sits on before its first move. */
-    public static long homeRank(int colour) {
-        return colour == Piece.WHITE ? RANK_2 : RANK_7;
-    }
-
-    /** The rank a pawn lands on after a double push (used to validate the push). */
-    public static long doublePushRank(int colour) {
-        return colour == Piece.WHITE ? RANK_4 : RANK_5;
-    }
-
     /** The rank a pawn promotes on. */
     public static long promotionRank(int colour) {
         return colour == Piece.WHITE ? RANK_8 : RANK_1;
@@ -84,11 +74,6 @@ public final class Bitboard {
         return bb & ~(1L << sq);
     }
 
-    /** Flip the bit at {@code sq}. Used constantly in make/unmake — it is its own inverse. */
-    public static long toggle(long bb, int sq) {
-        return bb ^ (1L << sq);
-    }
-
     // ---- Iteration ---------------------------------------------------------
 
     public static int count(long bb) {
@@ -98,10 +83,6 @@ public final class Bitboard {
     /** Index of the least significant set bit. Undefined for an empty board. */
     public static int lsb(long bb) {
         return Long.numberOfTrailingZeros(bb);
-    }
-
-    public static int msb(long bb) {
-        return 63 - Long.numberOfLeadingZeros(bb);
     }
 
     /**

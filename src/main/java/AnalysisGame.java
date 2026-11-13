@@ -290,7 +290,7 @@ public class AnalysisGame extends JFrame {
     // The whole tree (main line and every branch, as PGN) plus which move was on the
     // board, kept in ~/.scaccomatto so leaving the screen -- or the app -- loses nothing.
     private static final java.io.File SESSION_FILE = new java.io.File(
-            new java.io.File(System.getProperty("user.home"), ".scaccomatto"), "analysis-session.txt");
+            AppData.dir(), "analysis-session.txt");
     private Timer saveTimer;
     private boolean restoring;
 
@@ -1532,41 +1532,6 @@ public class AnalysisGame extends JFrame {
                 + "Analysis board, and stays in the review for next time.", null,
                 new String[] {"Discard", "Keep"}, 1, -1);
         return pick < 0 ? 0 : pick + 1;      // 0 = closed, 1 = discard, 2 = keep
-    }
-
-    /** The old window, kept aside. */
-    private int legacyAskKeepReviewMoves() {
-        JPanel card = new JPanel(new BorderLayout(0, 30));
-        card.setBorder(BorderFactory.createEmptyBorder(48, 56, 46, 56));
-        JPanel head = new JPanel();
-        head.setOpaque(false);
-        head.setLayout(new BoxLayout(head, BoxLayout.Y_AXIS));
-        JLabel t = AnalysisTheme.title("KEEP YOUR MOVES?", 40f);
-        t.setAlignmentX(Component.LEFT_ALIGNMENT);
-        AnalysisTheme.WrapText m = new AnalysisTheme.WrapText(
-                "You tried some moves during this review. Keep them? The line you're on comes over to the Analysis board, and stays in the review for next time.",
-                640, AnalysisTheme.text(22f), AnalysisTheme.TEXT_MUTED);
-        m.setAlignmentX(Component.LEFT_ALIGNMENT);
-        head.add(t);
-        head.add(Box.createVerticalStrut(16));
-        head.add(m);
-        card.add(head, BorderLayout.CENTER);
-
-        final int[] choice = {0};
-        JPanel buttons = new JPanel(new GridLayout(1, 2, 16, 0));
-        buttons.setOpaque(false);
-        buttons.setPreferredSize(new Dimension(10, 78));
-        AnalysisTheme.Button discard = new AnalysisTheme.Button("DISCARD", AnalysisTheme.Kind.MUTED,
-                () -> { choice[0] = 1; closeWindow(); });
-        discard.setFont(AnalysisTheme.display(25f));
-        AnalysisTheme.Button keep = new AnalysisTheme.Button("KEEP", AnalysisTheme.Kind.PRIMARY,
-                () -> { choice[0] = 2; closeWindow(); });
-        keep.setFont(AnalysisTheme.display(25f));
-        buttons.add(discard);
-        buttons.add(keep);
-        card.add(buttons, BorderLayout.SOUTH);
-        openWindow(card, null);
-        return choice[0];
     }
 
     private void goToMainPanel() {
@@ -2988,7 +2953,7 @@ public class AnalysisGame extends JFrame {
     private static void saveImportedCopy(String pgn) {
         if (!AppSettings.saveImportedGames() || pgn == null || pgn.isBlank()) return;
         try {
-            java.io.File dir = new java.io.File(System.getProperty("user.home"), ".scaccomatto/imports");
+            java.io.File dir = new java.io.File(AppData.dir(), "imports");
             dir.mkdirs();
             String stamp = new java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new java.util.Date());
             java.nio.file.Files.writeString(new java.io.File(dir, "import-" + stamp + ".pgn").toPath(), pgn.trim() + "\n");
@@ -3529,42 +3494,6 @@ public class AnalysisGame extends JFrame {
         }
         return BigPopup.confirm(overlayHost(), tone, BigPopup.iconFor(title, tone == BigPopup.Tone.DANGER),
                 title, message, confirmLabel, "Cancel");
-    }
-
-    /** The old window popup, kept aside (BigPopup is used now). */
-    private boolean legacyWindowDialog(String title, String message, String confirmLabel, AnalysisTheme.Kind kind) {
-        JPanel card = new JPanel(new BorderLayout(0, 30));
-        card.setBorder(BorderFactory.createEmptyBorder(48, 56, 46, 56));
-        JPanel head = new JPanel();
-        head.setOpaque(false);
-        head.setLayout(new BoxLayout(head, BoxLayout.Y_AXIS));
-        JLabel t = AnalysisTheme.title(title.toUpperCase(), 40f);
-        t.setAlignmentX(Component.LEFT_ALIGNMENT);
-        AnalysisTheme.WrapText m = new AnalysisTheme.WrapText(message, 640, AnalysisTheme.text(22f), AnalysisTheme.TEXT_MUTED);
-        m.setAlignmentX(Component.LEFT_ALIGNMENT);
-        head.add(t);
-        head.add(Box.createVerticalStrut(16));
-        head.add(m);
-        card.add(head, BorderLayout.CENTER);
-
-        final boolean[] confirmed = {false};
-        JPanel buttons = new JPanel(new GridLayout(1, confirmLabel == null ? 1 : 2, 16, 0));
-        buttons.setOpaque(false);
-        buttons.setPreferredSize(new Dimension(10, 78));
-        if (confirmLabel != null) {
-            AnalysisTheme.Button cancel = new AnalysisTheme.Button("CANCEL", AnalysisTheme.Kind.MUTED, this::closeWindow);
-            cancel.setFont(AnalysisTheme.display(25f));
-            buttons.add(cancel);
-        }
-        AnalysisTheme.Button ok = new AnalysisTheme.Button(
-                confirmLabel == null ? "GOT IT" : confirmLabel.toUpperCase(), kind,
-                () -> { confirmed[0] = true; closeWindow(); });
-        ok.setFont(AnalysisTheme.display(25f));
-        buttons.add(ok);
-        card.add(buttons, BorderLayout.SOUTH);
-
-        openWindow(card, null);
-        return confirmed[0];
     }
 
     /**

@@ -9,7 +9,7 @@
 final class AppVersion {
     private AppVersion() { }
 
-    static final String CURRENT = "1.1.0";
+    static final String CURRENT = "1.2.0";
 
     /** Whether {@code other} ("1.2.3") is a later version than this one. Junk counts as not newer. */
     static boolean isNewer(String other) {

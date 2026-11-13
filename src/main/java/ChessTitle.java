@@ -42,6 +42,18 @@ enum ChessTitle {
         }
     }
 
+    /**
+     * The title a rating earns: the highest open title whose rating it reaches (GM 2500,
+     * IM 2400, FM 2300, CM 2200), or NONE below 2200. The women's titles aren't handed
+     * out this way, since the app doesn't know who'd be eligible.
+     */
+    static ChessTitle forRating(double rating) {
+        for (ChessTitle t : new ChessTitle[] {GM, IM, FM, CM}) {
+            if (rating >= t.minRating) return t;
+        }
+        return NONE;
+    }
+
     /** chess.com's title red. */
     static final Color RED = new Color(158, 38, 37);
 

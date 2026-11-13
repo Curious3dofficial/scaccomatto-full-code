@@ -553,28 +553,6 @@ public final class Board {
         return sb.toString();
     }
 
-    /**
-     * Recompute the hash from scratch. Only used by the self-check in the perft
-     * driver: if this ever disagrees with the incrementally maintained {@link #key},
-     * a make/unmake pair has a missing XOR.
-     */
-    public long computeKey() {
-        long k = 0;
-        for (int sq = 0; sq < 64; sq++) {
-            if (mailbox[sq] != Piece.NONE) {
-                k ^= Zobrist.piece(colourAt(sq), mailbox[sq], sq);
-            }
-        }
-        if (sideToMove == Piece.BLACK) {
-            k ^= Zobrist.SIDE;
-        }
-        k ^= Zobrist.CASTLING[castling];
-        if (epSquare != Square.NONE) {
-            k ^= Zobrist.EP_FILE[Square.file(epSquare)];
-        }
-        return k;
-    }
-
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder(400);

@@ -134,10 +134,6 @@ public final class Search {
         this.listener = listener;
     }
 
-    public long nodesSearched() {
-        return nodes;
-    }
-
     /** Score of the last completed iteration, in centipawns from the mover's side. */
     public int lastScore() {
         return lastScore;

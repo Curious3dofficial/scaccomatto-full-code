@@ -336,6 +336,7 @@ public class ModeSelectScreen extends JPanel {
      * sequence begins moved, not the choreography within it.
      */
     private void startEntrance() {
+        MenuBackdrop.boardRoomShown();
         if (entranceDelayTimer != null && entranceDelayTimer.isRunning()) entranceDelayTimer.stop();
         Entrance.begin();   // a click from here on plays the rest of the entrance 3x as fast
         entranceDelayTimer = Entrance.after(ENTRANCE_DELAY_MS, e -> {
@@ -607,7 +608,8 @@ public class ModeSelectScreen extends JPanel {
             // Not clamped to [0,1] -- dampedBounce() deliberately swings
             // past both ends of that range; see its own comment.
             wordmarkShiftT = (float) dampedBounce(t);
-            paintWordmarkColumnNow();
+            if (MenuBackdrop.boardRoomDrop(t)) SmoothFade.paintNow(this);   // the blur finishes as the title lands
+            else paintWordmarkColumnNow();
             if (t >= 1.0) {
                 wordmarkShiftT = 1f;
                 wordmarkGlideTimer.stop();
@@ -650,6 +652,7 @@ public class ModeSelectScreen extends JPanel {
      * right as the fade starts, so the whole exit reads as one motion.
      */
     private void startBackTransition() {
+        MenuBackdrop.backToTitle(BACK_TRANSITION_FADE_MS + BACK_TRANSITION_HOLD_MS);   // sharp again by the time the title is back
         setAllButtonsEnabled(false);
         for (ModeButton b : buttons) b.resetHover();
         backButton.resetHover();
@@ -1146,6 +1149,7 @@ public class ModeSelectScreen extends JPanel {
             bgPicture = SmoothFade.gradient(w, h, BG_TOP, BG_BOTTOM, getGraphicsConfiguration());
         }
         g2.drawImage(bgPicture, 0, 0, null);
+        MenuBackdrop.paint(this, g2);    // the menu picture, blurred here
 
         // Both the wordmark and the "Board Room" heading below fade together
         // via headerFadeAlpha -- see startBackTransition() for where that's

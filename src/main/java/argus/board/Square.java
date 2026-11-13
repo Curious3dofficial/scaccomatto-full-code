@@ -50,15 +50,6 @@ public final class Square {
         return (rank << 3) | file;
     }
 
-    /** Mirror vertically: a1 becomes a8. Used to reuse white's tables for black. */
-    public static int flipRank(int sq) {
-        return sq ^ 56;
-    }
-
-    public static boolean isValid(int sq) {
-        return sq >= 0 && sq < COUNT;
-    }
-
     /** Chebyshev distance — the number of king moves between two squares. */
     public static int distance(int a, int b) {
         return Math.max(Math.abs(file(a) - file(b)), Math.abs(rank(a) - rank(b)));

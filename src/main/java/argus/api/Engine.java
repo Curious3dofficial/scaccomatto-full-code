@@ -160,31 +160,9 @@ public final class Engine implements AutoCloseable {
         this.book = argus.book.Book.load(file);
     }
 
-    public synchronized boolean hasBook() {
-        return !book.isEmpty();
-    }
-
     /** A book move for the position currently loaded, or {@link Move#NONE}. */
     private int bookMoveForCurrentPosition() {
         return book.isEmpty() ? Move.NONE : book.probe(board);
-    }
-
-    /**
-     * The book's own recommendation for a position, in UCI, or null if it has no
-     * opinion -- including when no book was ever loaded via {@link #loadBook}, which
-     * is a normal state, not an error.
-     *
-     * <p>This is a weighted RANDOM draw among every legal book move recorded for the
-     * position (see {@link argus.book.Book#probe} -- that is deliberate, so the engine
-     * doesn't play the exact same book line every game), which makes it the wrong check
-     * for "was this played move a book move": a real book move with lower weight than
-     * some sibling would often, correctly, not be what a single draw returns. Use {@link
-     * #isBookMove} for that question instead.
-     */
-    public synchronized String bookMove(String fen) {
-        setFen(fen);
-        int move = bookMoveForCurrentPosition();
-        return move == Move.NONE ? null : Move.toUci(move);
     }
 
     /**
@@ -221,12 +199,6 @@ public final class Engine implements AutoCloseable {
             return Move.toUci(fromBook);
         }
         return uci(search.think(board, SearchLimits.forDepth(depth)));
-    }
-
-    /** Best move within a time budget rather than a depth. */
-    public synchronized String bestMoveInTime(String fen, long milliseconds) {
-        setFen(fen);
-        return uci(search.think(board, SearchLimits.forTime(milliseconds)));
     }
 
     /**
@@ -363,13 +335,6 @@ public final class Engine implements AutoCloseable {
         return describe(move, search.lastScore(), joinUci(search.principalVariation()));
     }
 
-    /** Evaluate within a time budget rather than to a depth. */
-    public synchronized Evaluation analyseInTime(String fen, long milliseconds) {
-        setFen(fen);
-        int move = search.think(board, SearchLimits.forTime(milliseconds));
-        return describe(move, search.lastScore(), joinUci(search.principalVariation()));
-    }
-
     /**
      * The top {@code count} moves, ranked, each with its own score and continuation.
      *
@@ -464,11 +429,6 @@ public final class Engine implements AutoCloseable {
 
     // ---- Position handling -------------------------------------------------
 
-    /** The position currently loaded, as FEN. */
-    public synchronized String currentFen() {
-        return board.toFen();
-    }
-
     /**
      * The position that results from playing some moves, as FEN.
      *
@@ -496,13 +456,6 @@ public final class Engine implements AutoCloseable {
             }
         }
         return board.toFen();
-    }
-
-    /** Is there a legal move at all, or is the game over? */
-    public synchronized boolean hasLegalMove(String fen) {
-        setFen(fen);
-        MoveGen.generate(board, scratch);
-        return scratch.size > 0;
     }
 
     /** True when the side to move has no legal move and is in check. */

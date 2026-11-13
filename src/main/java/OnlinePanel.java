@@ -473,6 +473,7 @@ public class OnlinePanel extends JPanel {
     protected void paintComponent(Graphics graphics) {
         super.paintComponent(graphics);
         MainMenu.paintCachedGradient(this, graphics, BG_TOP, BG_BOTTOM);   // a ready-made picture: cheap every frame
+        MenuBackdrop.paintBlurred(this, graphics);
     }
 
     @Override

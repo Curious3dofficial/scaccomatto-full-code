@@ -31,14 +31,15 @@ final class SpinnerLoader extends JComponent {
     private static final Color GREY = new Color(0x8E, 0x87, 0x7C);
     private static final int FADE_MS = 280;
 
-    private final boolean dark;
+    /** 0 = the Light look, 1 = the Dark look, in between while it crossfades from one to the other. */
+    private float look;
     private float alpha;
     private final long born = System.nanoTime();
     private final Timer ticker;
     private Timer fader;
 
     private SpinnerLoader(boolean dark, float startAlpha) {
-        this.dark = dark;
+        this.look = dark ? 1f : 0f;
         this.alpha = startAlpha;
         setOpaque(false);
         // swallow the mouse so nothing underneath can be clicked while loading
@@ -127,17 +128,17 @@ final class SpinnerLoader extends JComponent {
         g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, Math.min(1f, alpha)));
 
         int w = getWidth(), h = getHeight();
-        g.setColor(dark ? UiTheme.BG : IVORY);
+        g.setColor(mix(IVORY, UiTheme.BG, look));
         g.fillRect(0, 0, w, h);
 
-        Color ink = dark ? UiTheme.ACCENT : GREY;
+        Color ink = mix(GREY, UiTheme.ACCENT, look);
         float d = diameter();
         float stroke = d * 0.10f;
         float x = (w - d) / 2f, y = (h - d) / 2f;
         g.setStroke(new BasicStroke(stroke, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 
         // faint full ring underneath
-        g.setColor(new Color(ink.getRed(), ink.getGreen(), ink.getBlue(), dark ? 50 : 45));
+        g.setColor(new Color(ink.getRed(), ink.getGreen(), ink.getBlue(), Math.round(45 + 5 * look)));
         g.draw(new Arc2D.Float(x, y, d, d, 0, 360, Arc2D.OPEN));
 
         // The moving arc. The whole thing turns at a steady speed; on top of that its
@@ -170,12 +171,116 @@ final class SpinnerLoader extends JComponent {
         return new java.awt.Rectangle((getWidth() - d) / 2, (getHeight() - d) / 2, d, d);
     }
 
+    private static Color mix(Color a, Color b, float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return new Color(Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
+                Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
+    }
+
+    /** Crossfades the cover (background and spinner) to the other look, then runs {@code done}. */
+    private void lookTo(float target, Runnable done) {
+        if (fader != null) fader.stop();
+        float from = look;
+        long start = System.nanoTime();
+        fader = new Timer(15, e -> {
+            float t = Math.min(1f, (System.nanoTime() - start) / 1e6f / LOOK_MS);
+            float eased = t * t * (3f - 2f * t);
+            look = from + (target - from) * eased;
+            repaint();
+            if (t >= 1f) {
+                ((Timer) e.getSource()).stop();
+                if (done != null) done.run();
+            }
+        });
+        fader.start();
+    }
+
+    private static final int LOOK_MS = 420;
+
     /** Smooth start, smooth stop. */
     private static double ease(double t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
 
     // ── switching theme ─────────────────────────────────────────────────────
+
+    /**
+     * The live Light / Dark switch, all crossfades: the app fades into a loading cover in
+     * the look it's in now, the cover (and its spinner) fades into the other look, the
+     * switch happens underneath, and the cover fades away onto the app in its new look.
+     */
+    static void coverWhileSwitching(JFrame frame, boolean fromDark, boolean toDark, Runnable work) {
+        final SpinnerLoader[] l = new SpinnerLoader[1];
+        l[0] = install(frame, fromDark, 0f, () -> {
+            Timer settle = new Timer(220, e0 -> l[0].lookTo(toDark ? 1f : 0f, () -> {
+                if (work != null) {
+                    try { work.run(); } catch (RuntimeException ignored) { }
+                }
+                Timer hold = new Timer(380, e -> l[0].hide(null));
+                hold.setRepeats(false);
+                hold.start();
+            }));
+            settle.setRepeats(false);
+            settle.start();
+        });
+    }
+
+    /**
+     * Starts the app again so a change to its files or settings is picked up everywhere:
+     * the window is covered (or stays covered, if it already is), a fresh copy starts behind
+     * the cover and opens on Settings > {@code section}, and then this one closes.
+     * {@code onFail} runs (after the cover fades away) if the new copy couldn't start.
+     */
+    static void restart(JFrame frame, String section, Runnable onFail) {
+        SpinnerLoader l = frame.getGlassPane() instanceof SpinnerLoader && frame.getGlassPane().isVisible()
+                ? (SpinnerLoader) frame.getGlassPane() : install(frame, UiTheme.DARK, 0f, null);
+        Runnable go = () -> {
+            File handoff;
+            Process child;
+            try {
+                handoff = File.createTempFile("scaccomatto-restart", ".ready");
+                handoff.delete();
+                Map<String, String> env = new HashMap<>();
+                env.put(ENV_RESUME, "settings:" + (UiTheme.DARK ? "dark" : "light") + ":" + section);
+                env.put(ENV_HANDOFF, handoff.getAbsolutePath());
+                child = UiTheme.startNewCopy(env);
+            } catch (Exception e) {
+                child = null;
+                handoff = null;
+            }
+            if (child == null) {
+                l.hide(onFail);
+                return;
+            }
+            final File ready = handoff;
+            final Process p = child;
+            Thread waiter = new Thread(() -> {
+                long deadline = System.currentTimeMillis() + 30_000;
+                while (System.currentTimeMillis() < deadline) {
+                    if (ready.exists()) break;
+                    if (!p.isAlive()) {
+                        SwingUtilities.invokeLater(() -> l.hide(onFail));
+                        return;
+                    }
+                    try { Thread.sleep(50); } catch (InterruptedException ignored) { return; }
+                }
+                ready.delete();
+                System.exit(0);
+            }, "app-restart");
+            waiter.setDaemon(true);
+            waiter.start();
+        };
+        if (l.alpha >= 1f) go.run(); else l.fadeTo(1f, go);
+    }
+
+    /** The Settings section a restart asked to come back to ("storage"...), or null. */
+    static String resumeSection() {
+        String r = System.getenv(ENV_RESUME);
+        if (r == null) return null;
+        String[] parts = r.split(":");
+        return parts.length >= 3 ? parts[2] : null;
+    }
 
     private static final String ENV_RESUME = "SCACCOMATTO_RESUME";
     private static final String ENV_HANDOFF = "SCACCOMATTO_HANDOFF";

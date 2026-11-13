@@ -21,6 +21,13 @@ public class SoundManager {
         }
     }
     private static final Set<SoundHandle> activeSounds = ConcurrentHashMap.newKeySet();
+    /** Runs music fades (see SoundHandle.fadeOutAndStop), apart from the screen's timers. */
+    private static final java.util.concurrent.ScheduledExecutorService FADER =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "music-fade");
+                t.setDaemon(true);
+                return t;
+            });
     // looping music, so a volume change in Settings reaches it while it plays
     private static final Set<SoundHandle> musicHandles = ConcurrentHashMap.newKeySet();
 
@@ -96,19 +103,30 @@ public class SoundManager {
             if (c == null || ms <= 0) { stop(); return; }
             final float from = targetVolume;
             final long startedAt = System.nanoTime();
-            javax.swing.Timer t = AnimationTiming.createUiTimer(null);
-            t.addActionListener(e -> {
-                if (stopped || clip != c) { t.stop(); return; }
-                float p = AnimationTiming.progress(startedAt, ms);
-                // a gentle S-curve down, so it never drops suddenly
-                float level = (float) (0.5 + 0.5 * Math.cos(Math.PI * p));
-                if (!silencedByGlobalMute) setClipVolume(c, Math.max(0f, from * level));
-                if (p >= 1f) {
-                    t.stop();
-                    stop();
+            // On its own little timer thread, not the screen's: while a board is being built
+            // the screen is busy for a moment, and a fade tied to it froze part-way and then
+            // cut off. This one keeps easing down on schedule whatever the screen is doing.
+            java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>> task =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            task.set(FADER.scheduleAtFixedRate(() -> {
+                try {
+                    if (stopped || clip != c) { cancel(task); return; }
+                    float p = Math.min(1f, (System.nanoTime() - startedAt) / 1_000_000f / ms);
+                    // a gentle S-curve down, so it never drops suddenly
+                    float level = (float) (0.5 + 0.5 * Math.cos(Math.PI * p));
+                    if (!silencedByGlobalMute) setClipVolume(c, Math.max(0f, from * level));
+                    if (p >= 1f) {
+                        cancel(task);
+                        stop();
+                    }
+                } catch (Throwable ignored) {
                 }
-            });
-            t.start();
+            }, 5, 10, java.util.concurrent.TimeUnit.MILLISECONDS));
+        }
+
+        private static void cancel(java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>> task) {
+            java.util.concurrent.ScheduledFuture<?> f = task.get();
+            if (f != null) f.cancel(false);
         }
 
         /** Immediately stop and release the sound. Safe to call more than once. */

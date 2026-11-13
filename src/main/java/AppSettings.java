@@ -23,6 +23,9 @@ final class AppSettings {
     private static final Preferences ROOT = Preferences.userNodeForPackage(AppSettings.class);
     private static final Preferences NODE = ROOT.node("appSettings");
 
+    /** The app's main settings place (where the in-game panel's settings and the groups live). */
+    static Preferences root() { return ROOT; }
+
     private static final List<Runnable> LISTENERS = new ArrayList<>();
 
     static void addListener(Runnable r) { if (r != null) LISTENERS.add(r); }
@@ -231,6 +234,18 @@ final class AppSettings {
     static boolean confirmResign() { return bool("confirmResign", true); }
     static boolean confirmDraw() { return bool("confirmDraw", true); }
     static boolean focusMode() { return bool("focusMode", false); }
+
+    /** Settings > Online play > Show country flags: a flag at the end of each player's name online. */
+    static boolean showFlags() { return bool("showFlags", true); }
+
+    /**
+     * Settings > Online play > Reconnect after a brief connection loss: on, a dropped game
+     * pauses and waits for the connection to come back; off, it ends straight away.
+     */
+    static boolean autoReconnect() { return bool("autoReconnect", true); }
+
+    /** Settings > Notifications > Turn reminders: a nudge when it's your move in a long online game. */
+    static boolean turnReminders() { return bool("turnReminders", true); }
 
     // ── Analysis & review ────────────────────────────────────────────────────
 

@@ -23,6 +23,7 @@ final class Friends {
     static final class Friend {
         String uid, name, username;
         Double rating;
+
         boolean online, playing;
     }
 
@@ -201,6 +202,21 @@ final class Friends {
         FirebaseLink.update(both);
     }
 
+    /**
+     * Whether a player is online, and if so whether they're in a game: {online, playing}.
+     * Null if it can't be seen (they've kept their Online status to friends, or to nobody).
+     */
+    static boolean[] presence(String uid) {
+        try {
+            Map<String, Object> o = FirebaseLink.asMap(FirebaseLink.get("online/" + uid));
+            long at = FirebaseLink.num(o.get("at"), 0);
+            boolean on = at > 0 && FirebaseLink.serverNow() - at < ONLINE_WINDOW_MS;
+            return new boolean[] {on, on && Boolean.TRUE.equals(o.get("playing"))};
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     // ── "I'm online" ────────────────────────────────────────────────────────
 
     private static java.util.Timer presenceTimer;
@@ -222,12 +238,18 @@ final class Friends {
         presenceTimer.schedule(new java.util.TimerTask() {
             @Override public void run() {
                 if (!FirebaseLink.signedInToAccount()) { cancel(); return; }
+                Map<String, Object> o = new LinkedHashMap<>();
+                o.put("at", FirebaseLink.SERVER_TIME);
+                o.put("playing", playing);
+                // who may see it: Online status "Everyone" lets any signed-in player (the
+                // leaderboard...), "Friends" only friends
+                o.put("vis", "Everyone".equals(AppSettings.onlineStatusVisibility()) ? "everyone" : "friends");
                 try {
-                    Map<String, Object> o = new LinkedHashMap<>();
-                    o.put("at", FirebaseLink.SERVER_TIME);
-                    o.put("playing", playing);
                     FirebaseLink.put("online/" + FirebaseLink.uid(), o);
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    // database rules from before "vis" existed: write it the old way
+                    o.remove("vis");
+                    try { FirebaseLink.put("online/" + FirebaseLink.uid(), o); } catch (Exception ignored) { }
                 }
             }
         }, 0, 60_000);

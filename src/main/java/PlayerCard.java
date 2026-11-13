@@ -33,6 +33,8 @@ final class PlayerCard {
         Supplier<List<String>> moves;
         Supplier<List<ChatLog.Entry>> chat;
         Runnable leaveGame;       // back to the menus (Challenge after the game)
+        /** Focus mode: shown as "Anonymous", rating "???" (Block and Report still work). */
+        boolean anonymous;
     }
 
     private static final Color CARD = UiTheme.c(255, 253, 248);
@@ -104,13 +106,21 @@ final class PlayerCard {
         name.setForeground(INK);
         JLabel line = new JLabel(info.accountId == null
                 ? (info.playerId == null ? "Playing on your network" : "Guest · not signed in")
-                : "Rating " + (info.rating == null ? "–" : AccountApiClient.displayRating(info.rating)));
+                : "Rating " + (info.anonymous ? "???" : info.rating == null ? "–" : AccountApiClient.displayRating(info.rating)));
         line.setFont(UiFonts.subtext(15f));
         line.setForeground(MUTED);
         JLabel record = new JLabel(" ");
         record.setFont(UiFonts.subtext(15f));
         who.add(Box.createVerticalGlue());
-        who.add(name);
+        // their title tag (GM, IM...), earned by their rating, just left of the name
+        TitleTagLabel tag = new TitleTagLabel(22, 8);
+        if (info.accountId != null) tag.setRating(info.rating);
+        Box nameLine = Box.createHorizontalBox();
+        tag.setAlignmentY(0.5f);
+        name.setAlignmentY(0.5f);
+        nameLine.add(tag);
+        nameLine.add(name);
+        who.add(nameLine);
         who.add(Box.createVerticalStrut(4));
         who.add(line);
         who.add(Box.createVerticalStrut(4));
@@ -296,48 +306,8 @@ final class PlayerCard {
             ReportDialog.open(game, info);
         }));
         AppMenu.show(under, 0, under.getHeight() + 4, info.name, null, menu,
-                online ? null : "Block and Report work in internet games");
-    }
-
-    /** The old JPopupMenu version, kept aside (AppMenu is used now). */
-    private static void legacyShowMenu(Component under, Window cardWindow, Info info) {
-        SoundManager.playExtraSound("tap.wav");
-        JPopupMenu menu = new JPopupMenu();
-        // its own little window: the card is drawn on the game window's top layer, so a menu
-        // drawn in the window would end up underneath it
-        menu.setLightWeightPopupEnabled(false);
-        menu.setBorder(BorderFactory.createLineBorder(EDGE));
-        menu.setBackground(CARD);
-        boolean online = info.playerId != null;
-        boolean muted = info.net != null && info.net.isChatMuted();
-        boolean blocked = Moderation.isBlocked(info.playerId);
-        if (!blocked) {
-            menu.add(item(muted ? "Unmute chat" : "Mute chat", Glyph.MUTE, true, () -> {
-                if (info.net != null) info.net.setChatMuted(!muted);
-            }));
-        }
-        menu.add(item(blocked ? "Unblock" : "Block", Glyph.BLOCK, online, () -> {
-            if (blocked) {
-                Moderation.setBlocked(info.playerId, info.name, false);
-            } else if (confirm(cardWindow, "Block " + info.name + "?",
-                    "You won't see their chat, and Join Game won't match you with them again. "
-                            + "You can unblock them in Settings > Privacy.", "Block")) {
-                Moderation.setBlocked(info.playerId, info.name, true);
-            }
-        }));
-        menu.add(item("Report", Glyph.REPORT, online, () -> {
-            Window game = cardWindow.getOwner();
-            cardWindow.dispose();
-            ReportDialog.open(game, info);
-        }));
-        if (!online) {
-            JLabel why = new JLabel("  Block and Report work in internet games");
-            why.setFont(UiFonts.subtext(13f));
-            why.setForeground(MUTED);
-            why.setBorder(new EmptyBorder(4, 8, 6, 8));
-            menu.add(why);
-        }
-        menu.show(under, 0, under.getHeight() + 4);
+                online ? null : "Block and Report work in internet games", null, null,
+                info.accountId != null && info.rating != null ? ChessTitle.forRating(info.rating) : ChessTitle.NONE);
     }
 
     static JMenuItem item(String text, Glyph glyph, boolean enabled, Runnable action) {
@@ -467,33 +437,6 @@ final class PlayerCard {
     /** A message with one OK button. */
     static void confirmOnly(Window owner, String title, String text) {
         BigPopup.info(owner, BigPopup.toneFor(title), BigPopup.iconFor(title, false), title, text, "Got it");
-    }
-
-    /** The old note, kept aside. */
-    static void legacyConfirmOnly(Window owner, String title, String text) {
-        JDialog d = new BigPopup.InDialog(owner, title, Dialog.ModalityType.APPLICATION_MODAL);
-        d.setUndecorated(true);
-        JPanel c = roundPanel();
-        c.setLayout(new BorderLayout(0, 16));
-        c.setBorder(new EmptyBorder(24, 26, 22, 26));
-        JLabel t = new JLabel(title);
-        t.setFont(MainMenu.variantDisplayFont(24f));
-        t.setForeground(INK);
-        c.add(t, BorderLayout.NORTH);
-        JLabel body = new JLabel("<html><div style='width:330px'>" + text + "</div></html>");
-        body.setFont(UiFonts.subtext(16f));
-        body.setForeground(MUTED);
-        c.add(body, BorderLayout.CENTER);
-        CardButton ok = new CardButton("OK", true);
-        ok.addActionListener(e -> d.dispose());
-        c.add(ok, BorderLayout.SOUTH);
-        d.setContentPane(c);
-        d.pack();
-        try { d.setShape(new RoundRectangle2D.Float(0, 0, d.getWidth(), d.getHeight(), 22, 22)); } catch (Exception ignored) { }
-        d.setLocationRelativeTo(owner);
-        d.getRootPane().registerKeyboardAction(e -> d.dispose(),
-                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        d.setVisible(true);
     }
 
     static JPanel roundPanel() {

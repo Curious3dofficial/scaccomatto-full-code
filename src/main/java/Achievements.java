@@ -103,13 +103,13 @@ final class Achievements {
         def("lesson_perfect", L, "Top of the Class", "Finish {n} lesson{s} without a mistake.", "lessonsPerfect", 1, 5, 15, "icon:lessons.png");
 
         def("variety", V, "Variety Pack", "Finish multiplayer games in {n} different variant{s}.", "variantsPlayed", 1, 4, 7, "trophy");
-        def("v_960", V, "Shuffled", "Finish {n} multiplayer game{s} of Chess960.", "v.960", 1, 5, 15, "piece:K");
-        def("v_koth", V, "Hilltop", "Finish {n} multiplayer game{s} of King of the Hill.", "v.koth", 1, 5, 15, "piece:K");
-        def("v_3check", V, "Three Strikes", "Finish {n} multiplayer game{s} of Three-check.", "v.3check", 1, 5, 15, "piece:Q");
-        def("v_atomic", V, "Kaboom", "Finish {n} multiplayer game{s} of Atomic.", "v.atomic", 1, 5, 15, "piece:B");
-        def("v_spell", V, "Spellbound", "Finish {n} multiplayer game{s} of Spell Chess.", "v.spell", 1, 5, 15, "icon:star-filled.png");
-        def("v_fog", V, "Into the Fog", "Finish {n} multiplayer game{s} of Fog of War.", "v.fog", 1, 5, 15, "icon:eye.png");
-        def("v_duck", V, "Quack", "Finish {n} multiplayer game{s} of Duck Chess.", "v.duck", 1, 5, 15, "piece:N");
+        def("v_960", V, "Shuffled", "Finish {n} multiplayer game{s} of Chess960.", "v.960", 1, 5, 15, "mode:960.png");
+        def("v_koth", V, "Hilltop", "Finish {n} multiplayer game{s} of King of the Hill.", "v.koth", 1, 5, 15, "mode:kinghill.png");
+        def("v_3check", V, "Three Strikes", "Finish {n} multiplayer game{s} of Three-check.", "v.3check", 1, 5, 15, "mode:3checks.png");
+        def("v_atomic", V, "Kaboom", "Finish {n} multiplayer game{s} of Atomic.", "v.atomic", 1, 5, 15, "mode:atomic.png");
+        def("v_spell", V, "Spellbound", "Finish {n} multiplayer game{s} of Spell Chess.", "v.spell", 1, 5, 15, "mode:spellchess.png");
+        def("v_fog", V, "Into the Fog", "Finish {n} multiplayer game{s} of Fog of War.", "v.fog", 1, 5, 15, "mode:fogofwar.png");
+        def("v_duck", V, "Quack", "Finish {n} multiplayer game{s} of Duck Chess.", "v.duck", 1, 5, 15, "mode:duck.png");
         def("en_passant", V, "Holy Hell", "Capture en passant {n} time{s} in multiplayer.", "enPassant", 1, 5, 15, "piece:P");
         def("promote", V, "Coronation", "Promote to a queen {n} time{s} in multiplayer.", "promoQ", 1, 5, 20, "piece:Q");
         def("underpromote", V, "Knighted", "Promote to a knight {n} time{s} in multiplayer.", "promoN", 1, 3, 10, "piece:N");
@@ -429,16 +429,6 @@ final class Achievements {
     static void onBranchExplored() { }
     static void onPgnImported()    { }
 
-    /** For the puzzles screen, once puzzles can be played. */
-    static void onPuzzleFinished(boolean solved, boolean usedHint) {
-        if (!solved) { setCount("puzzleStreak", 0); return; }
-        add("puzzles", 1);
-        int streak = count("puzzleStreak") + 1;
-        setCount("puzzleStreak", streak);
-        raise("bestPuzzleStreak", streak);
-        if (!usedHint) add("puzzlesNoHint", 1);
-    }
-
     // ── badge artwork ────────────────────────────────────────────────────────────
 
     private static final Map<String, BufferedImage> ICONS = new LinkedHashMap<>();
@@ -459,6 +449,10 @@ final class Achievements {
                 if (url != null) out = AnalysisTheme.downscale(javax.imageio.ImageIO.read(url), size);
             } else if (d.icon.startsWith("move:")) {
                 out = AnalysisTheme.logo(Review.MoveClass.valueOf(d.icon.substring(5)), size);
+            } else if (d.icon.startsWith("mode:")) {
+                // the game mode's own logo, in full colour (white background taken off)
+                java.net.URL url = Achievements.class.getResource("/assets/achievements/" + d.icon.substring(5));
+                if (url != null) out = AnalysisTheme.downscale(javax.imageio.ImageIO.read(url), size);
             } else if (d.icon.equals("trophy")) {
                 java.net.URL url = Achievements.class.getResource("/assets/icons/trophy.png");
                 if (url != null) out = whiten(AnalysisTheme.downscale(javax.imageio.ImageIO.read(url), size));
@@ -494,7 +488,8 @@ final class Achievements {
         g2.setColor(new Color(255, 255, 255, unlocked ? 110 : 70));
         int inset = Math.round(size * 0.08f);
         g2.drawOval(x + inset, y + inset, size - inset * 2, size - inset * 2);
-        int gs = Math.round(size * (d.icon.startsWith("piece:") ? 0.62f : d.icon.startsWith("move:") ? 0.56f : 0.46f));
+        int gs = Math.round(size * (d.icon.startsWith("piece:") ? 0.62f : d.icon.startsWith("mode:") ? 0.64f
+                : d.icon.startsWith("move:") ? 0.56f : 0.46f));
         BufferedImage glyph = glyph(d, gs);
         if (glyph != null) {
             if (!unlocked) g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.75f));
@@ -576,6 +571,11 @@ final class Achievements {
         private java.awt.image.BufferedImage picture;
         private static final float IN_MS = 560, HOLD_MS = 2800, OUT_MS = 460;
         private static final int CARD_W = 760, CARD_H = 168, TOP = 26, SHADOW = 16;
+        /** Drawn at this size (the card is designed at 760 x 168): a compact corner toast. */
+        private static final float K = 0.6f;
+        private static final int RIGHT = 24;                 // gap to the window's right edge
+        private static int pw() { return Math.round((CARD_W + SHADOW * 2) * K); }
+        private static int ph() { return Math.round((CARD_H + SHADOW * 2) * K); }
 
         static void show(Def d, int stars) {
             QUEUE.add(d);
@@ -621,26 +621,27 @@ final class Achievements {
 
         private float elapsed() { return (System.nanoTime() - start) / 1_000_000f; }
 
-        /** Where the card is now: 0 = fully up out of sight, 1 = resting at the top. */
+        /** Where the card is now: 0 = off the right edge, 1 = resting in the top-right corner. */
         private float shown() {
             float t = elapsed();
             if (t < IN_MS) {
                 float x = t / IN_MS;
-                return 1f - (float) Math.pow(1 - x, 3);          // drops fast, eases to rest
+                return 1f - (float) Math.pow(1 - x, 3);          // slides in fast, eases to rest
             }
             if (t < IN_MS + HOLD_MS) return 1f;
             float x = Math.min(1f, (t - IN_MS - HOLD_MS) / OUT_MS);
-            return 1f - x * x * x;                              // lifts off slowly, speeds away
+            return 1f - x * x * x;                              // leaves slowly, speeds off to the right
         }
 
-        /** Top centre of the window, at the height the animation has reached. */
+        /** Top-right corner of the window, as far in from the right as the animation has reached. */
         private void place() {
             Container p = getParent();
             if (p == null) return;
-            int w = CARD_W + SHADOW * 2, h = CARD_H + SHADOW * 2;
-            int restY = TOP - SHADOW;
-            int y = Math.round(-h + (restY + h) * shown());
-            setBounds((p.getWidth() - w) / 2, y, w, h);
+            int w = pw(), h = ph();
+            int y = Math.round(TOP - SHADOW * K);
+            int restX = p.getWidth() - w - RIGHT + Math.round(SHADOW * K);
+            int x = Math.round(p.getWidth() + (restX - p.getWidth()) * shown());
+            setBounds(x, y, w, h);
         }
 
         private void tick() {
@@ -669,7 +670,7 @@ final class Achievements {
 
         /** The whole card, shadow included, drawn once. */
         private java.awt.image.BufferedImage makePicture(GraphicsConfiguration gc) {
-            int W = CARD_W + SHADOW * 2, H = CARD_H + SHADOW * 2;
+            int W = pw(), H = ph();
             java.awt.image.BufferedImage img = gc != null
                     ? gc.createCompatibleImage(W, H, Transparency.TRANSLUCENT)
                     : new java.awt.image.BufferedImage(W, H, java.awt.image.BufferedImage.TYPE_INT_ARGB);
@@ -678,6 +679,7 @@ final class Achievements {
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
             g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            g2.scale(K, K);                                     // designed big, drawn compact
             // soft shadow
             for (int i = 0; i < 8; i++) {
                 g2.setColor(new Color(25, 18, 10, 14 - i));

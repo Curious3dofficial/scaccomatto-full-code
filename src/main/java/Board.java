@@ -100,6 +100,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         /** Atomic: just the blast (flash, shake, cloud) -- no bomber or falling nuke before it. */
         boolean noPlane;
         float cloudScale = 1f;
+        /** How big the flash of the blast is (Atomic's is bigger). */
+        float flashScale = 1f;
         FireballImpactFx(int row, int col, long now, long durationMs, Piece victimPiece, boolean shadowTopToBottom) {
             this.row = row;
             this.col = col;
@@ -346,16 +348,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         new float[] {6f, 6f, 6f, 0f},
         null
     );
-    private static final RescaleOp FIREBALL_SMOKE_BLACK_TINT = new RescaleOp(
-        new float[] {0f, 0f, 0f, 1.0f},
-        new float[] {0f, 0f, 0f, 0f},
-        null
-    );
-    private static final RescaleOp FIREBALL_SMALL_SMOKE_DARK_TINT = new RescaleOp(
-        new float[] {0.48f, 0.46f, 0.46f, 1.0f},
-        new float[] {3f, 3f, 3f, 0f},
-        null
-    );
 
     private static final int SMOKE_TINT_CACHE_STEPS = 48;
     private static final Map<String, RescaleOp> SMOKE_TINT_CACHE = new HashMap<>();
@@ -431,7 +423,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private static final long URIEL_RESURRECTION_MS = 1250L;
     private static final String URIEL_RESURRECTION_SOUND = "heaven.wav";
     private static final int THREE_CHECK_RESULT_EXTRA_DELAY_MS = 260;
-    private static final String DEFAULT_PIECE_EXPLOSION_SOUND = "explosion.mp3";
+    private static final String DEFAULT_PIECE_EXPLOSION_SOUND = "explosion.wav";
     private static final String SPELL_CHESS_PLANE_SOUND = "plane.mp3";
     private static final String SPELL_CHESS_CRASH_SOUND = "crash1_iQ0TDVZ9.mp3";
     private static final String SPELL_CHESS_NUKE_SOUND = "nuked.mp3";
@@ -530,6 +522,13 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         for (int i = 0; i < boardStates.size() - 1; i++) {
             Piece[][] fromState = boardStates.get(i);
             Piece[][] toState = boardStates.get(i + 1);
+            int[] rec = i + 1 < stateMoves.size() ? stateMoves.get(i + 1) : null;
+            if (rec != null) {                  // the move as it was played (always right, Atomic too)
+                String uci = toUciSquare(rec[1], rec[0]) + toUciSquare(rec[3], rec[2]);
+                if (rec.length > 4 && rec[4] != 0) uci += (char) rec[4];
+                moves.add(uci);
+                continue;
+            }
             int[] m = inferTransitionMove(fromState, toState);
             if (m == null) continue;
             int sr = m[0], sc = m[1], tr = m[2], tc = m[3];
@@ -575,6 +574,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
             }
         }
         boardStates.add(stateCopy);
+        stateMoves.add(pendingMove);
+        pendingMove = null;
         threeCheckStates.add(new int[] { whiteChecksDelivered, blackChecksDelivered });
         moveHistoryFEN.add(generateFEN());
         currentStateIndex = boardStates.size() - 1;
@@ -891,8 +892,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private int duckAnimToCol = -1;
     private long duckAnimStartMs = 0L;
     private static final long DUCK_MOVE_ANIM_MS = 180L;
-    /** Online: the opponent's duck glides a little slower, so you can see where it went. */
-    private static final long REMOTE_DUCK_MOVE_ANIM_MS = 360L;
     private long duckAnimMs = DUCK_MOVE_ANIM_MS;
     private int whiteChecksDelivered = 0;
     private int blackChecksDelivered = 0;
@@ -1006,6 +1005,15 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
     private ArrayList<String> moveHistoryFEN = new ArrayList<>();
     private ArrayList<Piece[][]> boardStates = new ArrayList<>();
+    /**
+     * The move that led to each saved position ({from row, from col, to row, to col,
+     * promotion letter or 0}), or null where it isn't known (the start, a Chess960 castle...).
+     * Needed because a move can't always be worked out by comparing two positions: in
+     * Atomic a capture blows up both pieces, so the piece that moved isn't anywhere after.
+     */
+    private final ArrayList<int[]> stateMoves = new ArrayList<>();
+    /** The move being made right now, for the next saved position. */
+    private int[] pendingMove;
     private ArrayList<int[]> threeCheckStates = new ArrayList<>();
     private Map<String, Integer> positionCounts = new HashMap<>();
     private int halfmoveClock = 0;
@@ -1046,6 +1054,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         resetThreeCheckState();
         resetDuckState();
         boardStates.clear();
+        stateMoves.clear();
+        pendingMove = null;
         threeCheckStates.clear();
         moveHistoryFEN.clear();
         positionCounts.clear();
@@ -2696,15 +2706,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         gf.dispose();
     }
 
-    private void startAtomicExplosionFx(int centerRow, int centerCol) {
-        if (!inBounds(centerRow, centerCol)) return;
-        ensureExplosionOverlayFramesLoaded();
-        if (explosionOverlayFrames.isEmpty()) return;
-        long durationMs = getExplosionDurationMs();
-        atomicExplosionFx.add(new AtomicExplosionFx(centerRow, centerCol, System.currentTimeMillis(), durationMs));
-        ensureExplosionFxTimerRunning();
-    }
-
     /** Three-check: the king that blew up (hidden, then fading back in), or null. */
     private Piece threeCheckFadeKing;
     /** When it started fading back in (0 = still hidden). */
@@ -2906,8 +2907,10 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
      * and the mushroom cloud -- starting right at the moment of impact (no bomber, no
      * falling nuke).
      */
-    /** Atomic's mushroom cloud: 1.5x the area of Spell Chess's (so 1.22x as wide and tall). */
-    private static final float ATOMIC_CLOUD_SCALE = (float) Math.sqrt(1.5);
+    /** Atomic's mushroom cloud: 1.5x the size it was (which was 1.5x the area of Spell Chess's). */
+    private static final float ATOMIC_CLOUD_SCALE = (float) Math.sqrt(1.5) * 1.5f;
+    /** Atomic's blast flash: 1.5x the Spell Chess nuke's. */
+    private static final float ATOMIC_FLASH_SCALE = 1.5f;
 
     private void startAtomicNukeFx(int row, int col) {
         if (!inBounds(row, col)) return;
@@ -2924,6 +2927,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                 durationMs, null, false);
         fx.noPlane = true;
         fx.cloudScale = ATOMIC_CLOUD_SCALE;
+        fx.flashScale = ATOMIC_FLASH_SCALE;
         fireballImpactFx.add(fx);
         ensureExplosionFxTimerRunning();
     }
@@ -3611,7 +3615,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                             ? fireballImpactFlashSoftSprite
                             : fireballImpactFlashSprite;
                         BufferedImage whiteSprite = fireballImpactFlashSprite;
-                        float baseH = Math.max(1f, unit * 8.6f);
+                        float baseH = Math.max(1f, unit * 8.6f * fx.flashScale);
                         float aspect = glowSprite.getWidth() / (float) Math.max(1, glowSprite.getHeight());
                         float drawH = Math.max(1f, baseH * shrink);
                         float drawW = Math.max(1f, drawH * aspect);
@@ -3675,7 +3679,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                         );
                         gCore.dispose();
                     } else if (hasFlash) {
-                        float r = Math.max(1f, unit * 3.52f * shrink);
+                        float r = Math.max(1f, unit * 3.52f * shrink * fx.flashScale);
                         go.setColor(new Color(255, 255, 255, 255));
                         go.fillOval(Math.round(cx - r), Math.round(cy - r), Math.round(r * 2f), Math.round(r * 2f));
                     }
@@ -7577,6 +7581,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private void branchFromHere() {
         int keep = currentStateIndex + 1;
         while (boardStates.size() > keep) boardStates.remove(boardStates.size() - 1);
+        while (stateMoves.size() > keep) stateMoves.remove(stateMoves.size() - 1);
         while (threeCheckStates.size() > keep) threeCheckStates.remove(threeCheckStates.size() - 1);
         while (moveHistoryFEN.size() > keep) moveHistoryFEN.remove(moveHistoryFEN.size() - 1);
         viewingPast = false;
@@ -7760,6 +7765,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
 
     /** A new game (or a takeback): the badges go. */
     public void clearEndBadges() {
+        atomicKingGoneAt[0] = null;
+        atomicKingGoneAt[1] = null;
         if (endBadge == null) return;
         endBadge = null;
         endBadgeWhiteWon = null;
@@ -7769,8 +7776,30 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     private static final float END_BADGE_IN_MS = 200f, END_BADGE_HOLD_MS = 1100f, END_BADGE_OUT_MS = 260f;
     private static final float END_BADGE_POP_MS = END_BADGE_IN_MS + END_BADGE_HOLD_MS + END_BADGE_OUT_MS;
 
+    /**
+     * Atomic: a move that blows up a king ends with "*" (and never a check sign). Looks at
+     * the position after the move ({@code fenAfter}): a side with no king left lost it.
+     */
+    static String markKingBlownUp(String san, String fenAfter, boolean atomic) {
+        if (!atomic || san == null || fenAfter == null) return san;
+        String placement = fenAfter.split(" ")[0];
+        if (placement.indexOf('K') >= 0 && placement.indexOf('k') >= 0) return san;
+        return san.replaceAll("[+#*]+$", "") + "*";
+    }
+
+    /** Atomic: where each king (white, black) was blown up this game, or null. */
+    private final int[][] atomicKingGoneAt = new int[2][];
+
     /** Where a king is (row, col) -- or, if it's gone (captured, blown up), where it last stood. */
     private int[] kingSquareForBadge(boolean white) {
+        int[] blown = atomicKingGoneAt[white ? 0 : 1];
+        if (blown != null && isAtomicMode()) {
+            boolean stillThere = false;
+            for (int r = 0; r < 8 && !stillThere; r++)
+                for (int c = 0; c < 8; c++)
+                    if (board[r][c] instanceof King && board[r][c].isWhite() == white) { stillThere = true; break; }
+            if (!stillThere) return blown.clone();
+        }
         for (int r = 0; r < 8; r++)
             for (int c = 0; c < 8; c++)
                 if (board[r][c] instanceof King && board[r][c].isWhite() == white) return new int[] {r, c};
@@ -7836,11 +7865,6 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
     /** How long until the squares have filled in (the result window opens after that). */
     public int endBadgeTakeoverMs() {
         return endBadge == null ? 0 : Math.round(END_BADGE_IN_MS + 120);
-    }
-
-    /** How long the whole badge sequence takes (the result window waits for it). */
-    public int endBadgeSequenceMs() {
-        return endBadge == null ? 0 : Math.round(END_BADGE_POP_MS);
     }
 
     private void drawEndBadges(Graphics gIn) {
@@ -8087,6 +8111,8 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         
         // Clear history
         boardStates.clear();
+        stateMoves.clear();
+        pendingMove = null;
         threeCheckStates.clear();
         moveHistoryFEN.clear();
         positionCounts.clear();
@@ -8339,6 +8365,7 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         // Remove the last move(s) from history
         for (int i = 0; i < movesToRemove && boardStates.size() > 1; i++) {
             boardStates.remove(boardStates.size() - 1);
+            if (stateMoves.size() > boardStates.size()) stateMoves.remove(stateMoves.size() - 1);
             if (moveHistoryFEN.size() > 0) {
                 moveHistoryFEN.remove(moveHistoryFEN.size() - 1);
             }
@@ -8423,6 +8450,16 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                     }
                 }
             }
+        }
+
+        // the move as it was played, when it's known (Atomic captures can't be found otherwise)
+        int[] rec = toIdx == fromIdx + 1 && toIdx < stateMoves.size() ? stateMoves.get(toIdx)
+                : fromIdx == toIdx + 1 && fromIdx < stateMoves.size() && stateMoves.get(fromIdx) != null
+                        ? new int[] {stateMoves.get(fromIdx)[2], stateMoves.get(fromIdx)[3], stateMoves.get(fromIdx)[0], stateMoves.get(fromIdx)[1]}
+                        : null;
+        if (rec != null && fromState[rec[0]][rec[1]] != null) {
+            sr = rec[0]; sc = rec[1]; tr = rec[2]; tc = rec[3];
+            moving = fromState[sr][sc];
         }
 
         // Fallback: detect move by board-diff signature when references don't match
@@ -8544,7 +8581,9 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
         int[] m = null;
         if (idx > 0 && idx < boardStates.size()) {
             try {
-                m = inferTransitionMove(boardStates.get(idx - 1), boardStates.get(idx));
+                int[] rec = idx < stateMoves.size() ? stateMoves.get(idx) : null;
+                m = rec != null ? new int[] {rec[0], rec[1], rec[2], rec[3]}
+                        : inferTransitionMove(boardStates.get(idx - 1), boardStates.get(idx));
             } catch (RuntimeException ignored) {
             }
         }
@@ -9325,8 +9364,17 @@ private ArrayList<Arrow> arrows = new ArrayList<>();
                 Color dotPrev = g2d.getColor();
                 // Premove dots: a soft whitish grey so they read as "queued", not live.
                 if (premoveSelectionShown) g2d.setColor(new Color(214, 214, 214));
-                g2d.fillOval(displayCol * SQUARE_SIZE + SQUARE_SIZE/2 - dotSize/2, 
-                            displayRow * SQUARE_SIZE + SQUARE_SIZE/2 - dotSize/2, dotSize, dotSize);
+                // a true circle: smoothed edges and exact (not rounded-off) position, so it
+                // stays round at any board size
+                Object aaWas = g2d.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+                Object scWas = g2d.getRenderingHint(RenderingHints.KEY_STROKE_CONTROL);
+                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2d.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+                float dotR = dotSize / 2f;
+                g2d.fill(new java.awt.geom.Ellipse2D.Float(displayCol * SQUARE_SIZE + SQUARE_SIZE / 2f - dotR,
+                        displayRow * SQUARE_SIZE + SQUARE_SIZE / 2f - dotR, dotSize, dotSize));
+                if (aaWas != null) g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, aaWas);
+                if (scWas != null) g2d.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, scWas);
                 g2d.setColor(dotPrev);
             }
         }
@@ -10797,7 +10845,10 @@ g2.dispose();
         if (capturedPiece == null) return true;
 
         startAtomicNukeFx(captureRow, captureCol);     // the Spell Chess nuke's blast
-        SoundManager.playExtraSound("explosion.mp3");
+        // the bang lands 0.3 s in, with the blast rather than the moment the piece arrives
+        javax.swing.Timer bang = new javax.swing.Timer(300, e -> SoundManager.playExtraSound("explosion.wav"));
+        bang.setRepeats(false);
+        bang.start();
         applyAtomicExplosionAt(captureRow, captureCol);
         return true;      // even if it took your own king with it: that's a loss, not an illegal move
     }
@@ -10811,6 +10862,9 @@ g2.dispose();
 
                 boolean isCenter = (r == centerRow && c == centerCol);
                 if (!isCenter && p instanceof Pawn) continue;
+                // a king going up: remember where it was blown up (its end-of-game badge goes
+                // there -- the capture square, if the king itself made the capture)
+                if (p instanceof King) atomicKingGoneAt[p.isWhite() ? 0 : 1] = new int[] {r, c};
                 board[r][c] = null;
             }
         }
@@ -11020,12 +11074,17 @@ g2.dispose();
     private void commitMoveInner(Piece movingPiece, int fromRow, int fromCol, int toRow, int toCol,
                             Piece[][] boardBeforeMove, Piece capturedPiece,
                             boolean isCastling, boolean isEnPassant, String promotionSymbol) {
+        // remembered with the position this move leads to (see stateMoves)
+        char promo = promotionSymbol == null || promotionSymbol.isEmpty() ? 0
+                : Character.toLowerCase(promotionSymbol.charAt(0));
+        pendingMove = new int[] {fromRow, fromCol, toRow, toCol, promo};
         if (gameController != null && gameController.getMoveHistoryPanel() != null) {
             String notation = MoveNotation.getMoveNotation(
                     movingPiece, fromRow, fromCol, toRow, toCol,
                     boardBeforeMove, capturedPiece != null, isCastling, isEnPassant);
             if (!promotionSymbol.isEmpty())
                 notation = MoveNotation.addPromotion(notation, promotionSymbol);
+            notation = markKingBlownUp(notation, generateFEN(), isAtomicMode());
             gameController.getMoveHistoryPanel().addMove(notation, whiteTurn);
         } else if (analysisMode && analysisGame != null) {
             // The analysis screen keeps a variation tree rather than a flat list, so it

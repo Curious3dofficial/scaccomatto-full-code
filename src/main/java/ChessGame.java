@@ -141,6 +141,21 @@ public class ChessGame extends JFrame {
     private AnalysisTheme.IconButton botTakebackButton;
     private final Runnable takebackSettingListener = () -> SwingUtilities.invokeLater(this::refreshBotTakebackButton);
 
+    /**
+     * Focus mode switched on or off during a game (the board's settings panel): the
+     * opponent's name, rating, title, flag and picture change straight away.
+     */
+    private boolean focusShown = AppSettings.focusMode();
+    private final Runnable focusSettingListener = () -> SwingUtilities.invokeLater(this::onFocusSettingChanged);
+
+    private void onFocusSettingChanged() {
+        if (!onlineMode || AppSettings.focusMode() == focusShown) return;
+        focusShown = AppSettings.focusMode();
+        setupPlayerLabels();
+        if (chatPanel != null) chatPanel.setOpponentName(opponentChatName());
+        repaint();
+    }
+
     private void refreshBotTakebackButton() {
         if (botTakebackButton == null) return;
         boolean show = AppSettings.allowBotTakebacks();
@@ -529,6 +544,11 @@ public class ChessGame extends JFrame {
 
         private void endGameAndReturnToMenu(String message) {
         stopTimer();
+        // a flag fell: the game is over here too, like any other ending -- nothing more can be
+        // played on the board, so its last position stays the game's last position (and the
+        // badges are back on it when you step through the moves and return to the end)
+        setGameOverState();
+        if (board != null) board.setInputEnabled(false, false);
         recordTerminalResult("Game Over", message);
         sendGameResultIfNeeded("Game Over", message);
 
@@ -1254,7 +1274,16 @@ public class ChessGame extends JFrame {
         JPanel textStack = new JPanel();
         textStack.setOpaque(false);
         textStack.setLayout(new BoxLayout(textStack, BoxLayout.Y_AXIS));
-        textStack.add(nameLabel);
+        // the title tag (GM, IM...) sits just left of the name; the flag at its right end
+        TitleTagLabel tag = new TitleTagLabel(Math.max(14, Math.round(nameLabel.getFont().getSize2D() * 0.82f)), 8);
+        if (bottomRow) bottomTitleTag = tag; else topTitleTag = tag;
+        Box nameLine = Box.createHorizontalBox();
+        tag.setAlignmentY(0.5f);
+        nameLabel.setAlignmentY(0.5f);
+        nameLine.add(tag);
+        nameLine.add(nameLabel);
+        nameLine.setAlignmentX(nameLabel.getAlignmentX());
+        textStack.add(nameLine);
         textStack.add(capturedStrip);
         row.add(textStack);
 
@@ -1641,6 +1670,8 @@ public class ChessGame extends JFrame {
             JPanel bottomLeftInfo = createPlayerCard(bottomPlayerLabel, bottomCapturedStrip);
             LocalPlayers.removeListener(localPlayersListener);
             LocalPlayers.addListener(localPlayersListener);
+            AppSettings.removeListener(focusSettingListener);
+            AppSettings.addListener(focusSettingListener);
             if (offlinePlayersEditable()) {
                 // against a bot your row shows the same name the result window and Review use
                 bottomPlayerLabel.setText(isBotGame ? localHumanName() : LocalPlayers.name(true));
@@ -3010,6 +3041,7 @@ public class ChessGame extends JFrame {
         private final ChatPanel.Toast chatToast = new ChatPanel.Toast();
 
         private String opponentChatName() {
+            if (AppSettings.focusMode()) return "Anonymous";
             String n = networkManager == null ? null : networkManager.getOpponentName();
             // a player who isn't signed in introduces themselves as "You"
             return n == null || n.isBlank() || n.trim().equalsIgnoreCase("You") ? "Opponent" : n.trim();
@@ -3176,6 +3208,7 @@ public class ChessGame extends JFrame {
                 String san = AnalysisGame.uciToSan(before.get(i), moves.get(i));
                 if (san == null || san.isBlank()) san = moves.get(i);
                 String fenAfter = i + 1 < fens.size() ? fens.get(i + 1) : board.generateFEN();
+                san = Board.markKingBlownUp(san, fenAfter, board.isAtomicMode());
                 themedGameNodes.add(themedGameTree.play(san, fenAfter));
             }
             int current = Math.max(0, Math.min(board.getCurrentStateIndex(), themedGameNodes.size() - 1));
@@ -3328,6 +3361,7 @@ public class ChessGame extends JFrame {
 
         private void setGameOverState() {
             gameOver = true;
+            TurnReminder.dispose();
             if (board != null) board.clearHintMove();
             if (networkManager != null) networkManager.setResumeEnabled(false);
             hideReconnectBanner();
@@ -3373,6 +3407,7 @@ public class ChessGame extends JFrame {
 
         if (onlineMode && networkManager != null && !applyingRemoteNetworkEvent) {
             networkManager.sendMove(fr, fc, tr, tc, promotion == null ? "" : promotion);
+            TurnReminder.cancel();                    // you've moved: no reminder needed
         }
     }
 
@@ -3386,6 +3421,12 @@ public class ChessGame extends JFrame {
                 } finally {
                     applyingRemoteNetworkEvent = false;
                 }
+            }
+            // a long game: a nudge if you're not looking (Settings > Notifications > Turn reminders)
+            if (onlineMode && !gameOver && !spectateMode) {
+                // the game shows inside the main window when it has one; else in its own
+                JFrame w = appHost != null && appHost.isShowing() ? appHost : this;
+                TurnReminder.yourMove(w, onlineInitialSeconds, opponentNameOr("your opponent"));
             }
         }
 
@@ -3460,6 +3501,12 @@ public class ChessGame extends JFrame {
 
         private void onConnectionInterrupted() {
             if (!onlineMode || gameOver || networkManager == null) return;
+            if (!AppSettings.autoReconnect()) {
+                // Settings > Online play: no waiting -- the game ends now
+                networkManager.stopReconnecting();
+                handleNetworkDisconnect("Connection lost.");
+                return;
+            }
             clockRanBeforeDrop = timer != null && timer.isRunning();
             if (timer != null) timer.stop();
             if (board != null) board.setInputEnabled(false);
@@ -3990,6 +4037,11 @@ public class ChessGame extends JFrame {
         i.accountId = net == null ? null : net.opponentUid();
         i.name = knownOpponentName != null ? knownOpponentName : "Opponent";
         i.rating = knownOpponentRating;
+        if (AppSettings.focusMode()) {                // focus mode: nothing about who they are
+            i.name = "Anonymous";
+            i.rating = null;
+            i.anonymous = true;
+        }
         i.picture = this::opponentPicture;
         i.connected = () -> net != null && net.isConnectedNow();
         i.gameOver = () -> gameOver;
@@ -4002,31 +4054,60 @@ public class ChessGame extends JFrame {
     }
 
     private volatile java.awt.image.BufferedImage opponentPicture;
+    /** Whose picture that is (a new opponent, e.g. in another game, needs their own). */
+    private volatile String opponentPictureUid;
     private volatile boolean opponentPictureAsked;
     private int opponentPictureTries;
 
-    /** An online opponent's account picture: fetched once in the background, null until then (or if none). */
+    /**
+     * An online opponent's account picture: fetched in the background, null until then (or
+     * if they have none). If asking fails (slow or dropped connection) it keeps trying,
+     * a little less often each time, instead of giving up after a few seconds.
+     */
     private java.awt.image.BufferedImage opponentPicture() {
-        if (!opponentPictureAsked && networkManager != null && networkManager.opponentUid() != null) {
+        if (AppSettings.focusMode() && !spectateMode) return null;   // focus mode: just the "A" of Anonymous
+        String current = networkManager == null ? null : networkManager.opponentUid();
+        // the same account on both sides (testing with two copies open): it's my own picture
+        try {
+            if (current != null && FirebaseLink.signedInToAccount() && current.equals(FirebaseLink.uid())) {
+                java.awt.image.BufferedImage mine = AccountPopup.currentAvatar();
+                if (mine != null) return mine;
+            }
+        } catch (Exception ignored) { }
+        if (current != null && !current.equals(opponentPictureUid)) {
+            // someone else (or the first time): forget the old picture and ask afresh
+            opponentPictureUid = current;
+            opponentPicture = null;
+            opponentPictureAsked = false;
+            opponentPictureTries = 0;
+        }
+        if (!opponentPictureAsked && current != null) {
             opponentPictureAsked = true;
-            final String uid = networkManager.opponentUid();
+            final String uid = current;
             opponentPictureTries++;
             Thread t = new Thread(() -> {
-                byte[] bytes = AccountApiClient.avatarOf(uid);
-                if (bytes == null) {
-                    // didn't come (slow connection?): try again in a few seconds, a few times
-                    if (opponentPictureTries < 4) {
+                byte[] bytes;
+                try {
+                    bytes = AccountApiClient.avatarOrThrow(uid);
+                } catch (Exception failed) {
+                    System.err.println("Opponent picture: try " + opponentPictureTries + " failed: " + failed);
+                    if (opponentPictureTries < 12) {
+                        int wait = Math.min(15000, 2000 * opponentPictureTries);
                         SwingUtilities.invokeLater(() -> {
-                            Timer again = new Timer(4000, e -> { opponentPictureAsked = false; refreshPlayerRows(); });
+                            Timer again = new Timer(wait, e -> {
+                                if (uid.equals(opponentPictureUid)) { opponentPictureAsked = false; refreshPlayerRows(); }
+                            });
                             again.setRepeats(false);
                             again.start();
                         });
                     }
                     return;
                 }
+                if (bytes == null || !uid.equals(opponentPictureUid)) return;    // no picture (their letter shows)
                 try {
                     opponentPicture = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
-                } catch (Exception ignored) {
+                } catch (Exception bad) {
+                    System.err.println("Opponent picture: couldn't read it: " + bad);
                 }
                 SwingUtilities.invokeLater(() -> {
                     if (topPanel != null) topPanel.repaint();
@@ -6716,7 +6797,32 @@ public class ChessGame extends JFrame {
     }
 
 
+    /** The title tags beside the two names (online: earned by rating). */
+    private TitleTagLabel bottomTitleTag, topTitleTag;
+
+    /** The opponent's country (online), once looked up from their account. */
+    private String opponentCountry;
+    private String opponentCountryFor;
+
+    /** Online: each player's flag at the right end of their name (after the rating). Else none. */
+    private void applyFlags(String myCountry, String theirCountry) {
+        JLabel mine = localIsWhite ? bottomPlayerLabel : topPlayerLabel;
+        JLabel theirs = localIsWhite ? topPlayerLabel : bottomPlayerLabel;
+        for (Object[] p : new Object[][] {{mine, myCountry}, {theirs, theirCountry}}) {
+            JLabel l = (JLabel) p[0];
+            if (l == null) continue;
+            int h = Math.max(10, Math.round(l.getFont().getSize2D() * 0.78f));
+            l.setIcon(p[1] == null ? null : CountryFlags.icon((String) p[1], h));
+            l.setHorizontalTextPosition(SwingConstants.LEADING);     // text first, the flag after it
+            l.setIconTextGap(Math.max(6, Math.round(h * 0.45f)));
+        }
+    }
+
     private void setupPlayerLabels() {
+    if (bottomPlayerLabel != null) bottomPlayerLabel.setIcon(null);
+    if (topPlayerLabel != null) topPlayerLabel.setIcon(null);
+    if (bottomTitleTag != null) bottomTitleTag.setTitle(ChessTitle.NONE);
+    if (topTitleTag != null) topTitleTag.setTitle(ChessTitle.NONE);
     if (isBotGame && selectedBot != null) {
         if (spectateMode) {
             ChessBot whiteBot = (spectateWhiteBot == null) ? selectedBot : spectateWhiteBot;
@@ -6749,11 +6855,42 @@ public class ChessGame extends JFrame {
     }
     // never a bare "White" / "Black": until their name arrives they're just "Opponent"
     String them = opponentNameOr("Opponent");
-    if (knownOpponentRating != null && !AppSettings.focusMode()) {
+    if (AppSettings.focusMode()) {
+        them += " (???)";                             // focus mode: no rating to think about
+    } else if (knownOpponentRating != null) {
         them += " (" + AccountApiClient.displayRating(knownOpponentRating) + ")";
     }
     bottomPlayerLabel.setText(localIsWhite ? me : them);
     topPlayerLabel.setText(localIsWhite ? them : me);
+    // title tags, from each player's rating (focus mode hides your opponent's)
+    Double myRating = session != null && session.profile() != null ? (double) session.profile().rating() : null;
+    Double theirRating = AppSettings.focusMode() ? null : knownOpponentRating;
+    TitleTagLabel myTag = localIsWhite ? bottomTitleTag : topTitleTag;
+    TitleTagLabel theirTag = localIsWhite ? topTitleTag : bottomTitleTag;
+    if (myTag != null) myTag.setRating(myRating);
+    if (theirTag != null) theirTag.setRating(theirRating);
+    // flags: yours from your settings, theirs from their account (looked up once)
+    if (AppSettings.showFlags() && !spectateMode) {
+        String uid = networkManager == null ? null : networkManager.opponentUid();
+        if (uid != null && !uid.equals(opponentCountryFor)) {
+            opponentCountryFor = uid;
+            opponentCountry = null;
+            Thread t = new Thread(() -> {
+                // the same account on both sides (two copies open): it's my own flag
+                boolean sameAccount = false;
+                try { sameAccount = FirebaseLink.signedInToAccount() && uid.equals(FirebaseLink.uid()); } catch (Exception ignored) { }
+                String c = sameAccount ? CountryFlags.mine() : CountryFlags.of(uid);
+                if (c == null) System.err.println("Online: no country on the opponent's account (or the database rules haven't been published)");
+                if (c != null) SwingUtilities.invokeLater(() -> {
+                    if (uid.equals(opponentCountryFor)) { opponentCountry = c; setupPlayerLabels(); }
+                });
+            }, "opponent-country");
+            t.setDaemon(true);
+            t.start();
+        }
+        applyFlags(FirebaseLink.signedInToAccount() ? CountryFlags.mine() : null,
+                AppSettings.focusMode() ? null : opponentCountry);
+    }
     refreshCapturedMaterialUI();
 }
 
@@ -6806,9 +6943,11 @@ public class ChessGame extends JFrame {
     }
 
     private void cleanupEmbeddedGame() {
+        TurnReminder.dispose();
         if (themedGameHistoryPanel != null) themedGameHistoryPanel.disableArrowKeys();
         LocalPlayers.removeListener(localPlayersListener);
         AppSettings.removeListener(takebackSettingListener);
+        AppSettings.removeListener(focusSettingListener);
         stopTimer();
         cancelSpellResolutionLock();
         if (rematchPopup != null) {

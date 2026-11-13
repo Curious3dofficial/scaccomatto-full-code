@@ -90,7 +90,7 @@
           ".validate": "newData.isString() && (newData.val() === data.val() || (!data.exists() && newData.val() === '') || (data.exists() && newData.val() !== '' && newData.parent().parent().parent().child('claims/' + $uid + '/' + newData.val()).exists() && !root.child('claims/' + $uid + '/' + newData.val()).exists()))"
         },
         "rating": {
-          ".validate": "newData.isNumber() && (!data.exists() ? newData.val() === 1200 : (newData.val() === data.val() || (newData.parent().child('lastGame').val() !== data.parent().child('lastGame').val() && newData.val() - data.val() <= 40 && data.val() - newData.val() <= 40 && (root.child('rooms/' + newData.parent().child('lastGame').val() + '/result/' + $uid + '/r').val() === 'win' ? newData.val() >= data.val() : (root.child('rooms/' + newData.parent().child('lastGame').val() + '/result/' + $uid + '/r').val() === 'loss' ? newData.val() <= data.val() : true)))))"
+          ".validate": "newData.isNumber() && (!data.exists() ? newData.val() === 200 : (newData.val() === data.val() || (newData.parent().child('lastGame').val() !== data.parent().child('lastGame').val() && newData.val() - data.val() <= 40 && data.val() - newData.val() <= 40 && (root.child('rooms/' + newData.parent().child('lastGame').val() + '/result/' + $uid + '/r').val() === 'win' ? newData.val() >= data.val() : (root.child('rooms/' + newData.parent().child('lastGame').val() + '/result/' + $uid + '/r').val() === 'loss' ? newData.val() <= data.val() : true)))))"
         },
         "w": {
           ".validate": "newData.isNumber() && (!data.exists() ? newData.val() === 0 : (newData.val() === data.val() || (newData.val() === data.val() + 1 && newData.parent().child('lastGame').val() !== data.parent().child('lastGame').val() && root.child('rooms/' + newData.parent().child('lastGame').val() + '/result/' + $uid + '/r').val() === 'win')))"
@@ -100,6 +100,9 @@
         },
         "d": {
           ".validate": "newData.isNumber() && (!data.exists() ? newData.val() === 0 : (newData.val() === data.val() || (newData.val() === data.val() + 1 && newData.parent().child('lastGame').val() !== data.parent().child('lastGame').val() && root.child('rooms/' + newData.parent().child('lastGame').val() + '/result/' + $uid + '/r').val() === 'draw')))"
+        },
+        "country": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Z][A-Z]$/)"
         },
         "$other": {
           ".validate": false
@@ -236,7 +239,7 @@
     },
     "online": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('friends/' + $uid + '/' + auth.uid).exists())",
+        ".read": "auth != null && (auth.uid === $uid || root.child('friends/' + $uid + '/' + auth.uid).exists() || data.child('vis').val() === 'everyone')",
         ".write": "auth != null && auth.uid === $uid",
         ".validate": "newData.hasChildren(['at']) && newData.child('at').val() === now",
         "at": {
@@ -244,6 +247,9 @@
         },
         "playing": {
           ".validate": "newData.isBoolean()"
+        },
+        "vis": {
+          ".validate": "newData.isString() && (newData.val() === 'everyone' || newData.val() === 'friends')"
         },
         "$other": {
           ".validate": false

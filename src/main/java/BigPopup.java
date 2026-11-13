@@ -73,7 +73,6 @@ final class BigPopup {
             return false;
         }
     }
-    private static final Color HINT = new Color(110, 106, 124);
 
     // ── simple uses ─────────────────────────────────────────────────────────
 
@@ -1072,10 +1071,8 @@ final class BigPopup {
             }
             g.setPaint(new GradientPaint(0, 0, light ? L_CARD_TOP : CARD_TOP, 0, h, light ? L_CARD_BOTTOM : CARD_BOTTOM));
             g.fill(card);
+            // (no coloured glow behind the top any more: plain card)
             Color c = tone.color;
-            g.setPaint(new RadialGradientPaint(new Point2D.Float(w / 2f, 0), w * 0.42f, new float[] {0f, 1f},
-                    new Color[] {new Color(c.getRed(), c.getGreen(), c.getBlue(), 46), new Color(c.getRed(), c.getGreen(), c.getBlue(), 0)}));
-            g.fill(card);
             g.setStroke(new BasicStroke(2f * u));
             g.setColor(light ? L_CARD_EDGE : CARD_EDGE);
             g.draw(new RoundRectangle2D.Float(u, u, w - 2 * u, h - 2 * u, arc, arc));
